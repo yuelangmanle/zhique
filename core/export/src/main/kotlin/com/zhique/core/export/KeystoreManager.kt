@@ -60,6 +60,9 @@ class KeystoreManager(
     private val backupPeriodMs = backupPeriodDays * 24L * 60 * 60 * 1000
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** 生成/口令串行的锁：并发导出双击不竞写 .tmp（质量审查 Important-1）。 */
+    private val lock = Any()
+
     val file: File get() = keystoreFile
 
     fun exists(): Boolean = keystoreFile.isFile && secretFile.isFile
@@ -70,24 +73,33 @@ class KeystoreManager(
      */
     fun ensureKeystore(): File {
         if (exists()) return keystoreFile
-        keystoreDir.mkdirs()
-        val pass = password()
-        val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
-        val cert = SelfSignedCert.generate(pair, CERT_CN)
-        val ks = KeyStore.getInstance(STORE_TYPE)
-        ks.load(null, null)
-        ks.setKeyEntry(KEY_ALIAS, pair.private, pass.toCharArray(), arrayOf(cert))
-        val tmp = File(keystoreDir, "${KEYSTORE_FILE}.tmp")
-        tmp.outputStream().use { ks.store(it, pass.toCharArray()) }
-        tmp.renameTo(keystoreFile)
-        return keystoreFile
+        synchronized(lock) {
+            if (exists()) return keystoreFile // 双检：等锁期间别线程已完成
+            keystoreDir.mkdirs()
+            val pass = passwordLocked()
+            val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+            val cert = SelfSignedCert.generate(pair, CERT_CN)
+            val ks = KeyStore.getInstance(STORE_TYPE)
+            ks.load(null, null)
+            ks.setKeyEntry(KEY_ALIAS, pair.private, pass.toCharArray(), arrayOf(cert))
+            val tmp = File(keystoreDir, "${KEYSTORE_FILE}.tmp")
+            tmp.outputStream().use { ks.store(it, pass.toCharArray()) }
+            if (!tmp.renameTo(keystoreFile)) {
+                tmp.delete()
+                throw IllegalStateException("密钥库写入失败（.tmp 替换被拒绝）")
+            }
+            return keystoreFile
+        }
     }
 
     /**
      * 密钥库口令：运行时随机生成、密文持久。首次调用即生成并落盘；
      * 之后解密复用。口令不以任何字面量形式出现在源码/配置/测试。
      */
-    fun password(): String {
+    fun password(): String = synchronized(lock) { passwordLocked() }
+
+    /** 须持 [lock] 调用。 */
+    private fun passwordLocked(): String {
         secretFile.takeIf { it.isFile }?.let {
             return crypto.decrypt(it.readText())
         }
@@ -120,8 +132,7 @@ class KeystoreManager(
 
     /** 产出 .jks 备份副本到 [target]（UI 层随后分享/SAF 保存到电脑）。返回副本文件。 */
     fun exportTo(target: File): File {
-        require(exists()) { "keystore not ready" }
-        ensureKeystore()
+        ensureKeystore() // 未生成则即时生成（首导出前备份也合法）
         target.parentFile?.mkdirs()
         keystoreFile.copyTo(target, overwrite = true)
         return target
@@ -158,6 +169,12 @@ class KeystoreManager(
         val src = File(path)
         require(src.isFile) { "keystore file not found: $path" }
         val ks = readForeignKeystore(src, pass)
+        // 必须含可用私钥（仅证书的密钥库签不了包，直接拒绝）
+        val hasKey = ks.aliases().toList().any { alias ->
+            runCatching { ks.isKeyEntry(alias) }.getOrDefault(false) ||
+                runCatching { ks.getKey(alias, pass.toCharArray()) != null }.getOrDefault(false)
+        }
+        if (!hasKey) throw KeystoreImportException("导入文件缺少私钥（仅证书的密钥库无法用于签名）")
         val cert = ks.getCertificateChain(KEY_ALIAS)?.firstOrNull() as? X509Certificate
             ?: ks.aliases().toList().firstOrNull()?.let { ks.getCertificate(it) as? X509Certificate }
             ?: throw KeystoreImportException("导入文件中没有可用证书")
@@ -165,12 +182,17 @@ class KeystoreManager(
         if (existingFingerprints.isNotEmpty() && fp !in existingFingerprints) {
             return ImportResult.Rejected(fp, existingFingerprints)
         }
+        // 先把两份 tmp 全部就绪，再带检查地原子替换（质量审查 Minor-4）
         keystoreDir.mkdirs()
         val tmp = File(keystoreDir, "${KEYSTORE_FILE}.tmp")
+        val tmpSecret = File(keystoreDir, "${PASSWORD_FILE}.tmp")
         src.copyTo(tmp, overwrite = true)
         // 口令按导入值重存（密文），保证 signingKey() 可直接解出
-        secretFile.writeText(crypto.encrypt(pass))
-        tmp.renameTo(keystoreFile)
+        tmpSecret.writeText(crypto.encrypt(pass))
+        if (!tmp.renameTo(keystoreFile) || !tmpSecret.renameTo(secretFile)) {
+            tmp.delete(); tmpSecret.delete()
+            throw KeystoreImportException("密钥库替换失败（.tmp 改名被拒绝）")
+        }
         return ImportResult.Accepted(fp)
     }
 

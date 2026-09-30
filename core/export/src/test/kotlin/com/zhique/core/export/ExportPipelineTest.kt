@@ -90,6 +90,36 @@ class ExportPipelineTest {
     }
 
     @Test
+    fun `管线失败清理工作残骸`() {
+        tmp.create()
+        val root = tmp.newFolder()
+        val repo = ProjectRepository(root)
+        val keystore = KeystoreManager(root, com.zhique.core.common.crypto.CryptoStore(softwareKey()))
+        val workDir = File(root, "work")
+        // 坏模板：AndroidManifest.xml 非 AXML → 注入成功、补丁失败
+        val badTemplate = File(root, "bad-template.apk")
+        java.util.zip.ZipOutputStream(badTemplate.outputStream()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("AndroidManifest.xml"))
+            zip.write("这不是二进制XML".toByteArray())
+            zip.closeEntry()
+        }
+        val pipeline = ExportPipeline(
+            templates = object : TemplateProvider {
+                override fun template(v: String): File = badTemplate
+            },
+            signer = Signer(),
+            workDir = workDir,
+        )
+        val meta = repo.create("坏模板", "<p></p>")
+        val e = runCatching {
+            ExportService(repo, VersionManager(repo), pipeline, keystore).export(meta.id, "坏模板", "min")
+        }
+        assertTrue(e.isFailure)
+        // unsigned/signed 残骸一律清理
+        assertEquals(emptyList(), workDir.listFiles()?.filter { it.name.endsWith(".apk") }.orEmpty())
+    }
+
+    @Test
     fun `两个项目导出包名不同可共存`() {
         val (repo, _, service) = wire("min")
         val a = repo.create("计算器", "<p></p>")

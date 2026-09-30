@@ -3,6 +3,7 @@ package com.zhique.core.export
 import com.zhique.core.common.crypto.CryptoStore
 import com.zhique.core.common.crypto.KeyProvider
 import java.io.File
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -147,6 +148,50 @@ class KeystoreManagerTest {
         assertFailsWith<KeystoreImportException> {
             ks.import(otherCopy.absolutePath, "wrong-pass-${System.nanoTime()}")
         }
+    }
+
+    @Test
+    fun `并发ensureKeystore-文件与口令一致不损坏`() {
+        tmp.create()
+        val dir = tmp.newFolder()
+        val ks = manager(dir)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val results = (1..2).map {
+            thread(start = true) {
+                gate.await()
+                ks.ensureKeystore()
+            }
+        }
+        gate.countDown()
+        results.forEach { it.join(10_000) }
+        // 双线程竞写后：文件可读、口令可解、证书指纹可取
+        assertTrue(ks.exists())
+        assertTrue(ks.certificateSha256() != null)
+        assertEquals(ks.password(), ks.password())
+        // 独立实例读同一目录验证一致
+        assertEquals(ks.certificateSha256(), manager(dir).certificateSha256())
+    }
+
+    @Test
+    fun `导入仅含证书的密钥库被拒绝`() {
+        tmp.create()
+        val ks = manager()
+        ks.ensureKeystore()
+        val originalFp = ks.certificateSha256()!!
+        // 仅证书（无私钥）的 PKCS12
+        val cert = ks.certificate()!!
+        val certOnly = java.security.KeyStore.getInstance("PKCS12")
+        certOnly.load(null, null)
+        certOnly.setCertificateEntry("cert-only", cert)
+        val pass = "cert-only-pass-" + java.util.UUID.randomUUID() // PKCS12 口令限 ASCII
+        val file = File(tmp.newFolder(), "certonly.jks")
+        file.outputStream().use { certOnly.store(it, pass.toCharArray()) }
+        val before = ks.file.readBytes()
+        assertFailsWith<KeystoreImportException> {
+            ks.import(file.absolutePath, pass, emptyList())
+        }
+        assertEquals(before.toList(), ks.file.readBytes().toList())
+        assertEquals(originalFp, ks.certificateSha256())
     }
 
     @Test

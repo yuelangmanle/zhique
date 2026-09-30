@@ -4,6 +4,7 @@ import java.io.File
 import java.util.zip.ZipFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -45,6 +46,28 @@ class AxmlPatcherTest {
     )
 
     @Test
+    fun `style池不受支持-明确抛错不静默`() {
+        val synthetic = syntheticManifest(
+            styleCount = 1,
+            attrs = listOf(Triple("package", "com.zhique.export.x", false)),
+        )
+        assertFailsWith<UnsupportedPoolException> {
+            AxmlPatcher.patch(synthetic, patch)
+        }
+    }
+
+    @Test
+    fun `目标属性缺失-明确抛错不静默`() {
+        val synthetic = syntheticManifest(
+            attrs = listOf(Triple("versionCode", 7, true)), // 缺 package/versionName/label
+        )
+        val e = assertFailsWith<IllegalStateException> {
+            AxmlPatcher.patch(synthetic, AxmlPatcher.ManifestPatch("com.zhique.export.x", 7, "1.0.7", "标签"))
+        }
+        assertTrue(e.message!!.contains("属性缺失"))
+    }
+
+    @Test
     fun `补丁前模板manifest可读且与补丁值不同`() {
         val info = AxmlReader.readManifest(TemplateFixtures.manifestOf(template))
         assertEquals("com.zhique.export.min", info.packageName)
@@ -84,4 +107,105 @@ class AxmlPatcherTest {
 
     private fun shortAt(data: ByteArray, at: Int): Int =
         (data[at].toInt() and 0xFF) or ((data[at + 1].toInt() and 0xFF) shl 8)
+
+    // ---- 合成 AXML（覆盖异常路径：style 池 / 属性缺失） ----
+
+    /** 极小 AXML 组装器：字符串池 + START_NS + START_ELEMENT(manifest, attrs) + END。 */
+    private fun syntheticManifest(
+        styleCount: Int = 0,
+        attrs: List<Triple<String, Any, Boolean>>, // (name, value, isInt)
+    ): ByteArray {
+        val strings = linkedSetOf("manifest")
+        attrs.forEach { strings.add(it.first) }
+        attrs.forEach { if (!it.third) strings.add(it.second.toString()) }
+        val pool = SyntheticPool(strings.toList(), styleCount)
+        val out = java.io.ByteArrayOutputStream()
+        // 文件头
+        out.write(byteArrayOf(3, 0, 8, 0)); writeInt(out, 0) // size 后补
+        // 字符串池
+        val poolBytes = SyntheticPool.encode(pool.strings, utf8 = false, styleCount = styleCount)
+        out.write(poolBytes)
+        // START_NAMESPACE
+        val nsChunk = ByteArray(24)
+        putShort(nsChunk, 0, 0x0100); putShort(nsChunk, 2, 24); putInt(nsChunk, 4, 24)
+        out.write(nsChunk)
+        // START_ELEMENT
+        val attrCount = attrs.size
+        val elementSize = 36 + 20 * attrCount
+        val el = ByteArray(elementSize)
+        putShort(el, 0, 0x0102); putShort(el, 2, 36); putInt(el, 4, elementSize)
+        putInt(el, 20, pool.index("manifest"))
+        putShort(el, 24, 20); putShort(el, 26, 20); putShort(el, 28, attrCount)
+        attrs.forEachIndexed { i, (name, value, isInt) ->
+            val at = 36 + i * 20
+            putInt(el, at + 4, pool.index(name))
+            if (isInt) {
+                putInt(el, at + 8, pool.indexOfOrAppend(value.toString()))
+                el[at + 15] = 0x10
+                putInt(el, at + 16, value as Int)
+            } else {
+                val idx = pool.index(value.toString())
+                putInt(el, at + 8, idx)
+                el[at + 15] = 0x03
+                putInt(el, at + 16, idx)
+            }
+        }
+        out.write(el)
+        // END_ELEMENT
+        val end = ByteArray(24)
+        putShort(end, 0, 0x0103); putShort(end, 2, 24); putInt(end, 4, 24)
+        out.write(end)
+        out.write(nsChunk) // END_NAMESPACE（结构占位）
+        val bytes = out.toByteArray()
+        putInt(bytes, 4, bytes.size)
+        return bytes
+    }
+
+    private class SyntheticPool(val strings: List<String>, styleCount: Int) {
+        fun index(s: String): Int = strings.indexOf(s)
+        fun indexOfOrAppend(s: String): Int = strings.indexOf(s) // 合成用，不追加
+
+        companion object {
+            fun encode(strings: List<String>, utf8: Boolean, styleCount: Int): ByteArray {
+                val offsets = IntArray(strings.size)
+                val body = java.io.ByteArrayOutputStream()
+                for ((i, str) in strings.withIndex()) {
+                    offsets[i] = body.size()
+                    val chars = str.toCharArray()
+                    body.write(chars.size and 0xFF); body.write((chars.size shr 8) and 0xFF)
+                    for (c in chars) { body.write(c.code and 0xFF); body.write((c.code shr 8) and 0xFF) }
+                    body.write(0); body.write(0)
+                }
+                while (body.size() % 4 != 0) body.write(0)
+                val stringsStart = 28 + offsets.size * 4 + styleCount * 4
+                val out = java.io.ByteArrayOutputStream()
+                out.write(0x01); out.write(0x00)
+                out.write(28 and 0xFF); out.write(28 shr 8)
+                writeInt(out, stringsStart + body.size())
+                writeInt(out, strings.size)
+                writeInt(out, styleCount)
+                writeInt(out, 0)
+                writeInt(out, stringsStart)
+                writeInt(out, 0)
+                for (o in offsets) writeInt(out, o)
+                body.writeTo(out)
+                return out.toByteArray()
+            }
+        }
+    }
+
+}
+
+private fun putShort(data: ByteArray, at: Int, v: Int) {
+    data[at] = (v and 0xFF).toByte(); data[at + 1] = ((v shr 8) and 0xFF).toByte()
+}
+
+private fun putInt(data: ByteArray, at: Int, v: Int) {
+    data[at] = (v and 0xFF).toByte(); data[at + 1] = ((v shr 8) and 0xFF).toByte()
+    data[at + 2] = ((v shr 16) and 0xFF).toByte(); data[at + 3] = ((v shr 24) and 0xFF).toByte()
+}
+
+private fun writeInt(out: java.io.ByteArrayOutputStream, v: Int) {
+    out.write(v and 0xFF); out.write((v shr 8) and 0xFF)
+    out.write((v shr 16) and 0xFF); out.write((v shr 24) and 0xFF)
 }

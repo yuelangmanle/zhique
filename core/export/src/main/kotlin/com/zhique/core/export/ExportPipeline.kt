@@ -57,7 +57,19 @@ class ExportPipeline(
         val unsigned = File(workDir, "${request.packageName}-${request.versionCode}-unsigned.apk")
         val signed = File(workDir, "${request.packageName}-${request.versionCode}.apk")
         signed.delete()
+        try {
+            val certSha256 = exportInternal(request, unsigned, signed)
+            unsigned.delete()
+            return Output(signed, certSha256)
+        } catch (t: Throwable) {
+            // 失败路径清理残骸（质量审查 Minor-6）：半成品 apk 不得滞留工作目录
+            unsigned.delete()
+            signed.delete()
+            throw t
+        }
+    }
 
+    private fun exportInternal(request: Request, unsigned: File, signed: File): String {
         // ① 注入项目资产（旧 assets/project 全删）
         injector.inject(templates.template(request.variant), request.projectFiles, unsigned)
         // ② 身份补丁：从 APK 里取出二进制 manifest → 改写 package/versionCode/versionName/label → 写回
@@ -83,9 +95,7 @@ class ExportPipeline(
         }
         // ③ v2+v3 签名 → ④ ApkVerifier 编程校验
         signer.sign(unsigned, signed, request.signingKey)
-        val certSha256 = signer.verify(signed)
-        unsigned.delete()
-        return Output(signed, certSha256)
+        return signer.verify(signed)
     }
 
     companion object {

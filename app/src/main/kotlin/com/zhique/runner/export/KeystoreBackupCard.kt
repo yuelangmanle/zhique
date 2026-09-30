@@ -89,19 +89,37 @@ class KeystoreBackupController(
      * 指纹与既有导出记录不一致 → Rejected → [restoreError]（密钥库保持原状）。
      */
     fun restore(path: String, pass: String) {
+        scope.launch(ioDispatcher) { importInternal(path, pass) }
+    }
+
+    /**
+     * 恢复（字节版）：卡片侧 SAF URI 立即读成字节后调用；临时 .jks 由本方法
+     * 写入 cache 并在 finally 删除（质量审查 Minor-6：用后即清）。
+     */
+    fun restoreFromBytes(data: ByteArray, pass: String, cacheDir: File) {
         scope.launch(ioDispatcher) {
-            val result = runCatching { keystore.import(path, pass, existingFingerprints()) }
-                .getOrElse { _restoreError.value = "导入失败：口令错误或文件损坏"; return@launch }
-            when (result) {
-                is ImportResult.Accepted -> {
-                    _restoreError.value = null
-                    _status.value = keystore.backupStatus()
-                    onToast("密钥库已恢复（指纹校验通过）")
-                }
-                is ImportResult.Rejected -> _restoreError.value =
-                    "已拒绝生效：导入证书指纹 ${result.certSha256.take(16)}… 与既有导出记录不一致" +
-                        "（该密钥库签不出已装版本）。请导入与已装应用一致的 .jks，或先卸载旧包。"
+            val tmp = File(cacheDir, "restore-${System.nanoTime()}.jks")
+            try {
+                tmp.writeBytes(data)
+                importInternal(tmp.absolutePath, pass)
+            } finally {
+                tmp.delete()
             }
+        }
+    }
+
+    private fun importInternal(path: String, pass: String) {
+        val result = runCatching { keystore.import(path, pass, existingFingerprints()) }
+            .getOrElse { _restoreError.value = "导入失败：口令错误或文件损坏"; return }
+        when (result) {
+            is ImportResult.Accepted -> {
+                _restoreError.value = null
+                _status.value = keystore.backupStatus()
+                onToast("密钥库已恢复（指纹校验通过）")
+            }
+            is ImportResult.Rejected -> _restoreError.value =
+                "已拒绝生效：导入证书指纹 ${result.certSha256.take(16)}… 与既有导出记录不一致" +
+                    "（该密钥库签不出已装版本）。请导入与已装应用一致的 .jks，或先卸载旧包。"
         }
     }
 }
@@ -116,6 +134,7 @@ fun KeystoreBackupCard(
     controller: KeystoreBackupController,
     testPrefix: String = "center",
     modifier: Modifier = Modifier,
+    onRestoreReadFailed: () -> Unit = {},
 ) {
     val status by controller.status.collectAsState()
     val restoreError by controller.restoreError.collectAsState()
@@ -212,15 +231,15 @@ fun KeystoreBackupCard(
                         val uri = pendingRestore
                         pendingRestore = null
                         if (uri != null) {
-                            // 立即读、不存 URI：内容落到缓存副本再交 import
-                            val tmpCopy = File(context.cacheDir, "restore-${System.currentTimeMillis()}.jks")
-                            val ok = runCatching {
-                                context.contentResolver.openInputStream(uri)?.use { input ->
-                                    tmpCopy.outputStream().use { input.copyTo(it) }
-                                } != null
-                            }.getOrDefault(false)
-                            if (ok) controller.restore(tmpCopy.absolutePath, restorePass)
-                            else controller.restore("/nonexistent-${System.nanoTime()}", restorePass)
+                            // 立即读、不存 URI：读成字节交控制器（临时 .jks 由控制器用后即删）
+                            val bytes = runCatching {
+                                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            }.getOrNull()
+                            if (bytes != null) {
+                                controller.restoreFromBytes(bytes, restorePass, context.cacheDir)
+                            } else {
+                                onRestoreReadFailed()
+                            }
                         }
                     },
                     modifier = Modifier.testTag("$testPrefix-restore-confirm"),

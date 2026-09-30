@@ -17,6 +17,9 @@ import java.io.ByteArrayOutputStream
  *
  * 只支持模板这类「无 style 池」的 AXML（导出底版由我们构建，可控）。
  */
+/** 字符串池含 style 表：模板 manifest 不应出现，拒绝静默损坏。 */
+class UnsupportedPoolException(message: String) : IllegalStateException(message)
+
 object AxmlPatcher {
 
     /** 需要写入的四个身份字段。 */
@@ -107,10 +110,12 @@ object AxmlPatcher {
         val attributeSize = shortAt(data, chunkAt + 26)
         val attributeCount = shortAt(data, chunkAt + 28)
         require(attributeSize >= 20) { "unexpected attribute size: $attributeSize" }
+        val matched = mutableSetOf<String>()
         for (i in 0 until attributeCount) {
             val attrAt = chunkAt + 16 + attributeStart + i * attributeSize
             val attrName = pool.string(intAt(data, attrAt + 4))
             val newStringIdx = want[attrName] ?: continue
+            matched += attrName
             val dataType = data[attrAt + 15].toInt() and 0xFF
             // rawValue → 新字符串索引（解析器取 raw 或 typed 均一致）
             edits += (attrAt + 8) to intBytes(newStringIdx)
@@ -128,6 +133,10 @@ object AxmlPatcher {
                     edits += (attrAt + 16) to intBytes(newStringIdx)
                 }
             }
+        }
+        val missing = want.keys - matched
+        if (missing.isNotEmpty()) {
+            throw IllegalStateException("manifest 目标属性缺失: $missing（模板底版与补丁器不匹配）")
         }
     }
 
@@ -155,6 +164,10 @@ object AxmlPatcher {
                 require(headerSize == 28) { "unexpected pool header size: $headerSize" }
                 val chunkSize = intAt(data, poolAt + 4)
                 val stringCount = intAt(data, poolAt + 8)
+                val styleCount = intAt(data, poolAt + 12)
+                if (styleCount != 0) {
+                    throw UnsupportedPoolException("字符串池含 style 表（styleCount=$styleCount）：模板 manifest 不应包含，拒绝静默损坏")
+                }
                 val flags = intAt(data, poolAt + 16)
                 val stringsStart = intAt(data, poolAt + 20)
                 val utf8 = flags and UTF8_FLAG != 0

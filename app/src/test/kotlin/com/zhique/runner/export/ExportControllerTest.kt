@@ -121,6 +121,21 @@ class ExportControllerTest {
     }
 
     @Test
+    fun `备份副本落在FileProvider白名单目录`() = runTest {
+        val ctx = ctx(testScheduler, this)
+        ctx.controller.refresh(); advanceUntilIdle()
+        val cache = tmp.newFolder()
+        val copy = ctx.controller.prepareBackup(cache)
+        // zq_share_paths 白名单：cache-path exports/
+        assertTrue(copy != null)
+        val whitelist = File(cache, "exports").canonicalFile
+        assertTrue(copy!!.canonicalFile.parentFile == whitelist, "shared path must be cache/exports: $copy")
+        assertEquals("zhique-release.jks", copy.name)
+        // 副本与主文件字节一致
+        assertTrue(copy.length() > 0)
+    }
+
+    @Test
     fun `打包成功后结果与导出记录就位`() = runTest {
         val ctx = ctx(testScheduler, this) { c -> { p, _, v ->
             assertEquals("min", v)

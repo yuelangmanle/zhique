@@ -112,7 +112,10 @@ fun ExportWizardScreen(
                     controller = controller,
                     state = state,
                     onBackup = {
-                        runCatching { ExportDelivery.shareKeystore(context, controller.keystoreFile) }
+                        // 备份分享必须用白名单副本（cache/exports），直接分享
+                        // filesDir/export/keystore 下的 .jks 会被 FileProvider 拒绝
+                        val copy = controller.prepareBackup(context.cacheDir) ?: return@SignStep
+                        runCatching { ExportDelivery.shareKeystore(context, copy) }
                             .onSuccess { controller.markBackedUp() }
                             .onFailure { onToast("备份分享失败：${it.message}") }
                     },
