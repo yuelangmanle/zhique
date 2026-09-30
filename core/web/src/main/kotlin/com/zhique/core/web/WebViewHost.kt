@@ -62,14 +62,17 @@ fun interface GeolocationGateway {
  * WebView 运行时引擎：AssetLoader 域名加载、织雀桥注入、调试采集、
  * 能力检测、渲染进程崩溃恢复（≤3 次）、PixelCopy 截图。
  *
- * 由独立进程壳 [RunnerWebHost] 与 :app 三模式运行器界面共用。
+ * 由独立进程壳 [RunnerWebHost]、:app 三模式运行器界面与 M6 导出模板壳共用。
  */
-class WebViewHost(context: Context, projectDir: File) {
+class WebViewHost(private val context: Context, source: ProjectSource) {
+
+    /** 目录版便捷构造：织雀本体从磁盘项目目录加载（运行器/独立壳路径）。 */
+    constructor(context: Context, projectDir: File) : this(context, AssetServer(projectDir))
 
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val bridge = CollectorBridge()
-    private val assetServer = AssetServer(projectDir)
+    private val source: ProjectSource = source
     private val nativeEvents = MutableSharedFlow<DebugEvent>(extraBufferCapacity = 128)
 
     /** 桥事件 + native 事件（崩溃等）合并流。 */
@@ -120,7 +123,7 @@ class WebViewHost(context: Context, projectDir: File) {
     }
 
     fun loadIndex() {
-        mainHandler.post { webView.loadUrl(assetServer.indexUrl()) }
+        mainHandler.post { webView.loadUrl(source.indexUrl()) }
     }
 
     fun reload() {
@@ -188,7 +191,7 @@ class WebViewHost(context: Context, projectDir: File) {
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest,
-            ): WebResourceResponse? = assetServer.shouldInterceptRequest(request)
+            ): WebResourceResponse? = source.intercept(request.url)
 
             override fun onPageFinished(view: WebView, url: String) {
                 if (url == "about:blank" && !capabilityDetected) {

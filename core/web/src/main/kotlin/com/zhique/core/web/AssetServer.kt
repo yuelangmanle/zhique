@@ -10,7 +10,7 @@ import java.io.File
  * 项目目录 → `https://appassets.androidplatform.net/assets/` 的本地资源服务（规格 §4.2）。
  * `file://` 一律禁止；路径逃逸（`..` / canonical 越界）与缺失文件一律 404（handle 返回 null）。
  */
-class AssetServer(projectDir: File) {
+class AssetServer(projectDir: File) : ProjectSource {
 
     private val loader = WebViewAssetLoader.Builder()
         .setDomain(DOMAIN)
@@ -18,10 +18,10 @@ class AssetServer(projectDir: File) {
         .build()
 
     /** 交给 WebViewClient.shouldInterceptRequest。 */
-    fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? =
-        loader.shouldInterceptRequest(request.url)
+    override fun intercept(url: android.net.Uri): WebResourceResponse? =
+        loader.shouldInterceptRequest(url)
 
-    fun indexUrl(): String = "https://$DOMAIN/assets/index.html"
+    override fun indexUrl(): String = "https://$DOMAIN/assets/index.html"
 
     private class ProjectDirHandler(private val root: File) : WebViewAssetLoader.PathHandler {
         override fun handle(path: String): WebResourceResponse? {

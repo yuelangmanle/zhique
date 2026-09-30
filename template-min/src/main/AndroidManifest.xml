@@ -1,4 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- M6 模板壳 min 变体：仅网络常规声明（无 dangerous 权限、无 zq 能力）。
+     package/versionCode/versionName/label 四个属性由导出管线 AxmlPatcher 按项目改写；
+     组件一律绝对类名（改包名不影响解析）。 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="织雀壳" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- WebGPU 常规声明（features 非权限；缺 GPU 时 WebView 自行降级 WebGL） -->
+    <uses-feature android:glEsVersion="0x00030001" android:required="false" />
+
+    <application
+        android:label="织雀壳"
+        android:usesCleartextTraffic="false"
+        android:hardwareAccelerated="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name="com.zhique.template.shell.TemplateShellMin"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>
