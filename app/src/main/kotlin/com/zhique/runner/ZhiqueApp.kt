@@ -33,6 +33,9 @@ import com.zhique.runner.agent.AgentBridge
 import com.zhique.runner.agent.AgentController
 import com.zhique.runner.agent.AgentScreen
 import com.zhique.runner.ai.AiWiring
+import com.zhique.runner.editor.EditorAskContext
+import com.zhique.runner.editor.EditorController
+import com.zhique.runner.editor.EditorScreen
 import com.zhique.runner.chat.ChatController
 import com.zhique.runner.chat.ChatScreen
 import com.zhique.runner.export.ExportCenterPlaceholder
@@ -69,6 +72,8 @@ fun ZhiqueApp(
     var pasteDraft by remember { mutableStateOf<String?>(null) }
     var agentProject by remember { mutableStateOf<ProjectMeta?>(null) }
     val agentBridge = remember { AgentBridge() }
+    var editorProject by remember { mutableStateOf<ProjectMeta?>(null) }
+    var chatAsk by remember { mutableStateOf<EditorAskContext?>(null) }
     var tab by rememberSaveable { mutableStateOf(TAB_PROJECTS) }
     var settingsPage by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -106,8 +111,9 @@ fun ZhiqueApp(
     }
 
     val agentMeta0 = agentProject
+    val editorMeta0 = editorProject
     val fullScreen = onboardingNeeded == true || runnerProject != null ||
-        agentMeta0 != null || pasteDraft != null
+        agentMeta0 != null || editorMeta0 != null || pasteDraft != null
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize()) {
@@ -159,6 +165,10 @@ fun ZhiqueApp(
                             runnerProject = null
                             agentProject = meta
                         },
+                        onOpenEditor = {
+                            runnerProject = null
+                            editorProject = meta
+                        },
                     )
                     agentMeta0 != null -> {
                         val agentMeta = agentMeta0
@@ -191,6 +201,29 @@ fun ZhiqueApp(
                             AgentScreen(controller = controller, onBack = { agentProject = null })
                         }
                     }
+                    editorMeta0 != null -> {
+                        val editorMeta = editorMeta0
+                        val controller = remember(editorMeta.id) {
+                            EditorController(
+                                repo = container.repo,
+                                projectId = editorMeta.id,
+                                scope = scope,
+                                onToast = toast,
+                            )
+                        }
+                        LaunchedEffect(editorMeta.id) { controller.open() }
+                        LaunchedEffect(agentProject != null) { controller.refreshAgentRunning() }
+                        EditorScreen(
+                            controller = controller,
+                            onBack = { editorProject = null },
+                            onAskAi = { ask ->
+                                chatAsk = ask
+                                editorProject = null
+                                tab = TAB_SETTINGS
+                                settingsPage = "chat"
+                            },
+                        )
+                    }
                     pasteDraft != null -> {
                         val controller = remember(pasteDraft) {
                             PastePreviewController(
@@ -218,8 +251,9 @@ fun ZhiqueApp(
                         "chat" -> ChatPage(
                             container = container,
                             scope = scope,
-                            onBack = { settingsPage = null },
+                            onBack = { settingsPage = null; chatAsk = null },
                             onToast = toast,
+                            initialAsk = chatAsk,
                         )
                         "providers" -> ProvidersScreen(
                             controller = remember {
@@ -296,6 +330,7 @@ private fun ChatPage(
     scope: kotlinx.coroutines.CoroutineScope,
     onBack: () -> Unit,
     onToast: (String) -> Unit,
+    initialAsk: EditorAskContext? = null,
 ) {
     var controller by remember { mutableStateOf<ChatController?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -314,6 +349,10 @@ private fun ChatPage(
     }
     val c = controller
     if (c != null) {
+        // 编辑器「问 AI 这段」→ 选中范围作附加上下文自动发送（规格 F3）
+        LaunchedEffect(initialAsk, c) {
+            initialAsk?.let { ask -> c.sendWithContext(ask.selection, ask.language, ask.question) }
+        }
         ChatScreen(controller = c, onBack = onBack)
     } else {
         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {

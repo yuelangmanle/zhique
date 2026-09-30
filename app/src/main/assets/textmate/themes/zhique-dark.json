@@ -1,0 +1,21 @@
+{
+  "name": "Zhique Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#12131A",
+    "editor.foreground": "#E6E8F0",
+    "editor.lineHighlightBackground": "#1B1D2A",
+    "editor.selectionBackground": "#33405F"
+  },
+  "tokenColors": [
+    {"scope": ["comment"], "settings": {"foreground": "#6A6D85", "fontStyle": "italic"}},
+    {"scope": ["keyword.control"], "settings": {"foreground": "#8F9BFF"}},
+    {"scope": ["string"], "settings": {"foreground": "#9ECE8C"}},
+    {"scope": ["constant.numeric"], "settings": {"foreground": "#F0A6A6"}},
+    {"scope": ["entity.name.tag", "meta.tag.sgml"], "settings": {"foreground": "#7DCFFF"}},
+    {"scope": ["entity.other.attribute-name"], "settings": {"foreground": "#E0AF68"}},
+    {"scope": ["entity.name.function"], "settings": {"foreground": "#82AAFF"}},
+    {"scope": ["support.type.property-name"], "settings": {"foreground": "#7DCFFF"}},
+    {"scope": ["entity.selector"], "settings": {"foreground": "#E0AF68"}}
+  ]
+}

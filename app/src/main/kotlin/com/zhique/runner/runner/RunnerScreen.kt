@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +73,7 @@ fun RunnerContent(
     onSendToAgent: () -> Unit,
     onReload: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenEditor: () -> Unit = {},
     webView: @Composable (Modifier) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
@@ -91,6 +93,9 @@ fun RunnerContent(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
+                IconButton(onClick = onOpenEditor, modifier = Modifier.testTag("open-editor")) {
+                    Icon(Icons.Filled.Edit, contentDescription = "编辑")
+                }
                 RunnerModeSwitcher(mode, onModeChange, Modifier.padding(end = 8.dp))
             }
         }
@@ -214,6 +219,7 @@ fun RunnerScreen(
     modifier: Modifier = Modifier,
     bridge: com.zhique.runner.agent.AgentBridge? = null,
     onSendToAgent: () -> Unit = {},
+    onOpenEditor: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val host = remember(project.id) { WebViewHost(context, projectDir) }
@@ -290,6 +296,7 @@ fun RunnerScreen(
         onSendToAgent = onSendToAgent,
         onReload = { host.reload() },
         modifier = modifier,
+        onOpenEditor = onOpenEditor,
         webView = { m ->
             key(recreateKey) {
                 AndroidView(modifier = m, factory = { host.webView })

@@ -1,0 +1,44 @@
+{
+  "name": "HTML (Zhique minimal)",
+  "scopeName": "source.html",
+  "patterns": [
+    {"include": "#comment"},
+    {"include": "#doctype"},
+    {"include": "#tag"}
+  ],
+  "repository": {
+    "comment": {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.html"
+    },
+    "doctype": {
+      "match": "<!DOCTYPE[^>]*>",
+      "name": "meta.tag.sgml.doctype.html",
+      "case_insensitive": true
+    },
+    "tag": {
+      "begin": "(</?)([A-Za-z][A-Za-z0-9-]*)",
+      "beginCaptures": {
+        "1": {"name": "punctuation.definition.tag.begin.html"},
+        "2": {"name": "entity.name.tag.html"}
+      },
+      "end": "(/?>)",
+      "endCaptures": {
+        "1": {"name": "punctuation.definition.tag.end.html"}
+      },
+      "patterns": [
+        {"include": "#attr-name"},
+        {"include": "#string"}
+      ]
+    },
+    "attr-name": {
+      "match": "[A-Za-z-:@.]+",
+      "name": "entity.other.attribute-name.html"
+    },
+    "string": {
+      "match": "\"[^\"]*\"|'[^']*'",
+      "name": "string.quoted.double.html"
+    }
+  }
+}

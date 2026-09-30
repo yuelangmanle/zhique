@@ -1,0 +1,28 @@
+{
+  "name": "CSS (Zhique minimal)",
+  "scopeName": "source.css",
+  "patterns": [
+    {"include": "#comment"},
+    {"include": "#rule"}
+  ],
+  "repository": {
+    "comment": {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block.css"
+    },
+    "rule": {
+      "begin": "([^{}]+)\\{",
+      "beginCaptures": {
+        "1": {"name": "entity.selector.css"}
+      },
+      "end": "\\}",
+      "patterns": [
+        {"include": "#comment"},
+        {"match": "[a-zA-Z-]+\\s*:", "name": "support.type.property-name.css"},
+        {"match": "#[0-9a-fA-F]+\\b|\\b\\d+(\\.\\d+)?(px|em|rem|vh|vw|%|s|ms)?\\b", "name": "constant.numeric.css"},
+        {"match": "\"[^\"]*\"|'[^']*'", "name": "string.quoted.css"}
+      ]
+    }
+  }
+}

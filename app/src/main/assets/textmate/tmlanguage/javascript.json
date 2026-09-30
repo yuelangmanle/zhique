@@ -1,0 +1,38 @@
+{
+  "name": "JavaScript (Zhique minimal)",
+  "scopeName": "source.js",
+  "patterns": [
+    {"include": "#comment"},
+    {"include": "#string"},
+    {"include": "#number"},
+    {"include": "#keyword"},
+    {"include": "#func"}
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {"begin": "/\\*", "end": "\\*/", "name": "comment.block.js"},
+        {"match": "//.*$", "name": "comment.line.double-slash.js"}
+      ]
+    },
+    "string": {
+      "patterns": [
+        {"begin": "\"", "end": "\"", "name": "string.quoted.double.js"},
+        {"begin": "'", "end": "'", "name": "string.quoted.single.js"},
+        {"begin": "`", "end": "`", "name": "string.template.js"}
+      ]
+    },
+    "number": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.js"
+    },
+    "keyword": {
+      "match": "\\b(const|let|var|function|class|return|if|else|for|while|new|await|async|of|in|try|catch|finally|throw|typeof|instanceof|this|super|extends|import|export|from|default|switch|case|break|continue|do|null|undefined|true|false)\\b",
+      "name": "keyword.control.js"
+    },
+    "func": {
+      "match": "[A-Za-z_$][\\w$]*(?=\\s*\\()",
+      "name": "entity.name.function.js"
+    }
+  }
+}

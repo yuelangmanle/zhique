@@ -133,6 +133,28 @@ class ChatController(
         }
     }
 
+    /**
+     * 编辑器「选中即上下文」（规格 F3）：选中范围作为 ChatRequest 附加上下文发送。
+     * 用户消息 = 问题 + 围栏代码块（对用户透明可见）。
+     */
+    fun sendWithContext(selection: String, language: String, question: String) {
+        val body = selection.trim()
+        if (body.isEmpty()) {
+            send(question)
+            return
+        }
+        val message = buildString {
+            append(question.ifBlank { "看这段代码" })
+            append("\n\n选中代码（")
+            append(language.ifBlank { "text" })
+            appendLine("）：")
+            appendLine("```" + language.ifBlank { "text" })
+            appendLine(body)
+            append("```")
+        }
+        send(message)
+    }
+
     /** Truncated 警告条的「继续输出」：同管线手动续一段。 */
     fun continueOutput() {
         val s = _state.value

@@ -56,6 +56,9 @@ dependencies {
     implementation(project(":core:publish"))
     implementation(project(":core:apilot"))
 
+    implementation(libs.sora.editor)
+    implementation(libs.sora.editor.language.textmate)
+
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
