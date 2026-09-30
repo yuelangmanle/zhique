@@ -11,9 +11,8 @@ object SemVer {
     fun parse(version: String): List<Int>? {
         val cleaned = version.trim().removePrefix("v").removePrefix("V").substringBefore('-')
         if (cleaned.isEmpty()) return null
-        val parts = cleaned.split('.')
-        if (parts.any { it.isEmpty() || it.any { c -> !c.isDigit() } }) return null
-        return parts.map { it.toInt() }
+        // toIntOrNull：非数字段与超 int 上限（如 v99999999999.0）一并返回 null，不抛 NumberFormatException
+        return cleaned.split('.').map { it.toIntOrNull() ?: return null }
     }
 
     /** candidate 是否比 current 新（任一更大数据段胜出；等价 false）。 */

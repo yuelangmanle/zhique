@@ -80,15 +80,26 @@ private class WizardApi : GitHubApi() {
         ).also { created = Triple(name, isPrivate, autoInit) }
 
     var releases = mutableListOf<String>()
+    var failUpload = false
+    val uploadedByTag = mutableMapOf<String, MutableList<String>>()
+    private var lastTag: String? = null
 
     override fun listReleases(pat: String, owner: String, repo: String): List<ReleaseInfo> =
-        releases.map { ReleaseInfo(id = it.hashCode().toLong(), tagName = it) }
+        releases.map { tag ->
+            ReleaseInfo(
+                id = tag.hashCode().toLong(),
+                tagName = tag,
+                uploadUrl = "https://uploads.example.com/releases/${tag.hashCode()}/assets{?name}",
+                assets = (uploadedByTag[tag] ?: emptyList()).map { AssetInfo(id = 1, name = it) },
+            )
+        }
 
     override fun createRelease(
         pat: String, owner: String, repo: String, tag: String, notes: String, prerelease: Boolean,
     ): ReleaseInfo {
         createCount++
         releases += tag
+        lastTag = tag
         return ReleaseInfo(
             id = createCount.toLong(), tagName = tag, body = notes,
             uploadUrl = "https://uploads.example.com/releases/$createCount/assets{?name}",
@@ -96,8 +107,10 @@ private class WizardApi : GitHubApi() {
     }
 
     override fun uploadAsset(pat: String, uploadUrl: String, file: File, contentType: String): AssetInfo {
+        if (failUpload) throw java.io.IOException("资产上传失败")
         uploadCount++
         lastUpload = file
+        lastTag?.let { uploadedByTag.getOrPut(it) { mutableListOf() } += file.name }
         return AssetInfo(id = uploadCount.toLong(), name = file.name, size = file.length())
     }
 }
@@ -338,6 +351,41 @@ class PublishWizardScreenTest {
         assertEquals(0, deps.api.createCount)
         assertEquals(0, deps.api.uploadCount)
         assertEquals(null, deps.engine.latest(deps.projectId)!!.tag)
+    }
+
+    @Test
+    fun `复审补测_resumeLast回注资产路径_上传失败可补传直达RELEASED`() = runTest {
+        val deps = build(bound = true)
+        // 手动预置：Release 已建但上传失败（磁盘停在 PUSHED，资产证据为文件名）
+        deps.api.failUpload = true
+        var job = deps.engine.plan(
+            deps.projectId, "https://github.com/alice/bianqian.git",
+            message = "断点", tag = "v1.0.2", wantRelease = true,
+            releaseAsset = deps.exportedApk!!.absolutePath,
+        )
+        repeat(3) { job = deps.engine.advance(job) } // → PUSHED
+        val failed = runCatching { deps.engine.advance(job) }
+        assertTrue(failed.isFailure, "预置：上传失败")
+        assertEquals(1, deps.api.createCount, "Release 已建")
+        assertEquals(0, deps.api.uploadCount)
+        val onDisk = deps.engine.latest(deps.projectId)!!
+        assertEquals(ReleaseStage.PUSHED, onDisk.stage)
+        assertEquals(deps.exportedApk!!.name, onDisk.releaseAsset, "磁盘证据为文件名")
+        assertTrue(onDisk.releaseAsset != deps.exportedApk.absolutePath, "无绝对路径落盘")
+
+        // 向导「继续」：resumeLast 回注解析器绝对路径 → 按名补传直达 RELEASED
+        deps.api.failUpload = false // 用户侧条件恢复（网络可用）
+        val controller = setContent(deps, testScheduler, this)
+        compose.waitUntil(10_000) { controller.state.value.releaseApk != null }
+        scroll("publish-resume-banner")
+        compose.onNodeWithTag("publish-resume-continue").performClick()
+        compose.waitUntil(10_000) { deps.api.uploadCount == 1 }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("publish-done").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(1, deps.api.createCount, "续跑不重建 Release")
+        assertEquals(deps.exportedApk, deps.api.lastUpload, "回注路径后补传真身")
+        assertEquals(ReleaseStage.RELEASED, deps.engine.latest(deps.projectId)!!.stage)
     }
 
     @Test

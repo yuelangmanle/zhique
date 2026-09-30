@@ -94,6 +94,10 @@ class UpdateCheckerTest {
         assertFalse(SemVer.isNewer("0.1.0", "0.1.0"))
         assertFalse(SemVer.isNewer("0.1.0", "0.2.0"))
         assertFalse(SemVer.isNewer("not-a-version", "0.1.0"))
+        // 复审补测：超大数字段不抛 NumberFormatException，解析为 null 视为不可比较
+        assertNull(SemVer.parse("v99999999999.0"))
+        assertFalse(SemVer.isNewer("v99999999999.0", "0.1.0"))
+        assertNull(SemVer.parse("v1.2.99999999999"))
         assertFalse(SemVer.isNewer("v1.0", "garbage"))
         assertEquals(listOf(1, 2, 3), SemVer.parse("v1.2.3"))
     }

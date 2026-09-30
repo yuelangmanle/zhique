@@ -222,7 +222,11 @@ class PublishController(
         _state.update { it.copy(running = true, error = null, canceled = false, resumeStage = null) }
         scope.launch(io) {
             try {
-                val job = engine.resume(projectId) ?: return@launch
+                // 磁盘证据只存文件名（Important-4）：续跑前用解析器回注绝对路径，资产补传才可达
+                val apkPath = _state.value.releaseApk?.takeIf { it.isFile }?.absolutePath
+                val job = engine.resume(projectId)?.let { resumed ->
+                    apkPath?.let { resumed.copy(releaseAsset = it) } ?: resumed
+                } ?: return@launch
                 activeJob = job
                 var cur = job
                 while (!cur.terminal) {
