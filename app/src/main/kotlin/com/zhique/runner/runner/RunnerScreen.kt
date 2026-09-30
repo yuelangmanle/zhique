@@ -206,7 +206,8 @@ private const val MAX_EVENTS = 500
 
 /**
  * 运行器屏（真实 WebView）：持有 [WebViewHost]，采集事件折算时间线，
- * 模式切换写回 projectMeta.runnerMode。
+ * 模式切换写回 projectMeta.runnerMode；M5 起注入 zq 全能力桥与 W3C 权限网关
+ * （[registry] 为 null 时行为与 M4 一致，测试路径用）。
  * [bridge] 供「交给 Agent」把宿主/事件缓冲登记给 Agent 会话（M4 接线）。
  */
 @Composable
@@ -220,6 +221,7 @@ fun RunnerScreen(
     bridge: com.zhique.runner.agent.AgentBridge? = null,
     onSendToAgent: () -> Unit = {},
     onOpenEditor: () -> Unit = {},
+    registry: com.zhique.core.permission.PermissionRegistry? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val host = remember(project.id) { WebViewHost(context, projectDir) }
@@ -234,6 +236,15 @@ fun RunnerScreen(
             runCatching { RunnerMode.valueOf(project.runnerMode.uppercase()) }
                 .getOrDefault(RunnerMode.DRAWER),
         )
+    }
+    val composeScope = rememberCoroutineScope()
+
+    // M5：zq 全能力桥（dispatcher + W3C 网关）；随运行器销毁一并取消订阅流
+    DisposableEffect(host, registry) {
+        val dispatcher = registry?.let {
+            ZqWiring.install(project, projectDir, context, host, composeScope, it)
+        }
+        onDispose { }
     }
 
     LaunchedEffect(host) {

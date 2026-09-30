@@ -3,7 +3,31 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- M5 权限桥：全部 dangerous 权限集中申报（App 集中持权，网页按需经授权卡申请，规格 §4.6） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
     <application android:label="织雀" android:name=".ZhiqueApplication">
+
+        <!-- zq.share.file 的只读 URI 授权 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.zqfile"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/zq_share_paths" />
+        </provider>
 
         <activity
             android:name=".MainActivity"

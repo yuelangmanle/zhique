@@ -1,0 +1,77 @@
+package com.zhique.core.permission.zq
+
+import android.app.Activity
+import android.content.Context
+import com.zhique.core.permission.Capability
+import com.zhique.core.permission.PermissionRegistry
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+
+/**
+ * 一个 zq 能力（如 zq.camera）。
+ *
+ * 硬件相关的实现放在 :app/:core 运行时路径，调度与参数校验逻辑可被
+ * 纯 JVM 测试覆盖（计划 Task 5.2）。
+ */
+interface ZqCapability {
+
+    /** 命名空间（zq.[ns].fn 中的 ns）。 */
+    val ns: String
+
+    /** 该能力对应的权限矩阵条目。 */
+    val required: Capability
+
+    /** 暴露的方法名（zq.[ns].[fn]）。 */
+    val methods: List<String>
+
+    /** 授权卡「干什么」的说明（按方法可细分）。 */
+    fun why(fn: String): String
+
+    /**
+     * 执行方法。[args] 是首个选项对象；返回值序列化为 JSON 回给页面
+     * （`__zqResolve(id, true, json)`）。抛错 → 页面拿到 rejected。
+     */
+    suspend fun call(fn: String, args: JsonObject, env: ZqEnv): JsonElement
+}
+
+/** SAF pick/save 网关（Activity Result 在 :app 侧注册）。 */
+interface SafGateway {
+    suspend fun pick(mime: String?): JsonElement
+    suspend fun save(name: String, mime: String?, content: String): JsonElement
+}
+
+/** MediaProjection 网关（系统投影授权流在 :app 侧注册；截屏独立授权）。 */
+interface ProjectionGateway {
+    suspend fun projection(): android.media.projection.MediaProjection?
+}
+
+/**
+ * 能力运行环境（调度器注入）：项目归属、推送通道、注册表与可选的
+ * 宿主网关。测试可只填前四项构造（Android 侧引用保持 null，不触碰）。
+ */
+class ZqEnv(
+    val projectId: String,
+    val projectDir: File,
+    val scope: CoroutineScope,
+    val registry: PermissionRegistry,
+    /** 向页面推送 JS（结果 settle / `__zqEvent` 订阅事件）。 */
+    val evaluateJs: (String) -> Unit,
+    val appContext: Context? = null,
+    val activity: Activity? = null,
+    val saf: SafGateway? = null,
+    val projection: ProjectionGateway? = null,
+) {
+    /** 流式订阅句柄登记表（location/sensor 共用）。 */
+    val subs = Subscriptions()
+}
+
+/** 系统运行时权限检查（App 集中持权；未授予时给出可操作的错误信息）。 */
+object SystemPerms {
+    fun granted(context: Context?, vararg perms: String): Boolean =
+        context != null && perms.all {
+            androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+}

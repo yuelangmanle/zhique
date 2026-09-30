@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 只读分享路径：项目沙盒目录（zq.share.file 用，规格 §4.6） -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="projects" path="zhique-root/projects/" />
+</paths>

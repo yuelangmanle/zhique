@@ -44,6 +44,16 @@ class AppContainer(
         com.zhique.runner.onboarding.OnboardingPreferences(settingsDataStore)
     }
 
+    /** 授权卡状态持有者（PermissionPrompt 的 :app 实现，进程级单实例）。 */
+    val permissionPrompt: com.zhique.runner.permission.AppPermissionPrompt by lazy {
+        com.zhique.runner.permission.AppPermissionPrompt()
+    }
+
+    /** 权限注册表（M5 权限桥：矩阵状态持久化在 project.json）。 */
+    val permissionRegistry: com.zhique.core.permission.PermissionRegistry by lazy {
+        com.zhique.core.permission.PermissionRegistry(repo, prompt = permissionPrompt)
+    }
+
     fun projectDir(projectId: String): File = File(root, "projects/$projectId")
 }
 

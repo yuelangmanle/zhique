@@ -119,7 +119,8 @@ fun ZhiqueApp(
         agentMeta0 != null || editorMeta0 != null || pasteDraft != null
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 val meta = runnerProject
                 when {
@@ -172,6 +173,7 @@ fun ZhiqueApp(
                             runnerProject = null
                             editorProject = meta
                         },
+                        registry = container.permissionRegistry,
                     )
                     agentMeta0 != null -> {
                         val agentMeta = agentMeta0
@@ -324,6 +326,9 @@ fun ZhiqueApp(
                     )
                 }
             }
+            }
+            // 授权卡浮在最上层（M5：zq/W3C 授权路径的唯一 UI 出口）
+            com.zhique.runner.permission.PermissionPromptHost(container.permissionPrompt)
         }
     }
 }

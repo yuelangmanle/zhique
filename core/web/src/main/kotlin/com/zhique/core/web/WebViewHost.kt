@@ -42,6 +42,15 @@ data class CapabilityReport(
 }
 
 /**
+ * W3C 权限请求网关（M5）：宿主注入后，`onPermissionRequest` 路由到
+ * :core:permission 的同一注册表矩阵（规格 §4.6「两条接入路，同一个注册表」）；
+ * 未注入时一律 deny（不弹系统裸权限框）。
+ */
+fun interface PermissionGateway {
+    fun onRequest(request: android.webkit.PermissionRequest)
+}
+
+/**
  * WebView 运行时引擎：AssetLoader 域名加载、织雀桥注入、调试采集、
  * 能力检测、渲染进程崩溃恢复（≤3 次）、PixelCopy 截图。
  *
@@ -77,6 +86,9 @@ class WebViewHost(context: Context, projectDir: File) {
 
     /** zq_call 分发器（M5 注册真实能力实现，机制先行）。 */
     val zqRouter = TimelineReducer.ZqCallRouter()
+
+    /** W3C 权限请求网关（:app 侧注入 ZqW3CRouter 适配；null=一律 deny）。 */
+    var permissionGateway: PermissionGateway? = null
 
     var webView: WebView = buildWebView()
         private set
@@ -197,6 +209,16 @@ class WebViewHost(context: Context, projectDir: File) {
                     )
                 }
                 return false
+            }
+
+            // W3C 标准路：getUserMedia 等系统权限回调 → 同一注册表矩阵（规格 §4.6）
+            override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
+                val gateway = permissionGateway
+                if (gateway == null) {
+                    request.deny()
+                    return
+                }
+                gateway.onRequest(request)
             }
         }
         wv.addJavascriptInterface(bridge, "ZhiqueNative")

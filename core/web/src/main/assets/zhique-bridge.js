@@ -32,8 +32,11 @@
     if (empty) post('white_screen', { url: location.href });
     post('metrics', { domNodes: document.getElementsByTagName('*').length });
   }, 1200));
-  // zq.* 骨架（M5 充实实现；此处注册机制先行）
-  window.zq = Z.api = new Proxy({}, { get: (_, ns) => new Proxy({}, { get: (__, fn) => (...args) =>
+  // zq.* 桥（M5）：请求-响应走 Proxy → zq_call/__zqResolve；
+  // 订阅流（sensor/location）走 zq.on(sub, cb) + native 侧 __zqEvent 推送
+  window.zq = Z.api = new Proxy({}, { get: (_, ns) => ns === 'on'
+    ? (sub, cb) => { Z.subs = Z.subs || {}; Z.subs[sub] = cb; return sub; }
+    : new Proxy({}, { get: (__, fn) => (...args) =>
     new Promise((res, rej) => {
       const id = ++Z.seq;
       Z.pending = Z.pending || {}; Z.pending[id] = { res, rej };
@@ -42,4 +45,5 @@
       setTimeout(() => { if (Z.pending && Z.pending[id]) window.__zqResolve(id, false, 'timeout: ' + ns + '.' + fn); }, 30000);
     }) }) });
   window.__zqResolve = (id, ok, value) => { const p = Z.pending && Z.pending[id]; if (p) { delete Z.pending[id]; ok ? p.res(JSON.parse(value)) : p.rej(new Error(value)); } };
+  window.__zqEvent = (sub, value) => { const s = Z.subs && Z.subs[sub]; if (s) { try { s(JSON.parse(value)); } catch (e) {} } };
 })();
