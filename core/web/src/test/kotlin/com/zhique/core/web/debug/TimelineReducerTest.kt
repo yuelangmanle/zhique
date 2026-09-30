@@ -19,9 +19,10 @@ class TimelineReducerTest {
                 DebugEvent(seq = 3, t = 0, type = "js_error", message = "x is not defined", line = 12),
                 DebugEvent(seq = 4, t = 0, type = "promise_reject", reason = "timeout"),
                 DebugEvent(seq = 5, t = 0, type = "white_screen", url = "about:blank"),
+                DebugEvent(seq = 6, t = 0, type = "web_crash", text = "渲染进程崩溃 #1"),
             ),
         )
-        assertEquals(5, tl.problems.size)
+        assertEquals(6, tl.problems.size)
         assertTrue(tl.console.isEmpty())
         assertTrue(tl.problems.all { it.isProblem })
     }

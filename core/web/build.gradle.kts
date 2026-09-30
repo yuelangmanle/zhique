@@ -14,9 +14,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    testOptions {
-        unitTests.all { it.useJUnit() }
-    }
 }
 
 kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
@@ -25,6 +22,7 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:project"))
     implementation(libs.androidx.webkit)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)

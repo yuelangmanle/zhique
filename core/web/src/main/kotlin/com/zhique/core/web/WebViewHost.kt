@@ -1,0 +1,252 @@
+package com.zhique.core.web
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.view.ViewGroup
+import android.webkit.ConsoleMessage
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import com.zhique.core.web.debug.DebugEvent
+import com.zhique.core.web.debug.TimelineReducer
+import java.io.File
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
+import org.json.JSONObject
+
+/** 启动时能力检测结果（about:blank 探测，规格 §4.2）。 */
+data class CapabilityReport(
+    val webGPU: Boolean,
+    val webGL2: Boolean,
+    val offscreenCanvas: Boolean,
+) {
+    /** WebGPU 缺失即降级 WebGL，抽屉需标注「已降级 WebGL」。 */
+    val degraded: Boolean get() = !webGPU
+}
+
+/**
+ * WebView 运行时引擎：AssetLoader 域名加载、织雀桥注入、调试采集、
+ * 能力检测、渲染进程崩溃恢复（≤3 次）、PixelCopy 截图。
+ *
+ * 由独立进程壳 [RunnerWebHost] 与 :app 三模式运行器界面共用。
+ */
+class WebViewHost(context: Context, projectDir: File) {
+
+    private val appContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val bridge = CollectorBridge()
+    private val assetServer = AssetServer(projectDir)
+    private val nativeEvents = MutableSharedFlow<DebugEvent>(extraBufferCapacity = 128)
+
+    /** 桥事件 + native 事件（崩溃等）合并流。 */
+    val events: Flow<DebugEvent> = merge(
+        bridge.raw.mapNotNull { DebugEvent.fromJson(it) },
+        nativeEvents.asSharedFlow(),
+    )
+
+    private val _capability = MutableStateFlow<CapabilityReport?>(null)
+
+    /** 能力检测结果（null = 尚未检测完成）。 */
+    val capability: StateFlow<CapabilityReport?> = _capability
+
+    /** 能力检测结果变化回调（界面据此标注「已降级 WebGL」）。 */
+    var onCapabilityDetected: ((CapabilityReport) -> Unit)? = null
+
+    /** 渲染进程崩溃后重建 WebView 回调（界面据此重新挂载视图）。 */
+    var onWebViewRecreated: (() -> Unit)? = null
+
+    /** 连续崩溃超过 [MAX_CRASH_RECOVERY] 次放弃自动恢复回调。 */
+    var onCrashGiveUp: (() -> Unit)? = null
+
+    /** zq_call 分发器（M5 注册真实能力实现，机制先行）。 */
+    val zqRouter = TimelineReducer.ZqCallRouter()
+
+    var webView: WebView = buildWebView()
+        private set
+
+    private var crashCount = 0
+    private var capabilityDetected = false
+
+    /** JS 桥存活标记：桥事件到达后，WebChromeClient 兜底采集静默，避免双份。 */
+    @Volatile
+    private var jsBridgeAlive = false
+
+    private var nativeSeq = -1L
+
+    init {
+        bridge.onEventArrived = { jsBridgeAlive = true }
+        // 规格 §4.2：about:blank 先行 → 能力检测 → 再进项目页
+        webView.loadUrl("about:blank")
+    }
+
+    fun loadIndex() {
+        mainHandler.post { webView.loadUrl(assetServer.indexUrl()) }
+    }
+
+    fun reload() {
+        mainHandler.post { webView.reload() }
+    }
+
+    fun evaluate(js: String) {
+        mainHandler.post { webView.evaluateJavascript(js, null) }
+    }
+
+    fun registerZq(ns: String, fn: String, handler: TimelineReducer.ZqCallRouter.Handler) {
+        zqRouter.register(ns, fn, handler)
+    }
+
+    suspend fun snapshot(): Bitmap = WebSnapshot.capture(webView)
+
+    fun resume() = webView.onResume()
+
+    fun pause() = webView.onPause()
+
+    fun destroy() = webView.destroy()
+
+    // ---- internals ----
+
+    @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
+    private fun buildWebView(): WebView {
+        val debuggable = appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        WebView.setWebContentsDebuggingEnabled(debuggable)
+
+        val wv = WebView(appContext)
+        wv.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+        with(wv.settings) {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = false // file:// 一律禁止（规格 §4.2）
+            allowContentAccess = false
+            mediaPlaybackRequiresUserGesture = false
+            javaScriptCanOpenWindowsAutomatically = true
+        }
+        // 渲染进程优先级：前台重要、不随后台回收（规格 §4.2 Renderer Priority）
+        wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+
+        wv.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest,
+            ): WebResourceResponse? = assetServer.shouldInterceptRequest(request)
+
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                // 页面加载前注入织雀桥（JS 自带 window.__ZHIQUE__ 防重入）
+                view.evaluateJavascript(bridgeJs, null)
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                if (!capabilityDetected) {
+                    capabilityDetected = true
+                    detectCapabilities(view)
+                }
+            }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                handleRenderCrash(view)
+                return true
+            }
+        }
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                if (!jsBridgeAlive) {
+                    // 兜底采集：JS 桥未存活时从 chrome client 收 console
+                    nativeEvents.tryEmit(
+                        DebugEvent(
+                            seq = nativeSeq--,
+                            t = System.currentTimeMillis(),
+                            type = TimelineReducer.TYPE_CONSOLE,
+                            level = consoleLevel(message.messageLevel()),
+                            text = message.message(),
+                            url = message.sourceId(),
+                            line = message.lineNumber(),
+                        ),
+                    )
+                }
+                return false
+            }
+        }
+        wv.addJavascriptInterface(bridge, "ZhiqueNative")
+        return wv
+    }
+
+    private fun detectCapabilities(view: WebView) {
+        val script = "({gpu: !!navigator.gpu, " +
+            "gl2: typeof WebGL2RenderingContext !== 'undefined', " +
+            "offscreen: typeof OffscreenCanvas !== 'undefined'})"
+        view.evaluateJavascript(script) { result ->
+            val report = runCatching {
+                val o = JSONObject(result)
+                CapabilityReport(
+                    webGPU = o.optBoolean("gpu"),
+                    webGL2 = o.optBoolean("gl2"),
+                    offscreenCanvas = o.optBoolean("offscreen"),
+                )
+            }.getOrDefault(CapabilityReport(webGPU = false, webGL2 = false, offscreenCanvas = false))
+            _capability.value = report
+            onCapabilityDetected?.invoke(report)
+            if (report.degraded) {
+                // WebGPU 缺失：注入降级提示脚本，页面可据此走 WebGL 兜底
+                view.evaluateJavascript(DEGRADE_HINT_JS, null)
+            }
+            loadIndex()
+        }
+    }
+
+    private fun handleRenderCrash(view: WebView) {
+        crashCount++
+        nativeEvents.tryEmit(
+            DebugEvent(
+                seq = nativeSeq--,
+                t = System.currentTimeMillis(),
+                type = TimelineReducer.TYPE_WEB_CRASH,
+                text = "渲染进程崩溃 #$crashCount",
+            ),
+        )
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.destroy()
+        if (crashCount <= MAX_CRASH_RECOVERY) {
+            webView = buildWebView()
+            capabilityDetected = false
+            _capability.value = null
+            onWebViewRecreated?.invoke()
+            webView.loadUrl("about:blank")
+        } else {
+            onCrashGiveUp?.invoke()
+        }
+    }
+
+    private fun consoleLevel(level: ConsoleMessage.MessageLevel?): String = when (level) {
+        ConsoleMessage.MessageLevel.ERROR -> "error"
+        ConsoleMessage.MessageLevel.WARNING -> "warn"
+        ConsoleMessage.MessageLevel.TIP -> "info"
+        ConsoleMessage.MessageLevel.DEBUG -> "debug"
+        else -> "log"
+    }
+
+    private val bridgeJs: String by lazy {
+        appContext.assets.open(BRIDGE_ASSET).bufferedReader().use { it.readText() }
+    }
+
+    private companion object {
+        const val BRIDGE_ASSET = "zhique-bridge.js"
+        const val MAX_CRASH_RECOVERY = 3
+
+        const val DEGRADE_HINT_JS =
+            "window.__ZHIQUE_NO_WEBGPU__ = true;"
+    }
+}

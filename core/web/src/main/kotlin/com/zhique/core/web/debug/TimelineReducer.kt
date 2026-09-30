@@ -19,6 +19,7 @@ object TimelineReducer {
     const val TYPE_RESOURCE_ERROR = "resource_error"
     const val TYPE_ZQ_CALL = "zq_call"
     const val TYPE_METRICS = "metrics"
+    const val TYPE_WEB_CRASH = "web_crash"
 
     /** zq_call 事件 → `ns.fn` 处理器分发器（M5 注册真实能力实现，此处机制先行）。 */
     class ZqCallRouter {
@@ -43,7 +44,7 @@ object TimelineReducer {
 
     private val PROBLEM_LEVELS = setOf("error", "warn")
     private val PROBLEM_TYPES =
-        setOf(TYPE_JS_ERROR, TYPE_PROMISE_REJECT, TYPE_WHITE_SCREEN)
+        setOf(TYPE_JS_ERROR, TYPE_PROMISE_REJECT, TYPE_WHITE_SCREEN, TYPE_WEB_CRASH)
     private val NETWORK_TYPES = setOf(TYPE_NETWORK_FAIL, TYPE_RESOURCE_ERROR)
 
     fun isProblem(event: DebugEvent): Boolean =
