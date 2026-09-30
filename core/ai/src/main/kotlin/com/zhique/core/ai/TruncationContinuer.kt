@@ -32,7 +32,13 @@ class TruncationContinuer(
     class Truncated(val partial: String, val segments: Int) :
         Exception("已达输出上限：续写 $segments 段后仍被截断")
 
-    suspend fun generate(req: ChatRequest): Out {
+    /**
+     * [onEvent] 供 UI 做流式展示（逐字增量），不影响状态机判定；默认空实现零开销。
+     */
+    suspend fun generate(
+        req: ChatRequest,
+        onEvent: (StreamEvent) -> Unit = {},
+    ): Out {
         var content = ""
         var thinking = ""
         var seg = 0
@@ -41,6 +47,7 @@ class TruncationContinuer(
             var stop: StopReason = StopReason.STOP
             val segBuf = StringBuilder()
             chat(r).collect { e ->
+                onEvent(e)
                 when (e) {
                     is StreamEvent.ContentDelta -> segBuf.append(e.text)
                     is StreamEvent.ThinkingDelta -> thinking += e.text
@@ -68,7 +75,11 @@ class TruncationContinuer(
     }
 
     /** 手动续一段（Truncated 警告条的「继续输出」按钮）：同管线单段，仍触顶时 limitHit=true。 */
-    suspend fun continueOnce(partial: String, req: ChatRequest): Out {
+    suspend fun continueOnce(
+        partial: String,
+        req: ChatRequest,
+        onEvent: (StreamEvent) -> Unit = {},
+    ): Out {
         var stop: StopReason = StopReason.STOP
         val segBuf = StringBuilder()
         val cont = req.copy(
@@ -77,6 +88,7 @@ class TruncationContinuer(
                 ChatMessage(ROLE_USER, CONTINUE_PROMPT),
         )
         chat(cont).collect { e ->
+            onEvent(e)
             when (e) {
                 is StreamEvent.ContentDelta -> segBuf.append(e.text)
                 is StreamEvent.Done -> stop = e.stopReason
