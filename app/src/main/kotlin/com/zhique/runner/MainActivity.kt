@@ -1,17 +1,51 @@
 package com.zhique.runner
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import com.zhique.runner.ui.theme.ZqTheme
 
+/**
+ * M2：系统分享目标（ACTION_SEND，text/ 任意子类型）直达智能粘贴预览。
+ * launchMode=singleTask → 已打开时走 [onNewIntent]，分享文本经 [sharedText] 状态进入导航。
+ */
 class MainActivity : ComponentActivity() {
+
+    /** 其他 App 分享来的文本；消费后置 null。 */
+    val sharedText: MutableState<String?> = mutableStateOf(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         val app = application as ZhiqueApplication
         setContent {
             ZqTheme {
-                ZhiqueApp(app.container)
+                ZhiqueApp(app.container, sharedText)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        val type = intent.type ?: return
+        if (!type.startsWith("text/")) return
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!text.isNullOrBlank()) sharedText.value = text
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val list = intent.getStringArrayListExtra(Intent.EXTRA_TEXT)
+                val text = list?.firstOrNull { !it.isNullOrBlank() }
+                if (!text.isNullOrBlank()) sharedText.value = text
             }
         }
     }

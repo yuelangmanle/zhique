@@ -27,8 +27,14 @@ object Cleaner {
     /** 报告摘录限长。 */
     const val EXCERPT_MAX = 48
 
-    fun clean(raw: String): CleanResult {
+    fun clean(raw: String, enabled: Boolean = true): CleanResult {
         if (raw.isBlank()) return CleanResult("", emptyList(), emptyList(), raw)
+
+        // 撤销清洗 = 原始输入重跑：只做围栏结构解析（组装路由需要 blocks），不剥任何污染、不出报告
+        if (!enabled) {
+            val doc = FenceParser.parse(raw)
+            return CleanResult(raw.trim(), doc.blocks, emptyList(), raw)
+        }
 
         val actions = mutableListOf<CleanAction>()
         val doc = FenceParser.parse(raw)

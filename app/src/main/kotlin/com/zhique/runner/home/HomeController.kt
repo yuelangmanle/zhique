@@ -1,5 +1,7 @@
 package com.zhique.runner.home
 
+import com.zhique.core.paste.PasteClassifier
+import com.zhique.core.paste.PasteForm
 import com.zhique.core.project.ProjectMeta
 import com.zhique.core.project.ProjectRepository
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +15,7 @@ import kotlinx.coroutines.launch
 /**
  * 首页控制器：项目列表的磁盘 IO 全部经 [io] 调度器执行（绝不占主线程），
  * UI 态以 [projects] StateFlow 暴露。
+ * 剪贴板检测：ON_RESUME 读一次 + 显式刷新，检测到内容且含代码特征才出卡（规格 §2.1，不做后台监听）。
  */
 class HomeController(
     private val repo: ProjectRepository,
@@ -21,6 +24,7 @@ class HomeController(
     private val onToast: (String) -> Unit = {},
     private val onRun: (ProjectMeta) -> Unit = {},
     private val sampleHtml: (suspend () -> String?)? = null,
+    private val clipboardText: (() -> String?)? = null,
 ) {
 
     private val _projects = MutableStateFlow<List<ProjectMeta>>(emptyList())
@@ -33,12 +37,46 @@ class HomeController(
     /** 含历史快照的项目 id（删除确认文案用）。 */
     val historyIds: StateFlow<Set<String>> = _historyIds.asStateFlow()
 
+    private val _clipboardCandidate = MutableStateFlow<String?>(null)
+
+    /** 剪贴板中检测到的可粘贴代码（null = 不显示卡）。 */
+    val clipboardCandidate: StateFlow<String?> = _clipboardCandidate.asStateFlow()
+
+    private var dismissedClipHash: Int = 0
+
     init {
         refresh()
     }
 
     fun refresh() {
         scope.launch(io) { snapshot() }
+    }
+
+    /** 回前台 ON_RESUME / 显式刷新按钮共用：读一次剪贴板，含代码特征才出卡。 */
+    fun checkClipboard() {
+        val read = clipboardText ?: return
+        scope.launch(io) {
+            val text = read() ?: return@launch
+            if (text.isBlank()) return@launch
+            val hash = text.hashCode()
+            if (hash == dismissedClipHash || hash == _clipboardCandidate.value?.hashCode()) return@launch
+            val classified = PasteClassifier().classify(text)
+            if (classified.form is PasteForm.Unknown) return@launch
+            _clipboardCandidate.value = text
+        }
+    }
+
+    /** 「忽略」：同内容不再打扰，直到剪贴板变化。 */
+    fun dismissClipboard() {
+        dismissedClipHash = _clipboardCandidate.value?.hashCode() ?: 0
+        _clipboardCandidate.value = null
+    }
+
+    /** 「粘贴预览」取走候选内容并收卡。 */
+    fun consumeClipboard(): String? {
+        val text = _clipboardCandidate.value
+        _clipboardCandidate.value = null
+        return text
     }
 
     private suspend fun snapshot() {

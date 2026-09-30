@@ -62,6 +62,7 @@ internal fun parseIconColor(hex: String): Color =
  * 首页项目列表（规格 §5.3 屏 2 的 M1 版）：名称/时间/▶ 运行，
  * 长按菜单：重命名/移动分组/复制/zip 导出/删除确认（决策 28）。
  * FAB 新建空项目；空态提供「运行示例：星空」。
+ * M2 新增：剪贴板置顶卡（ON_RESUME 读一次 + 显式刷新，含代码特征才显示）。
  * 磁盘 IO 全部经 [HomeController] 的 IO 协程，UI 只消费 StateFlow（Important 6）。
  */
 @Composable
@@ -70,6 +71,8 @@ fun HomeScreen(
     onRun: (ProjectMeta) -> Unit,
     onToast: (String) -> Unit,
     modifier: Modifier = Modifier,
+    clipboardText: (() -> String?)? = null,
+    onPastePreview: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -84,10 +87,23 @@ fun HomeScreen(
                     context.assets.open("samples/stars.html").bufferedReader().use { it.readText() }
                 }.getOrNull()
             },
+            clipboardText = clipboardText,
         )
     }
     val projects by controller.projects.collectAsState()
     val historyIds by controller.historyIds.collectAsState()
+    val clipboardCandidate by controller.clipboardCandidate.collectAsState()
+
+    // 回前台读一次剪贴板（规格 §2.1：不做后台监听）
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) controller.checkClipboard()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     var menuFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var renameFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var regroupFor by remember { mutableStateOf<ProjectMeta?>(null) }
@@ -103,11 +119,31 @@ fun HomeScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Text(
-                "织雀",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(20.dp),
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "织雀",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = { controller.checkClipboard() },
+                    modifier = Modifier.testTag("clipboard-refresh"),
+                ) { Text("刷新剪贴板") }
+            }
+            val candidate = clipboardCandidate
+            if (candidate != null) {
+                ClipboardCard(
+                    text = candidate,
+                    onPreview = {
+                        controller.consumeClipboard()
+                        onPastePreview(candidate)
+                    },
+                    onDismiss = { controller.dismissClipboard() },
+                )
+            }
             if (projects.isEmpty()) {
                 Column(
                     Modifier
@@ -268,6 +304,45 @@ private fun ProjectCard(
                     DropdownMenuItem(text = { Text("复制项目") }, onClick = onCopy)
                     DropdownMenuItem(text = { Text("zip 导出") }, onClick = onExportZip)
                     DropdownMenuItem(text = { Text("删除") }, onClick = onDelete)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClipboardCard(
+    text: String,
+    onPreview: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .testTag("clipboard-card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "检测到剪贴板中的代码",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text.lineSequence().firstOrNull { it.isNotBlank() }?.take(60) ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPreview, modifier = Modifier.testTag("clipboard-paste")) {
+                    Text("粘贴预览")
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.testTag("clipboard-dismiss")) {
+                    Text("忽略")
                 }
             }
         }
