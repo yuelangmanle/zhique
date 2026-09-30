@@ -21,8 +21,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 /**
- * 设置根屏（规格 §5.3 底部 Tab 3 的 M4 版）：M3 三屏入口 + 后续里程碑占位行。
- * 全集（权限中心/导出与签名/发布与同步/通用/隐私）按 §7 里程碑推进逐步接入。
+ * 设置根屏（规格 §5.3 底部 Tab 3 的 M4 版）：M3 三屏入口 + M5 权限中心 + 后续里程碑占位行。
+ * 全集（导出与签名/发布与同步/通用/隐私）按 §7 里程碑推进逐步接入。
  */
 @Composable
 fun SettingsScreen(
@@ -30,6 +30,7 @@ fun SettingsScreen(
     onOpenProviders: () -> Unit,
     onOpenRoleRouter: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenPermissionCenter: () -> Unit = {},
 ) {
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(top = 20.dp).testTag("settings-screen")) {
@@ -41,6 +42,7 @@ fun SettingsScreen(
             SettingRow("对话", "AI 对话面板（思考折叠 · 续写 · 用量）", "settings-chat", onOpenChat)
             SettingRow("AI 服务商", "多协议接入 · 密钥加密存储", "settings-providers", onOpenProviders)
             SettingRow("角色路由", "五槽模型分工 · 省钱/均衡/质量", "settings-router", onOpenRoleRouter)
+            SettingRow("权限中心", "项目×能力矩阵 · 运行中提醒 · 导出权限建议", "settings-permissions", onOpenPermissionCenter)
         }
     }
 }

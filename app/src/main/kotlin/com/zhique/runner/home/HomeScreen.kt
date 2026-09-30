@@ -78,6 +78,7 @@ fun HomeScreen(
     clipboardText: (() -> String?)? = null,
     onPastePreview: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenPermissions: (ProjectMeta) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -194,6 +195,7 @@ fun HomeScreen(
                             onCopy = { menuFor = null; controller.copy(project.id) },
                             onExportZip = { menuFor = null; controller.exportZip(project.id) },
                             onDelete = { menuFor = null; deleteFor = project },
+                            onPermissions = { menuFor = null; onOpenPermissions(project) },
                         )
                     }
                 }
@@ -265,6 +267,7 @@ private fun ProjectCard(
     onCopy: () -> Unit,
     onExportZip: () -> Unit,
     onDelete: () -> Unit,
+    onPermissions: () -> Unit = {},
 ) {
     Card(
         modifier = Modifier
@@ -312,6 +315,11 @@ private fun ProjectCard(
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
                     DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
                     DropdownMenuItem(text = { Text("移动分组") }, onClick = onMoveGroup)
+                    DropdownMenuItem(
+                        text = { Text("权限") },
+                        onClick = onPermissions,
+                        modifier = Modifier.testTag("menu-permission"),
+                    )
                     DropdownMenuItem(text = { Text("复制项目") }, onClick = onCopy)
                     DropdownMenuItem(text = { Text("zip 导出") }, onClick = onExportZip)
                     DropdownMenuItem(text = { Text("删除") }, onClick = onDelete)

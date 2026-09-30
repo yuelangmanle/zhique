@@ -79,6 +79,7 @@ fun ZhiqueApp(
     var agentRunning by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(TAB_PROJECTS) }
     var settingsPage by rememberSaveable { mutableStateOf<String?>(null) }
+    var permFocus by rememberSaveable { mutableStateOf<String?>(null) }
 
     // 首启引导：仅在未完成时显示（X4）
     var onboardingNeeded by remember { mutableStateOf<Boolean?>(null) }
@@ -279,10 +280,16 @@ fun ZhiqueApp(
                             onBack = { settingsPage = null },
                         )
                         "router" -> RoleRouterPage(container, scope, onBack = { settingsPage = null })
+                        "permissions" -> PermissionCenterPage(
+                            container = container,
+                            focusProjectId = permFocus,
+                            onBack = { settingsPage = null; permFocus = null },
+                        )
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },
                             onOpenProviders = { settingsPage = "providers" },
                             onOpenRoleRouter = { settingsPage = "router" },
+                            onOpenPermissionCenter = { settingsPage = "permissions" },
                         )
                     }
                     else -> HomeScreen(
@@ -297,6 +304,11 @@ fun ZhiqueApp(
                             pasteDraft = text
                         },
                         onOpenSettings = { tab = TAB_SETTINGS },
+                        onOpenPermissions = { project ->
+                            permFocus = project.id
+                            tab = TAB_SETTINGS
+                            settingsPage = "permissions"
+                        },
                     )
                 }
             }
@@ -416,4 +428,19 @@ private fun RoleRouterPage(
             )
         }
     }
+}
+
+/** 权限中心页（M5）：注册表 + 项目焦点。 */
+@Composable
+private fun PermissionCenterPage(
+    container: AppContainer,
+    focusProjectId: String?,
+    onBack: () -> Unit,
+) {
+    com.zhique.runner.permission.PermissionCenterScreen(
+        repo = container.repo,
+        registry = container.permissionRegistry,
+        focusProjectId = focusProjectId,
+        onBack = onBack,
+    )
 }
