@@ -12,6 +12,8 @@ data class ExportRecord(
     val versionName: String,
     val at: Long,
     val variant: String,
+    // 决策29：每次导出的证书 SHA-256——覆盖安装前置校验/导入恢复指纹比对的锚点
+    val certSha256: String = "",
 )
 
 @Serializable

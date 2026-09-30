@@ -77,6 +77,12 @@ class ProjectRepository(private val root: File) {
         it.permissionUsage[capability] = (it.permissionUsage[capability] ?: 0) + 1
     }
 
+    /** 导出记录写回（M6：含证书 SHA-256，决策29 覆盖安装保证的锚点）。 */
+    fun recordExport(id: String, record: ExportRecord): ProjectMeta = mutate(id) { it.export = record }
+
+    /** 元数据序列化（M6 导出：注入 APK assets/project/project.json 的品牌信息源）。 */
+    fun metaJson(id: String): ByteArray = json.encodeToString(ProjectMeta.serializer(), meta(id)).toByteArray()
+
     /** 项目目录（只读视图用途：Agent 文件遍历/编辑器文件 Tab；写路径仍走 writeFile 沙箱）。 */
     fun projectDir(id: String): File = dir(id)
 
