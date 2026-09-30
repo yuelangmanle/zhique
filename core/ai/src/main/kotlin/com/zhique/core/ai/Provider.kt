@@ -31,13 +31,14 @@ sealed interface StreamEvent {
     data class Done(val stopReason: StopReason) : StreamEvent
 }
 
-/** 对话消息；role ∈ system/user/assistant/tool。tool 结果带 [toolCallId]，assistant 带工具调用时给 [toolCallsJson]（原始 JSON 数组）。 */
+/** 对话消息；role ∈ system/user/assistant/tool。tool 结果带 [toolCallId]，assistant 带工具调用时给 [toolCallsJson]（原始 JSON 数组）。[images] 为 data URL（视觉探测与截图回看用）。 */
 @Serializable
 data class ChatMessage(
     val role: String,
     val content: String,
     val toolCallId: String? = null,
     val toolCallsJson: String? = null,
+    val images: List<String> = emptyList(),
 )
 
 /** 工具 JSON Schema（三协议共用形态，parametersJson 为 JSON Schema 原文）。 */
@@ -90,6 +91,19 @@ sealed class AiError(msg: String, cause: Throwable? = null) : Exception(msg, cau
 
 /** 流内错误事件（Done(ERROR)）转出的异常，续写器与编排器据此中断。 */
 class AiErrorException(msg: String) : Exception(msg)
+
+/** 解析 data URL（`data:<mime>;base64,<payload>`）为 (mime, base64)，非法返回 null（三协议图片块共用）。 */
+internal fun parseDataUrl(url: String): Pair<String, String>? {
+    val prefix = "data:"
+    if (!url.startsWith(prefix)) return null
+    val rest = url.substring(prefix.length)
+    val comma = rest.indexOf(',')
+    if (comma <= 0) return null
+    val meta = rest.substring(0, comma)
+    val payload = rest.substring(comma + 1)
+    if (!meta.endsWith(";base64") || payload.isEmpty()) return null
+    return meta.removeSuffix(";base64") to payload
+}
 
 /** 聚合完成的工具调用（argumentsJson 为分片拼接后的原文，由调用方解析）。 */
 data class ToolCall(val id: String, val name: String, val argumentsJson: String)

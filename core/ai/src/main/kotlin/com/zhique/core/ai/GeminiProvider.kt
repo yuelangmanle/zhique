@@ -64,6 +64,15 @@ internal fun buildGeminiRequestJson(req: ChatRequest): JsonObject {
                     put("role", if (m.role == "assistant") "model" else "user")
                     put("parts", buildJsonArray {
                         if (m.content.isNotEmpty()) add(buildJsonObject { put("text", m.content) })
+                        m.images.forEach { dataUrl ->
+                            val (mimeType, base64) = parseDataUrl(dataUrl) ?: return@forEach
+                            add(buildJsonObject {
+                                put("inlineData", buildJsonObject {
+                                    put("mimeType", mimeType)
+                                    put("data", base64)
+                                })
+                            })
+                        }
                         if (m.role == "tool") {
                             add(buildJsonObject {
                                 put("functionResponse", buildJsonObject {

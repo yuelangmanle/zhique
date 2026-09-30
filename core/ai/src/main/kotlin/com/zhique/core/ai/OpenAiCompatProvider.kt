@@ -75,7 +75,22 @@ internal fun buildRequestJson(req: ChatRequest): JsonObject = buildJsonObject {
         req.messages.forEach { m ->
             add(buildJsonObject {
                 put("role", m.role)
-                put("content", m.content)
+                if (m.images.isEmpty()) {
+                    put("content", m.content)
+                } else {
+                    put("content", buildJsonArray {
+                        if (m.content.isNotEmpty()) add(buildJsonObject {
+                            put("type", "text")
+                            put("text", m.content)
+                        })
+                        m.images.forEach { url ->
+                            add(buildJsonObject {
+                                put("type", "image_url")
+                                put("image_url", buildJsonObject { put("url", url) })
+                            })
+                        }
+                    })
+                }
                 m.toolCallId?.let { put("tool_call_id", it) }
                 m.toolCallsJson?.let { put("tool_calls", runCatching { Json.parseToJsonElement(it) }.getOrElse { JsonArray(emptyList()) }) }
             })

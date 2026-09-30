@@ -95,7 +95,28 @@ internal fun buildAnthropicRequestJson(req: ChatRequest): JsonObject {
                                 })
                             }
                         })
-                        else -> put("content", m.content)
+                        else -> if (m.images.isEmpty() || m.role != "user") {
+                            put("content", m.content)
+                        } else {
+                            put("content", buildJsonArray {
+                                m.images.forEach { dataUrl ->
+                                    val (mediaType, base64) = parseDataUrl(dataUrl)
+                                        ?: return@forEach
+                                    add(buildJsonObject {
+                                        put("type", "image")
+                                        put("source", buildJsonObject {
+                                            put("type", "base64")
+                                            put("media_type", mediaType)
+                                            put("data", base64)
+                                        })
+                                    })
+                                }
+                                if (m.content.isNotEmpty()) add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", m.content)
+                                })
+                            })
+                        }
                     }
                 })
             }
