@@ -34,7 +34,8 @@ class Compactor(
         if (turns.size <= KEEP_RECENT) return null
         val mid = turns.dropLast(KEEP_RECENT)
         val starred = mid.filter { it.starred }
-        val toSummarize = mid.filter { !it.starred && it.kind != Turn.Kind.SUMMARY }
+        // 只压缩普通轮次：工具结果走滚动窗口、摘要轮不重复压缩
+        val toSummarize = mid.filter { !it.starred && it.kind == Turn.Kind.NORMAL }
         if (toSummarize.isEmpty()) return null
 
         val before = assembler.estimateTokens()

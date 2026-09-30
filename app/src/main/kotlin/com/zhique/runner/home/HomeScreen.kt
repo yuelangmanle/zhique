@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -73,6 +77,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     clipboardText: (() -> String?)? = null,
     onPastePreview: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -132,6 +137,12 @@ fun HomeScreen(
                     onClick = { controller.checkClipboard() },
                     modifier = Modifier.testTag("clipboard-refresh"),
                 ) { Text("刷新剪贴板") }
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("open-settings"),
+                ) {
+                    Icon(Icons.Filled.Settings, contentDescription = "设置")
+                }
             }
             val candidate = clipboardCandidate
             if (candidate != null) {

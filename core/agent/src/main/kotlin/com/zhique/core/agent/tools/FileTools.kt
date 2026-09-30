@@ -155,8 +155,8 @@ internal object GrepTool : Tool {
     }
 }
 
-/** 项目文件遍历（相对路径，跳过 history/），排序稳定；读走仓库沙箱外的目录列举，内容读取仍走沙箱。 */
-internal object ProjectFiles {
+/** 项目文件遍历（相对路径，跳过 history/），排序稳定；供 :app 编辑器/文件地图复用。 */
+object ProjectFiles {
     const val SKIP_DIR = "history"
 
     fun walk(repo: ProjectRepository, projectId: String): List<String> {

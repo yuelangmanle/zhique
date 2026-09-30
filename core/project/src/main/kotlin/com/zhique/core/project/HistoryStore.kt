@@ -71,6 +71,18 @@ class HistoryStore(private val root: File) {
         return content
     }
 
+    /** 只读读取快照内容（Agent diff 卡 before 口径；路径校验同 [restore]）。 */
+    fun content(projectId: String, snapshotId: String): String {
+        val snap = list(projectId).firstOrNull { it.id == snapshotId }
+            ?: throw IllegalArgumentException("snapshot not found: $snapshotId")
+        val historyDir = historyDir(projectId)
+        val f = File(historyDir, snap.file)
+        if (!f.canonicalPath.startsWith(historyDir.canonicalPath + File.separator)) {
+            throw IllegalStateException("snapshot file escapes history dir: ${snap.file}")
+        }
+        return f.readText()
+    }
+
     fun appendAudit(projectId: String, entry: AuditEntry) {
         synchronized(lock) {
             val historyDir = historyDir(projectId)

@@ -76,6 +76,7 @@ class ChatController(
     private val newRequest: (List<ChatMessage>) -> ChatRequest,
     val contextWindow: Int = ModelCatalog.DEFAULT_CONTEXT_WINDOW, // M4 接目录真值
     maxSegments: Int = TruncationContinuer.DEFAULT_MAX_SEGMENTS,
+    private val recordUsage: (suspend (tokens: Int) -> Unit)? = null, // M4：UsageMeter.record 挂点
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -143,6 +144,7 @@ class ChatController(
             try {
                 val out = continuer.continueOnce(partial, req, ::onStreamEvent)
                 replaceLastAssistant(out.content, out.segments, out.limitHit)
+                runCatching { recordUsage?.invoke(estimateTokens(out.content)) }
             } catch (e: TruncationContinuer.Truncated) {
                 replaceLastAssistant(e.partial, e.segments + partialSegments(), limitHit = true)
             } catch (e: CancellationException) {
@@ -177,7 +179,7 @@ class ChatController(
         return (System.currentTimeMillis() - thinkingStartMs) / 1000.0
     }
 
-    private fun finishTurn(content: String, segments: Int, truncated: Boolean) {
+    private suspend fun finishTurn(content: String, segments: Int, truncated: Boolean) {
         val thinking = liveThinkingBuf.value()
         val turn = ChatTurn(
             role = "assistant",
@@ -199,6 +201,8 @@ class ChatController(
                 truncated = truncated,
             )
         }
+        // 用量累计（UsageMeter.record 挂点；输出 tokens 估算口径与顶栏一致）
+        runCatching { recordUsage?.invoke(estimateTokens(content)) }
     }
 
     private fun replaceLastAssistant(stitched: String, segments: Int, limitHit: Boolean) {

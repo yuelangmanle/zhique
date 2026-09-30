@@ -14,8 +14,11 @@ import com.zhique.runner.settings.ProviderStore
 import com.zhique.runner.settings.RoleBindingStore
 import java.io.File
 
-/** 进程级依赖容器。 */
-class AppContainer(context: Application) {
+/** 进程级依赖容器。密钥主密钥来源可注入（测试用软件 KeyProvider，生产走 AndroidKeystore）。 */
+class AppContainer(
+    context: Application,
+    keyProvider: com.zhique.core.common.crypto.KeyProvider = AndroidKeystoreProvider(),
+) {
     val root: File = File(context.filesDir, "zhique-root")
     val repo: ProjectRepository = ProjectRepository(root)
 
@@ -28,9 +31,9 @@ class AppContainer(context: Application) {
         PreferenceDataStoreFactory.create(produceFile = { File(dir, "settings.preferences_pb") })
     }
 
-    /** Provider 配置仓：Key 经 AndroidKeystore 主密钥加密（规格 §4.4）。 */
+    /** Provider 配置仓：Key 经主密钥加密（规格 §4.4）。 */
     val providerStore: ProviderStore by lazy {
-        ProviderStore(settingsDataStore, CryptoStore(AndroidKeystoreProvider()))
+        ProviderStore(settingsDataStore, CryptoStore(keyProvider))
     }
 
     val roleBindingStore: RoleBindingStore by lazy { RoleBindingStore(settingsDataStore) }

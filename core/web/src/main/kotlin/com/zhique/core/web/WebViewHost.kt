@@ -18,6 +18,8 @@ import androidx.webkit.WebViewCompat
 import com.zhique.core.web.debug.DebugEvent
 import com.zhique.core.web.debug.TimelineReducer
 import java.io.File
+import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** 启动时能力检测结果（about:blank 探测，规格 §4.2）。 */
@@ -102,6 +106,18 @@ class WebViewHost(context: Context, projectDir: File) {
 
     fun evaluate(js: String) {
         mainHandler.post { webView.evaluateJavascript(js, null) }
+    }
+
+    /**
+     * 挂起求值：等待 evaluateJavascript 回调并返回结果字符串（Agent DOM 摘要用）。
+     * WebView 不可用/已销毁时返回 null，不抛错。
+     */
+    suspend fun evaluateJs(js: String): String? = withContext(Dispatchers.Main) {
+        runCatching {
+            suspendCancellableCoroutine { cont ->
+                webView.evaluateJavascript(js) { result -> cont.resume(result) }
+            }
+        }.getOrNull()
     }
 
     fun registerZq(ns: String, fn: String, handler: TimelineReducer.ZqCallRouter.Handler) {

@@ -60,6 +60,8 @@ class Orchestrator(
                 budget.recordTokens(estimateTokens(out.content + out.thinking))
                 recordUsage?.invoke(estimateTokens(out.content + out.thinking))
                 send(AgentEvent.Round(round, out.thinking, out.content))
+                // 本轮模型输出进会话记忆（下轮上下文与压缩素材）
+                ctx.assembler.appendTurn("assistant", out.content)
 
                 var calls = parseToolCalls(out.content)
                 if (calls == null) {

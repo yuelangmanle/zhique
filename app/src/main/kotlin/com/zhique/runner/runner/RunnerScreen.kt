@@ -202,6 +202,7 @@ private const val MAX_EVENTS = 500
 /**
  * 运行器屏（真实 WebView）：持有 [WebViewHost]，采集事件折算时间线，
  * 模式切换写回 projectMeta.runnerMode。
+ * [bridge] 供「交给 Agent」把宿主/事件缓冲登记给 Agent 会话（M4 接线）。
  */
 @Composable
 fun RunnerScreen(
@@ -211,6 +212,8 @@ fun RunnerScreen(
     onToast: (String) -> Unit,
     onModePersist: (String, RunnerMode) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
+    bridge: com.zhique.runner.agent.AgentBridge? = null,
+    onSendToAgent: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val host = remember(project.id) { WebViewHost(context, projectDir) }
@@ -251,7 +254,12 @@ fun RunnerScreen(
             if (report.degraded) onToast("WebGPU 不可用，已降级 WebGL")
         }
         host.onCrashGiveUp = { onToast("页面多次崩溃，已停止自动恢复") }
-        onDispose { host.destroy() }
+        bridge?.host = host
+        bridge?.buffer = buffer
+        onDispose {
+            bridge?.unbind(host)
+            host.destroy()
+        }
     }
     DisposableEffect(host) {
         val observer = LifecycleEventObserver { _, event ->
@@ -279,7 +287,7 @@ fun RunnerScreen(
         timeline = timeline,
         capability = capability,
         onBack = onBack,
-        onSendToAgent = { onToast("Agent 编排在 M4 接线") },
+        onSendToAgent = onSendToAgent,
         onReload = { host.reload() },
         modifier = modifier,
         webView = { m ->
