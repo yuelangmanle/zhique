@@ -30,9 +30,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +62,7 @@ internal fun parseIconColor(hex: String): Color =
  * 首页项目列表（规格 §5.3 屏 2 的 M1 版）：名称/时间/▶ 运行，
  * 长按菜单：重命名/移动分组/复制/zip 导出/删除确认（决策 28）。
  * FAB 新建空项目；空态提供「运行示例：星空」。
+ * 磁盘 IO 全部经 [HomeController] 的 IO 协程，UI 只消费 StateFlow（Important 6）。
  */
 @Composable
 fun HomeScreen(
@@ -69,41 +72,32 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var projects by remember { mutableStateOf(repo.list()) }
+    val scope = rememberCoroutineScope()
+    val controller = remember(repo) {
+        HomeController(
+            repo = repo,
+            scope = scope,
+            onToast = onToast,
+            onRun = onRun,
+            sampleHtml = {
+                runCatching {
+                    context.assets.open("samples/stars.html").bufferedReader().use { it.readText() }
+                }.getOrNull()
+            },
+        )
+    }
+    val projects by controller.projects.collectAsState()
+    val historyIds by controller.historyIds.collectAsState()
     var menuFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var renameFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var regroupFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var deleteFor by remember { mutableStateOf<ProjectMeta?>(null) }
 
-    val refresh = { projects = repo.list() }
-
-    fun createEmpty() {
-        val meta = repo.create(
-            "未命名项目",
-            "<!DOCTYPE html>\n<html>\n<body>\n  <h1>新项目</h1>\n</body>\n</html>\n",
-        )
-        refresh()
-        onToast("已创建「${meta.name}」")
-    }
-
-    fun createSample() {
-        val html = runCatching {
-            context.assets.open("samples/stars.html").bufferedReader().use { it.readText() }
-        }.getOrNull()
-        if (html == null) {
-            onToast("示例资源缺失")
-            return
-        }
-        val meta = repo.create("星空示例", html)
-        refresh()
-        onRun(meta)
-    }
-
     Scaffold(
         modifier = modifier.testTag("home-screen"),
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { createEmpty() },
+                onClick = { controller.createEmpty() },
                 modifier = Modifier.testTag("fab-new"),
             ) { Text("+", style = MaterialTheme.typography.headlineSmall) }
         },
@@ -131,7 +125,7 @@ fun HomeScreen(
                     )
                     Spacer(Modifier.size(20.dp))
                     Button(
-                        onClick = { createSample() },
+                        onClick = { controller.createSample() },
                         modifier = Modifier.testTag("sample-button"),
                     ) { Text("运行示例：星空") }
                 }
@@ -150,17 +144,8 @@ fun HomeScreen(
                             onDismissMenu = { if (menuFor?.id == project.id) menuFor = null },
                             onRename = { menuFor = null; renameFor = project },
                             onMoveGroup = { menuFor = null; regroupFor = project },
-                            onCopy = {
-                                menuFor = null
-                                val copy = repo.copy(project.id)
-                                refresh()
-                                onToast("已复制为「${copy.name}」")
-                            },
-                            onExportZip = {
-                                menuFor = null
-                                val f = repo.exportZip(project.id)
-                                onToast("已导出 ${f.absolutePath}")
-                            },
+                            onCopy = { menuFor = null; controller.copy(project.id) },
+                            onExportZip = { menuFor = null; controller.exportZip(project.id) },
                             onDelete = { menuFor = null; deleteFor = project },
                         )
                     }
@@ -177,9 +162,8 @@ fun HomeScreen(
             initial = renameTarget.name,
             onDismiss = { renameFor = null },
             onConfirm = { name ->
-                if (name.isNotBlank()) repo.rename(renameTarget.id, name)
+                controller.rename(renameTarget.id, name)
                 renameFor = null
-                refresh()
             },
         )
     }
@@ -191,16 +175,14 @@ fun HomeScreen(
             hint = "留空表示取消分组",
             onDismiss = { regroupFor = null },
             onConfirm = { group ->
-                repo.moveGroup(regroupTarget.id, group.trim())
+                controller.moveGroup(regroupTarget.id, group)
                 regroupFor = null
-                refresh()
-                onToast("已移动到「${group.trim().ifBlank { "未分组" }}」")
             },
         )
     }
     val deleteTarget = deleteFor
     if (deleteTarget != null) {
-        val hasHistory = repo.hasHistory(deleteTarget.id)
+        val hasHistory = deleteTarget.id in historyIds
         AlertDialog(
             onDismissRequest = { deleteFor = null },
             title = { Text("删除「${deleteTarget.name}」？") },
@@ -212,10 +194,8 @@ fun HomeScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    runCatching { repo.delete(deleteTarget.id, confirm = true) }
-                        .onFailure { onToast("删除失败：${it.message}") }
+                    controller.delete(deleteTarget.id)
                     deleteFor = null
-                    refresh()
                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {

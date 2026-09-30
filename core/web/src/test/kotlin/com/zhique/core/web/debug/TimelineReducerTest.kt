@@ -55,21 +55,28 @@ class TimelineReducerTest {
     }
 
     @Test
-    fun `zq_call路由到已注册处理器且未注册不分发`() {
+    fun `reduce是纯投影不分发zq_call且zq_call不进时间线`() {
         val router = TimelineReducer.ZqCallRouter()
-        var routed: DebugEvent? = null
-        router.register("device", "info") { routed = it }
+        var routedCount = 0
+        router.register("device", "info") { routedCount++ }
         val call = DebugEvent(
             seq = 1, t = 0, type = "zq_call",
             id = 7, ns = "device", fn = "info", args = """["a",1]""",
         )
-        val stray = DebugEvent(seq = 2, t = 0, type = "zq_call", id = 8, ns = "file", fn = "read", args = "[]")
-        val tl = TimelineReducer.reduce(listOf(call, stray, console("log", "ok")), zqRouter = router)
-        assertEquals(7L, routed?.id)
-        assertEquals("""["a",1]""", routed?.args)
-        assertFalse(router.route(stray)) // 未注册的 ns.fn 不分发
-        assertTrue(tl.entries.none { it.event.type == "zq_call" })
-        assertEquals(1, tl.console.size)
+        // reduce 不带 router、不产生副作用：历史 zq_call 重投影也不会重复分发
+        val tl1 = TimelineReducer.reduce(listOf(call, console("log", "ok")))
+        assertEquals(0, routedCount)
+        assertTrue(tl1.entries.none { it.event.type == "zq_call" })
+        assertEquals(1, tl1.console.size)
+        // 再投影一次仍不分发（历史重算安全）
+        TimelineReducer.reduce(tl1.entries.map { it.event })
+        assertEquals(0, routedCount)
+        // 分发由 collector 显式调用 route 一次性完成
+        assertTrue(router.route(call))
+        assertEquals(1, routedCount)
+        // 未注册的 ns.fn 不分发
+        assertFalse(router.route(DebugEvent(seq = 2, t = 0, type = "zq_call", id = 8, ns = "file", fn = "read")))
+        assertEquals(1, routedCount)
     }
 
     @Test

@@ -51,12 +51,13 @@ object TimelineReducer {
         event.type in PROBLEM_TYPES ||
             (event.type == TYPE_CONSOLE && event.level in PROBLEM_LEVELS)
 
-    fun reduce(events: List<DebugEvent>, zqRouter: ZqCallRouter? = null): Timeline {
+    fun reduce(events: List<DebugEvent>): Timeline {
         val entries = mutableListOf<TimelineEntry>()
         for (e in events) {
             when (e.type) {
-                TYPE_ZQ_CALL -> { zqRouter?.route(e); continue }
-                TYPE_METRICS -> continue
+                // zq_call 由 collector 一次性分发（route 带副作用），reduce 保持纯投影：
+                // 历史事件重算（如容器满后重算时间线）绝不重复路由
+                TYPE_ZQ_CALL, TYPE_METRICS -> continue
             }
             val last = entries.lastOrNull()
             if (last != null && sameKey(last.event, e)) {

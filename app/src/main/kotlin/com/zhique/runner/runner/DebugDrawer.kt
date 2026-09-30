@@ -122,7 +122,8 @@ fun DebugDrawer(
         listOf("报错" to timeline.problems, "Console" to timeline.console, "网络" to timeline.network)
     }
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    if (tab > tabs.lastIndex) tab = 0
+    // 派生安全页签：不在组合期写状态（页签数变化时自动回落）
+    val safeTab = tab.coerceIn(0, tabs.lastIndex.coerceAtLeast(0))
 
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val containerH = constraints.maxHeight.toFloat()
@@ -195,10 +196,10 @@ fun DebugDrawer(
                     TextButton(onClick = onReload) { Text("重载") }
                 }
                 // 三页签
-                TabRow(selectedTabIndex = tab) {
+                TabRow(selectedTabIndex = safeTab) {
                     tabs.forEachIndexed { i, (name, list) ->
                         Tab(
-                            selected = tab == i,
+                            selected = safeTab == i,
                             onClick = { tab = i },
                             modifier = Modifier.testTag("drawer-tab-$i"),
                             text = { Text("$name (${list.size})") },
@@ -206,7 +207,7 @@ fun DebugDrawer(
                     }
                 }
                 // 列表
-                val current = tabs[minOf(tab, tabs.lastIndex)].second
+                val current = tabs[safeTab].second
                 LazyColumn(Modifier.fillMaxSize()) {
                     if (current.isEmpty()) {
                         item {
@@ -218,7 +219,11 @@ fun DebugDrawer(
                             )
                         }
                     }
-                    items(current) { entry ->
+                    items(
+                        current,
+                        // seq+t 组合键：桥 seq 在渲染进程重建后会重置，拼 t 保证唯一
+                        key = { "${it.event.seq}-${it.event.t}" },
+                    ) { entry ->
                         Text(
                             entryLabel(entry),
                             style = MaterialTheme.typography.bodySmall,

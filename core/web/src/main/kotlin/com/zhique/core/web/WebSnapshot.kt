@@ -34,16 +34,33 @@ object WebSnapshot {
         val loc = IntArray(2)
         webView.getLocationInWindow(loc)
         val rect = Rect(loc[0], loc[1], loc[0] + width, loc[1] + height)
+        // rect 夹紧到窗口可视范围（WebView 半离屏时防止 PixelCopy 出错）
+        val rootLoc = IntArray(2)
+        activity.window.decorView.getLocationOnScreen(rootLoc)
+        val root = Rect(
+            rootLoc[0],
+            rootLoc[1],
+            rootLoc[0] + activity.window.decorView.width,
+            rootLoc[1] + activity.window.decorView.height,
+        )
+        if (!rect.intersect(root) || rect.isEmpty) {
+            return softwareDraw(webView, width, height)
+        }
         return suspendCancellableCoroutine { cont ->
+            var cancelled = false
+            // PixelCopy 不可取消；取消后回调照常到达，resume 到已取消的续体是安全 no-op
+            cont.invokeOnCancellation { cancelled = true }
             PixelCopy.request(
                 activity.window,
                 rect,
                 bitmap,
                 { result ->
-                    if (result == PixelCopy.SUCCESS) {
-                        cont.resume(bitmap)
-                    } else {
-                        cont.resumeWithException(IllegalStateException("PixelCopy failed: $result"))
+                    if (!cancelled) {
+                        if (result == PixelCopy.SUCCESS) {
+                            cont.resume(bitmap)
+                        } else {
+                            cont.resumeWithException(IllegalStateException("PixelCopy failed: $result"))
+                        }
                     }
                 },
                 Handler(Looper.getMainLooper()),

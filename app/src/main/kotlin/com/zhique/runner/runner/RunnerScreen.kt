@@ -25,7 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,9 +43,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zhique.core.project.ProjectMeta
 import com.zhique.core.web.CapabilityReport
 import com.zhique.core.web.WebViewHost
-import com.zhique.core.web.debug.DebugEvent
+import com.zhique.core.web.debug.EventBuffer
 import com.zhique.core.web.debug.Timeline
 import com.zhique.core.web.debug.TimelineReducer
+import com.zhique.core.web.debug.ZqProtocol
 import com.zhique.runner.ui.theme.ZqSpring
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -216,7 +217,9 @@ fun RunnerScreen(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var recreateKey by remember { mutableIntStateOf(0) }
     var capability by remember { mutableStateOf<CapabilityReport?>(null) }
-    val events = remember(project.id) { mutableStateListOf<DebugEvent>() }
+    val buffer = remember(project.id) { EventBuffer() }
+    // 版本号单调递增：容量截断后 buffer 尺寸恒定，size 不能当重算信号（Critical 1）
+    var timelineVersion by remember(project.id) { mutableLongStateOf(0L) }
     var mode by remember(project.id) {
         mutableStateOf(
             runCatching { RunnerMode.valueOf(project.runnerMode.uppercase()) }
@@ -227,8 +230,19 @@ fun RunnerScreen(
     LaunchedEffect(host) {
         launch { host.capability.collect { capability = it } }
         host.events.collect { e ->
-            if (events.size >= MAX_EVENTS) events.removeAt(0)
-            events.add(e)
+            // zq_call 只在此处一次性分发（副作用层）；未注册能力立即回 rejected，
+            // 页面 promise 不等 30s 超时（Critical 2 + Important 3）
+            if (e.type == TimelineReducer.TYPE_ZQ_CALL) {
+                val handled = host.zqRouter.route(e)
+                if (!handled) {
+                    host.evaluate(
+                        ZqProtocol.rejectJs(e.id, "未注册能力: ${e.ns}.${e.fn}"),
+                    )
+                }
+            } else {
+                buffer.append(e)
+                timelineVersion = buffer.version
+            }
         }
     }
     DisposableEffect(host) {
@@ -251,8 +265,8 @@ fun RunnerScreen(
         onDispose { lifecycle.removeObserver(observer) }
     }
 
-    val timeline = remember(events.size) {
-        TimelineReducer.reduce(events.toList(), host.zqRouter)
+    val timeline = remember(timelineVersion) {
+        TimelineReducer.reduce(buffer.events)
     }
 
     RunnerContent(

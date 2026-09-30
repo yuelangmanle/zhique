@@ -38,6 +38,8 @@
       const id = ++Z.seq;
       Z.pending = Z.pending || {}; Z.pending[id] = { res, rej };
       post('zq_call', { id, ns, fn, args: JSON.stringify(args || []) });
+      // 30s 超时兜底：native 侧未命中/丢失时 promise 也必须 settle，防 pending 泄漏
+      setTimeout(() => { if (Z.pending && Z.pending[id]) window.__zqResolve(id, false, 'timeout: ' + ns + '.' + fn); }, 30000);
     }) }) });
   window.__zqResolve = (id, ok, value) => { const p = Z.pending && Z.pending[id]; if (p) { delete Z.pending[id]; ok ? p.res(JSON.parse(value)) : p.rej(new Error(value)); } };
 })();

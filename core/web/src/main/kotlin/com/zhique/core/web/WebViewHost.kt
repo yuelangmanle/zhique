@@ -14,6 +14,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
 import com.zhique.core.web.debug.DebugEvent
 import com.zhique.core.web.debug.TimelineReducer
 import java.io.File
@@ -138,21 +139,23 @@ class WebViewHost(context: Context, projectDir: File) {
         // 渲染进程优先级：前台重要、不随后台回收（规格 §4.2 Renderer Priority）
         wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
 
+        // 织雀桥走 document-start 注入：早于页面任何脚本执行，
+        // 解决 onPageStarted 注入漏采早期 console/error 的问题
+        registerDocumentStartScript(wv, includeCaps = false)
+
         wv.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest,
             ): WebResourceResponse? = assetServer.shouldInterceptRequest(request)
 
-            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                // 页面加载前注入织雀桥（JS 自带 window.__ZHIQUE__ 防重入）
-                view.evaluateJavascript(bridgeJs, null)
-            }
-
             override fun onPageFinished(view: WebView, url: String) {
-                if (!capabilityDetected) {
+                if (url == "about:blank" && !capabilityDetected) {
                     capabilityDetected = true
                     detectCapabilities(view)
+                } else if (url != "about:blank") {
+                    // 项目页成功加载完成 → 连续崩溃计数归零（「连续崩溃≤3」语义）
+                    crashCount = 0
                 }
             }
 
@@ -199,10 +202,9 @@ class WebViewHost(context: Context, projectDir: File) {
             }.getOrDefault(CapabilityReport(webGPU = false, webGL2 = false, offscreenCanvas = false))
             _capability.value = report
             onCapabilityDetected?.invoke(report)
-            if (report.degraded) {
-                // WebGPU 缺失：注入降级提示脚本，页面可据此走 WebGL 兜底
-                view.evaluateJavascript(DEGRADE_HINT_JS, null)
-            }
+            // 能力已知 → 重新注册 document-start 脚本，把降级标记一并带上：
+            // 后续任何导航（reload/内部跳转）标记都不会丢
+            registerDocumentStartScript(view, includeCaps = true, report = report)
             loadIndex()
         }
     }
@@ -238,15 +240,33 @@ class WebViewHost(context: Context, projectDir: File) {
         else -> "log"
     }
 
+    /** document-start 注入织雀桥（能力已知后追加降级/能力标记，导航不丢）。 */
+    private fun registerDocumentStartScript(
+        webView: WebView,
+        includeCaps: Boolean,
+        report: CapabilityReport? = null,
+    ) {
+        val caps = if (includeCaps && report != null) {
+            ";window.__ZHIQUE_NO_WEBGPU__ = ${report.degraded};" +
+                "window.__ZHIQUE_CAPS__ = {gpu:${report.webGPU},gl2:${report.webGL2}," +
+                "offscreen:${report.offscreenCanvas}};"
+        } else {
+            ""
+        }
+        WebViewCompat.addDocumentStartJavaScript(
+            webView,
+            bridgeJs + caps,
+            setOf("https://$ASSET_DOMAIN"),
+        )
+    }
+
     private val bridgeJs: String by lazy {
         appContext.assets.open(BRIDGE_ASSET).bufferedReader().use { it.readText() }
     }
 
     private companion object {
         const val BRIDGE_ASSET = "zhique-bridge.js"
+        const val ASSET_DOMAIN = "appassets.androidplatform.net"
         const val MAX_CRASH_RECOVERY = 3
-
-        const val DEGRADE_HINT_JS =
-            "window.__ZHIQUE_NO_WEBGPU__ = true;"
     }
 }

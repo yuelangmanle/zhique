@@ -21,7 +21,7 @@ class RunnerWebHost : Activity() {
         super.onCreate(savedInstanceState)
         val projectDir = intent.getStringExtra(EXTRA_PROJECT_DIR)
         if (projectDir.isNullOrBlank()) {
-            finish()
+            finish() // 缺参直接退出；host 未初始化，onResume/onPause/onDestroy 需守卫
             return
         }
         host = WebViewHost(this, File(projectDir))
@@ -32,16 +32,16 @@ class RunnerWebHost : Activity() {
 
     override fun onResume() {
         super.onResume()
-        host.resume()
+        if (::host.isInitialized) host.resume()
     }
 
     override fun onPause() {
-        host.pause()
+        if (::host.isInitialized) host.pause()
         super.onPause()
     }
 
     override fun onDestroy() {
-        host.destroy()
+        if (::host.isInitialized) host.destroy()
         super.onDestroy()
     }
 
