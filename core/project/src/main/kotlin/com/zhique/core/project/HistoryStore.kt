@@ -28,23 +28,26 @@ class HistoryStore(private val root: File) {
         encodeDefaults = true
     }
 
+    // 快照编号/索引写与审计追加共用一把锁，防并发竞态
+    private val lock = Any()
+
     fun append(projectId: String, label: String, content: String): Snapshot {
-        val historyDir = historyDir(projectId)
-        historyDir.mkdirs()
-        val n = (historyDir.listFiles()?.count { it.name.startsWith("snap-") } ?: 0) + 1
-        val file = "snap-$n-$label.html"
-        File(historyDir, file).writeText(content)
-        val snap = Snapshot(
-            id = file.removeSuffix(".html"),
-            label = label,
-            file = file,
-            at = System.currentTimeMillis(),
-        )
-        val index = list(projectId) + snap
-        File(historyDir, INDEX).writeText(
-            json.encodeToString(ListSerializer(Snapshot.serializer()), index),
-        )
-        return snap
+        synchronized(lock) {
+            val historyDir = historyDir(projectId)
+            historyDir.mkdirs()
+            val n = (historyDir.listFiles()?.count { it.name.startsWith("snap-") } ?: 0) + 1
+            val file = "snap-$n-${sanitizeLabel(label)}.html"
+            File(historyDir, file).writeText(content)
+            val snap = Snapshot(
+                id = file.removeSuffix(".html"),
+                label = label,
+                file = file,
+                at = System.currentTimeMillis(),
+            )
+            historyDir.toPath().resolve(INDEX)
+                .writeStringAtomic(json.encodeToString(ListSerializer(Snapshot.serializer()), list(projectId) + snap))
+            return snap
+        }
     }
 
     fun list(projectId: String): List<Snapshot> {
@@ -53,21 +56,28 @@ class HistoryStore(private val root: File) {
         return json.decodeFromString(ListSerializer(Snapshot.serializer()), f.readText())
     }
 
-    /** 把指定快照内容写回项目 index.html，返回快照内容。 */
+    /** 把指定快照内容写回项目 index.html，返回快照内容。index.json 不可信，路径必须落在 history 内。 */
     fun restore(projectId: String, snapshotId: String): String {
         val snap = list(projectId).firstOrNull { it.id == snapshotId }
             ?: throw IllegalArgumentException("snapshot not found: $snapshotId")
-        val content = File(historyDir(projectId), snap.file).readText()
+        val historyDir = historyDir(projectId)
+        val f = File(historyDir, snap.file)
+        if (!f.canonicalPath.startsWith(historyDir.canonicalPath + File.separator)) {
+            throw IllegalStateException("snapshot file escapes history dir: ${snap.file}")
+        }
+        val content = f.readText()
         File(projectDir(projectId), "index.html").writeText(content)
         return content
     }
 
     fun appendAudit(projectId: String, entry: AuditEntry) {
-        val historyDir = historyDir(projectId)
-        historyDir.mkdirs()
-        File(historyDir, AUDIT).appendText(
-            json.encodeToString(AuditEntry.serializer(), entry) + "\n",
-        )
+        synchronized(lock) {
+            val historyDir = historyDir(projectId)
+            historyDir.mkdirs()
+            File(historyDir, AUDIT).appendText(
+                json.encodeToString(AuditEntry.serializer(), entry) + "\n",
+            )
+        }
     }
 
     /** 按追加顺序分页读取审计流水；越界页返回空。 */
@@ -89,5 +99,16 @@ class HistoryStore(private val root: File) {
     private companion object {
         const val INDEX = "index.json"
         const val AUDIT = "audit.jsonl"
+
+        private val ALLOWED: (Char) -> Boolean = {
+            it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' ||
+                it == '_' || it == '-' || it == ' ' || it in '\u4e00'..'\u9fa5'
+        }
+
+        /** 白名单消毒：合法字符保留，其余替换 _，截断 64 字符，防空。 */
+        fun sanitizeLabel(label: String): String {
+            val cleaned = label.filter(ALLOWED).take(64)
+            return cleaned.ifEmpty { "snap" }
+        }
     }
 }

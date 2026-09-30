@@ -3,6 +3,7 @@ package com.zhique.core.project
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
@@ -70,5 +71,34 @@ class HistoryStoreTest {
     fun `未知项目返回空而非抛错`() {
         assertEquals(0, store.list("nope").size)
         assertEquals(0, store.readAudit("nope").size)
+    }
+
+    @Test
+    fun `label消毒不写穿history目录`() {
+        projectDir("p1")
+        store.append("p1", "../../evil/名字", "x")
+        val snaps = store.list("p1")
+        assertEquals(1, snaps.size)
+        assertTrue(!snaps[0].file.contains("..") && !snaps[0].file.contains("/"))
+        assertTrue(File(root, "evil").let { !it.exists() })
+        assertTrue(File(root, "projects/p1/evil").let { !it.exists() })
+        // 合法字符（含中文与空格）保留
+        store.append("p1", "快照 v1", "y")
+        assertEquals("快照 v1", store.list("p1")[1].label)
+        // 超长截断 64（文件名；index 中 label 保留原文用于显示）
+        store.append("p1", "长".repeat(100), "z")
+        assertEquals(71, store.list("p1")[2].id.length) // "snap-3-" + 64 字符
+    }
+
+    @Test
+    fun `restore拒绝逃逸history目录的index条目`() {
+        val dir = projectDir("p1")
+        File(dir, "index.html").writeText("<html>orig</html>")
+        val historyDir = File(dir, "history").apply { mkdirs() }
+        File(historyDir, "index.json").writeText(
+            """[{"id":"evil","label":"evil","file":"../../index.html","at":1}]""",
+        )
+        assertFailsWith<IllegalStateException> { store.restore("p1", "evil") }
+        assertEquals("<html>orig</html>", File(dir, "index.html").readText())
     }
 }

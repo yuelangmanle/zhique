@@ -22,6 +22,10 @@ class ProjectRepository(private val root: File) {
         projectsDir.mkdirs()
     }
 
+    /** 最近一次 [list] 发现的损坏项目（project.json 不可解析/缺失）目录名。 */
+    var corruptedProjects: List<String> = emptyList()
+        private set
+
     fun create(name: String, html: String): ProjectMeta {
         val meta = ProjectMeta(id = UUID.randomUUID().toString(), name = name)
         val dir = dir(meta.id)
@@ -31,10 +35,21 @@ class ProjectRepository(private val root: File) {
         return meta
     }
 
-    fun list(): List<ProjectMeta> =
-        (projectsDir.listFiles()?.filter { it.isDirectory } ?: emptyList())
-            .mapNotNull { runCatching { readMeta(it) }.getOrNull() }
+    fun list(): List<ProjectMeta> {
+        val corrupted = mutableListOf<String>()
+        val metas = (projectsDir.listFiles()?.filter { it.isDirectory } ?: emptyList())
+            .mapNotNull { dir ->
+                runCatching { readMeta(dir) }
+                    .onFailure {
+                        corrupted += dir.name
+                        System.err.println("[zhique] 损坏的 project.json，已跳过: ${dir.name}")
+                    }
+                    .getOrNull()
+            }
             .sortedBy { it.createdAt }
+        corruptedProjects = corrupted
+        return metas
+    }
 
     fun meta(id: String): ProjectMeta = readMeta(dir(id))
 
@@ -140,7 +155,8 @@ class ProjectRepository(private val root: File) {
         meta.updatedAt = System.currentTimeMillis()
         val dir = dir(meta.id)
         dir.mkdirs()
-        File(dir, META_FILE).writeText(json.encodeToString(ProjectMeta.serializer(), meta))
+        dir.toPath().resolve(META_FILE)
+            .writeStringAtomic(json.encodeToString(ProjectMeta.serializer(), meta))
     }
 
     private fun mutate(id: String, block: (ProjectMeta) -> Unit): ProjectMeta {

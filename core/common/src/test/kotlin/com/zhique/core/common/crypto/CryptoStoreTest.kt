@@ -1,9 +1,11 @@
 package com.zhique.core.common.crypto
 
+import javax.crypto.AEADBadTagException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 
 class CryptoStoreTest {
@@ -36,8 +38,7 @@ class CryptoStoreTest {
         val raw = java.util.Base64.getDecoder().decode(ct)
         raw[raw.size - 1] = (raw[raw.size - 1].toInt() xor 0x01).toByte()
         val tampered = java.util.Base64.getEncoder().encodeToString(raw)
-        val threw = runCatching { store.decrypt(tampered) }.isFailure
-        assertEquals(true, threw)
+        assertFailsWith<AEADBadTagException> { store.decrypt(tampered) }
     }
 
     @Test
@@ -45,8 +46,7 @@ class CryptoStoreTest {
         val store = CryptoStore(FakeKeyProvider(randomKey()))
         val ct = store.encrypt("secret")
         val other = CryptoStore(FakeKeyProvider(randomKey()))
-        val threw = runCatching { other.decrypt(ct) }.isFailure
-        assertEquals(true, threw)
+        assertFailsWith<AEADBadTagException> { other.decrypt(ct) }
     }
 
     @Test

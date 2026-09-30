@@ -79,4 +79,39 @@ class ProjectRepositoryTest {
         repo.delete(a.id, confirm = false)
         assertTrue(repo.list().isEmpty())
     }
+
+    @Test
+    fun `损坏的project_json被收集而非静默吞`() {
+        repo.create("Good", "<html/>")
+        val badDir = java.io.File(root, "projects/bad-id").apply { mkdirs() }
+        java.io.File(badDir, "project.json").writeText("{ not json")
+        val all = repo.list()
+        assertEquals(1, all.size)
+        assertEquals("Good", all[0].name)
+        assertEquals(listOf("bad-id"), repo.corruptedProjects)
+    }
+
+    @Test
+    fun `importZip恶意zip不写穿沙盒`() {
+        val evil = java.io.File.createTempFile("evil-", ".zip", tmp.root)
+        java.util.zip.ZipOutputStream(evil.outputStream().buffered()).use { out ->
+            out.putNextEntry(java.util.zip.ZipEntry("../evil.txt"))
+            out.write(byteArrayOf(1))
+            out.closeEntry()
+        }
+        assertFailsWith<IllegalArgumentException> { repo.importZip(evil) }
+        assertTrue(repo.list().isEmpty())
+        assertTrue(java.io.File(root, "projects").listFiles()?.isEmpty() ?: true)
+    }
+
+    @Test
+    fun `json落盘不残留临时文件`() {
+        val a = repo.create("T", "<html/>")
+        repo.appendHistory(a.id, "v1", "x")
+        repo.rename(a.id, "T2")
+        val leftovers = java.io.File(root, "projects").walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".tmp") }
+            .toList()
+        assertTrue(leftovers.isEmpty())
+    }
 }
