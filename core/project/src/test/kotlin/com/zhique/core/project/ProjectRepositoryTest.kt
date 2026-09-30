@@ -105,6 +105,38 @@ class ProjectRepositoryTest {
     }
 
     @Test
+    fun `history单实例由仓库暴露给消费方`() {
+        val a = repo.create("A", "<html/>")
+        // 消费方（M1 运行器/快照 UI）从仓库取唯一 HistoryStore 实例，而不是自行 new
+        repo.history.append(a.id, "v1", "<html/>")
+        assertTrue(repo.hasHistory(a.id))
+        assertEquals(1, repo.history.list(a.id).size)
+        repo.appendHistory(a.id, "v2", "<html/>")
+        assertEquals(2, repo.history.list(a.id).size)
+    }
+
+    @Test
+    fun `iconColor默认靛蓝且随meta往返持久化`() {
+        val a = repo.create("A", "<html/>")
+        assertEquals("#46509F", a.iconColor)
+        // 旧版本 project.json（无 iconColor 字段）解析后落到默认值
+        val b = repo.create("B", "<html/>")
+        java.io.File(java.io.File(root, "projects/${b.id}"), "project.json").writeText(
+            """{"id":"${b.id}","name":"B","createdAt":1,"updatedAt":1}""",
+        )
+        assertEquals("#46509F", repo.list().first { it.id == b.id }.iconColor)
+        // 自定义 iconColor 随 json 读回
+        java.io.File(java.io.File(root, "projects/${b.id}"), "project.json").writeText(
+            """{"id":"${b.id}","name":"B","iconColor":"#AA3377","createdAt":1,"updatedAt":1}""",
+        )
+        assertEquals("#AA3377", repo.meta(b.id).iconColor)
+        // 落盘 json 携带 iconColor 字段（encodeDefaults）
+        repo.rename(a.id, "A2")
+        val saved = java.io.File(java.io.File(root, "projects/${a.id}"), "project.json").readText()
+        assertTrue(saved.contains("iconColor"))
+    }
+
+    @Test
     fun `json落盘不残留临时文件`() {
         val a = repo.create("T", "<html/>")
         repo.appendHistory(a.id, "v1", "x")

@@ -11,7 +11,9 @@ import kotlinx.serialization.json.Json
 class ProjectRepository(private val root: File) {
 
     private val projectsDir = File(root, "projects")
-    private val history = HistoryStore(root)
+
+    /** 唯一 HistoryStore 实例：单实例约定——消费方一律从仓库取用，禁止自行构造（避免多实例锁失效竞态）。 */
+    val history: HistoryStore = HistoryStore(root)
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
@@ -126,7 +128,7 @@ class ProjectRepository(private val root: File) {
         return meta
     }
 
-    /** 追加一条项目快照（history 非空即删除需显式 confirm）。 */
+    /** 追加一条项目快照（history 非空即删除需显式 confirm）。委托给唯一实例 [history]。 */
     fun appendHistory(id: String, label: String, content: String) {
         history.append(id, label, content)
     }

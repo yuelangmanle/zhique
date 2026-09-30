@@ -66,7 +66,8 @@ class HistoryStore(private val root: File) {
             throw IllegalStateException("snapshot file escapes history dir: ${snap.file}")
         }
         val content = f.readText()
-        File(projectDir(projectId), "index.html").writeText(content)
+        // 原子写回项目 index.html（防写一半崩溃留下截断的项目入口）
+        File(projectDir(projectId), "index.html").toPath().writeStringAtomic(content)
         return content
     }
 
@@ -80,12 +81,14 @@ class HistoryStore(private val root: File) {
         }
     }
 
-    /** 按追加顺序分页读取审计流水；越界页返回空。 */
+    /** 按追加顺序分页读取审计流水；越界页返回空。读侧与写共用锁，避免读到半行。 */
     fun readAudit(projectId: String, page: Int = 0, pageSize: Int = 20): List<AuditEntry> {
         require(page >= 0 && pageSize > 0) { "invalid page/pageSize" }
-        val f = File(historyDir(projectId), AUDIT)
-        if (!f.isFile) return emptyList()
-        val lines = f.readLines().filter { it.isNotBlank() }
+        val lines = synchronized(lock) {
+            val f = File(historyDir(projectId), AUDIT)
+            if (!f.isFile) return emptyList()
+            f.readLines().filter { it.isNotBlank() }
+        }
         val from = page * pageSize
         if (from >= lines.size) return emptyList()
         return lines.subList(from, minOf(from + pageSize, lines.size))

@@ -28,6 +28,7 @@ data class ProjectMeta(
     var name: String,
     var group: String = "",           // 文件夹分组
     var runnerMode: String = "drawer",// drawer | split | bubble
+    var iconColor: String = "#46509F",// 项目卡图标色（规格 §3.5 图标色，语义色靛蓝）
     val permissions: MutableMap<String, PermissionRecord> = mutableMapOf(), // capability->record
     val permissionUsage: MutableMap<String, Int> = mutableMapOf(),          // 运行期真实使用计数
     var export: ExportRecord? = null,

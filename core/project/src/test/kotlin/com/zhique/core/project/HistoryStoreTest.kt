@@ -91,6 +91,44 @@ class HistoryStoreTest {
     }
 
     @Test
+    fun `restore写回为原子写不残留临时文件`() {
+        val dir = projectDir("p1")
+        File(dir, "index.html").writeText("<html>orig</html>")
+        store.append("p1", "v1", "<html>one</html>")
+        store.restore("p1", store.list("p1")[0].id)
+        assertEquals("<html>one</html>", File(dir, "index.html").readText())
+        val leftovers = dir.walkTopDown().filter { it.isFile && it.name.endsWith(".tmp") }.toList()
+        assertTrue(leftovers.isEmpty())
+    }
+
+    @Test
+    fun `并发追加时审计读取不撕裂不丢条目`() {
+        projectDir("p1")
+        val writers = (1..4).map { t ->
+            Thread {
+                repeat(25) { i -> store.appendAudit("p1", AuditEntry(action = "act-$t-$i")) }
+            }
+        }
+        var readErrors = 0
+        val reader = Thread {
+            repeat(300) {
+                try {
+                    store.readAudit("p1", page = 0, pageSize = 200)
+                } catch (_: Exception) {
+                    readErrors++
+                }
+            }
+        }
+        reader.start()
+        writers.forEach { it.start() }
+        writers.forEach { it.join() }
+        reader.join()
+        assertEquals(0, readErrors)
+        val all = store.readAudit("p1", page = 0, pageSize = 200)
+        assertEquals(100, all.size)
+    }
+
+    @Test
     fun `restore拒绝逃逸history目录的index条目`() {
         val dir = projectDir("p1")
         File(dir, "index.html").writeText("<html>orig</html>")
