@@ -23,9 +23,11 @@ dependencies {
     implementation(project(":core:project"))
     implementation(libs.jgit)
     implementation(libs.okhttp)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
 }
