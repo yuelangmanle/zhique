@@ -68,7 +68,7 @@ class KeystoreManager(
     fun exists(): Boolean = keystoreFile.isFile && secretFile.isFile
 
     /**
-     * 确保密钥库就绪：缺失则生成（RSA-2048 + 自签名证书 → 密钥库），
+     * 确保密钥库就绪：缺失则生成（EC P-256 椭圆曲线密钥对 + 自签名证书 → 密钥库），
      * 口令随机生成密文落盘。返回密钥库文件。
      */
     fun ensureKeystore(): File {
@@ -77,7 +77,10 @@ class KeystoreManager(
             if (exists()) return keystoreFile // 双检：等锁期间别线程已完成
             keystoreDir.mkdirs()
             val pass = passwordLocked()
-            val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+            val gen = KeyPairGenerator.getInstance("EC").apply {
+                initialize(java.security.spec.ECGenParameterSpec("secp256r1"))
+            }
+            val pair = gen.generateKeyPair()
             val cert = SelfSignedCert.generate(pair, CERT_CN)
             val ks = KeyStore.getInstance(STORE_TYPE)
             ks.load(null, null)

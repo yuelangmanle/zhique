@@ -10,9 +10,9 @@ import java.util.Calendar
 
 /**
  * 自签名 X.509 证书生成（零第三方依赖，DER 手工编码）：
- * RSA-2048 密钥对 → v3 自签名证书（SHA256withRSA，CN=织雀发布密钥），
- * 供 KeystoreManager 写入 PKCS12 密钥库。纯 JVM 可测；Android 与 JVM
- * 均有 CertificateFactory("X.509")，生成的证书两边一致。
+ * RSA 或 EC 密钥对 → v3 自签名证书（SHA256withRSA / SHA256withECDSA，
+ * CN=织雀发布密钥），供 KeystoreManager 写入 PKCS12 密钥库。
+ * 纯 JVM 可测；Android 与 JVM 均有 CertificateFactory("X.509")，生成的证书两边一致。
  */
 
 internal object SelfSignedCert {
@@ -29,22 +29,26 @@ internal object SelfSignedCert {
         now.add(Calendar.DAY_OF_YEAR, validDays.toInt() + 1)
         val notAfter = now.time
 
+        val isEc = keyPair.public is java.security.interfaces.ECPublicKey
+        val sigAlgOid = if (isEc) "1.2.840.10045.4.3.2" else "1.2.840.113549.1.1.11"
+        val sigAlgName = if (isEc) "SHA256withECDSA" else "SHA256withRSA"
+
         val issuer = name(cn)
         val spki = publicKeyInfo(keyPair)
         val tbs = sequence(
             tagged(0, integer(BigInteger.TWO)),                       // version v3
             integer(serial),
-            sequence(oid("1.2.840.113549.1.1.11"), null_()), // sha256WithRSAEncryption
+            sequence(oid(sigAlgOid), null_()),
             issuer,
             sequence(utcTime(notBefore), utcTime(notAfter)),
             issuer,                                      // 自签名：subject = issuer
             spki,
         )
-        val signer = java.security.Signature.getInstance("SHA256withRSA")
+        val signer = java.security.Signature.getInstance(sigAlgName)
         signer.initSign(keyPair.private)
         signer.update(tbs)
         val sig = signer.sign()
-        val certDer = sequence(tbs, sequence(oid("1.2.840.113549.1.1.11"), null_()), bitString(sig))
+        val certDer = sequence(tbs, sequence(oid(sigAlgOid), null_()), bitString(sig))
         return java.security.cert.CertificateFactory.getInstance("X.509")
             .generateCertificate(certDer.inputStream()) as X509Certificate
     }
@@ -56,16 +60,30 @@ internal object SelfSignedCert {
         ),
     )
 
-    private fun publicKeyInfo(keyPair: KeyPair): ByteArray {
-        val rsa = keyPair.public as RSAPublicKey
-        val rsaKey = sequence(
-            integer(rsa.modulus),
-            integer(rsa.publicExponent),
-        )
-        return sequence(
-            sequence(oid("1.2.840.113549.1.1.1"), null_()),
-            bitString(rsaKey),
-        )
+    private fun publicKeyInfo(keyPair: KeyPair): ByteArray = when (val pub = keyPair.public) {
+        is java.security.interfaces.ECPublicKey -> {
+            // SubjectPublicKeyInfo = SEQ(SEQ(ecPublicKey OID, prime256v1 OID), BITSTRING(未压缩点))
+            val w = pub.w
+            val point = byteArrayOf(0x04) +
+                bigIntTo32(w.affineX) + bigIntTo32(w.affineY)
+            val alg = sequence(oid("1.2.840.10045.2.1"), oid("1.2.840.10045.3.1.7"))
+            sequence(alg, bitString(point))
+        }
+        is RSAPublicKey -> {
+            val rsaKey = sequence(integer(pub.modulus), integer(pub.publicExponent))
+            sequence(sequence(oid("1.2.840.113549.1.1.1"), null_()), bitString(rsaKey))
+        }
+        else -> throw IllegalArgumentException("不支持的密钥算法：${pub.algorithm}")
+    }
+
+    /** 大整数定长 32 字节大端编码（P-256 坐标），前导补零。 */
+    private fun bigIntTo32(v: BigInteger): ByteArray {
+        val raw = v.toByteArray()
+        return when {
+            raw.size == 32 -> raw
+            raw.size > 32 -> raw.copyOfRange(raw.size - 32, raw.size) // 去符号补位字节
+            else -> ByteArray(32 - raw.size) + raw
+        }
     }
 
     // ---- DER 编码原语 ----
