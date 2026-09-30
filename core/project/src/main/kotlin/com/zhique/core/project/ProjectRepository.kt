@@ -80,6 +80,26 @@ class ProjectRepository(private val root: File) {
     /** 导出记录写回（M6：含证书 SHA-256，决策29 覆盖安装保证的锚点）。 */
     fun recordExport(id: String, record: ExportRecord): ProjectMeta = mutate(id) { it.export = record }
 
+    /** 远端仓库绑定写回（M7：owner/repo/branch + lastPushedSha 记忆）。 */
+    fun bindRepo(id: String, binding: RepoBinding): ProjectMeta = mutate(id) { it.repo = binding }
+
+    /**
+     * 发布任务状态机落盘（M7，规格 §4.8：每步完成即落盘证据）——
+     * `projects/<id>/history/release-job.json`，沿用原子写（崩溃不留半截状态）。
+     * 序列化在 `:core:publish` 侧完成，这里只管「字符串 → 磁盘」。
+     */
+    fun saveReleaseJobJson(id: String, json: String) {
+        val historyDir = File(dir(id), HISTORY_DIR)
+        historyDir.mkdirs()
+        historyDir.toPath().resolve(RELEASE_JOB_FILE).writeStringAtomic(json)
+    }
+
+    /** 读取发布任务状态机 JSON；无任务返回 null。 */
+    fun readReleaseJobJson(id: String): String? {
+        val f = File(dir(id), "$HISTORY_DIR/$RELEASE_JOB_FILE")
+        return if (f.isFile) f.readText() else null
+    }
+
     /** 元数据序列化（M6 导出：注入 APK assets/project/project.json 的品牌信息源）。 */
     fun metaJson(id: String): ByteArray = json.encodeToString(ProjectMeta.serializer(), meta(id)).toByteArray()
 
@@ -232,5 +252,6 @@ class ProjectRepository(private val root: File) {
     private companion object {
         const val META_FILE = "project.json"
         const val HISTORY_DIR = "history"
+        const val RELEASE_JOB_FILE = "release-job.json"
     }
 }
