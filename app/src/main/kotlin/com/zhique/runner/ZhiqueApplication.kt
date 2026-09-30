@@ -110,7 +110,17 @@ class AppContainer(
             api = { githubApi },
             pats = { patStore },
             engine = { releaseJobEngine },
+            apkResolver = { id -> exportedApk(id) },
         )
+    }
+
+    /** 导出管线工作目录（Release 附件按 包名-版本码 定位最新导出 APK）。 */
+    val exportWorkDir: File = File(context.cacheDir, "exports")
+
+    /** 项目最新一次导出的 APK（无导出记录或文件已被系统清理→null）。 */
+    fun exportedApk(projectId: String): File? {
+        val record = runCatching { repo.meta(projectId) }.getOrNull()?.export ?: return null
+        return File(exportWorkDir, "${record.packageName}-${record.versionCode}.apk").takeIf { it.isFile }
     }
 
     init {

@@ -38,6 +38,9 @@ data class PublishUiState(
     val repoPrivate: Boolean = true,
     val readme: Boolean = true,
     val license: Boolean = true,
+    val wantRelease: Boolean = true,   // 同时创建 GitHub Release（附 APK），默认开（规格 F8）
+    val tag: String = "v1.0.0",
+    val releaseApk: File? = null,
     val binding: RepoBinding? = null,
     val resumeStage: ReleaseStage? = null,
     val resumeCanceled: Boolean = false,
@@ -71,6 +74,8 @@ class PublishController(
     private val engine: ReleaseJobEngine,
     /** AI commit message 生成缝（null/失败→启发式兜底，规格 F11「AI 生成可改」）。 */
     private val aiCommitMessage: (suspend (String) -> String?)? = null,
+    /** 最新导出 APK 解析缝（Release 附件来源；null/缺失→无附件 Release）。 */
+    private val apkResolver: suspend (String) -> File? = { null },
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val onToast: (String) -> Unit = {},
@@ -95,6 +100,9 @@ class PublishController(
             val status = (if (hasGit) runCatching { git.status(repo.projectDir(projectId)) }.getOrNull() else null)
             val resumed = runCatching { engine.resume(projectId) }.getOrNull()
             val summary = status?.summary().orEmpty()
+            val export = meta?.export
+            val versionTag = export?.let { "v${it.versionName}" } ?: "v1.0.0"
+            val apk = runCatching { apkResolver(projectId) }.getOrNull()?.takeIf { it.isFile }
             // AI 预填 commit message（可改）：失败静默回落启发式
             val aiMsg = aiCommitMessage?.let { gen ->
                 runCatching { gen(summary.ifBlank { "初始化 ${meta?.name ?: projectId}" }) }.getOrNull()
@@ -109,6 +117,8 @@ class PublishController(
                     resumeStage = resumed?.stage,
                     resumeCanceled = resumed?.canceled ?: false,
                     repoName = cur.repoName.ifBlank { slug(meta?.name ?: "app") },
+                    tag = versionTag,
+                    releaseApk = apk,
                     commitMessage = cur.commitMessage.ifBlank {
                         aiMsg ?: "更新 ${meta?.name ?: projectId}（${status?.changes ?: 0} 处变更）"
                     },
@@ -126,6 +136,8 @@ class PublishController(
     fun setReadme(enabled: Boolean) = _state.update { it.copy(readme = enabled) }
 
     fun setLicense(enabled: Boolean) = _state.update { it.copy(license = enabled) }
+
+    fun setWantRelease(enabled: Boolean) = _state.update { it.copy(wantRelease = enabled) }
 
     /** 步进（0 起日常 0→1；首次 0→1→2→3）。 */
     fun next() {
@@ -156,12 +168,16 @@ class PublishController(
                 val binding = ensureBinding(snapshot)
                 val remoteUrl = "https://github.com/${binding.owner}/${binding.repo}.git"
                 // 断点任务接管（非取消的）；已取消/终态一律重新 plan（同项目新一次发布）
+                val release = snapshot.wantRelease
                 val job = engine.resume(projectId)?.takeIf { !it.canceled }
                     ?: engine.plan(
                         projectId = projectId,
                         remoteUrl = remoteUrl,
                         branch = binding.branch,
                         message = snapshot.commitMessage,
+                        tag = if (release) snapshot.tag else null,
+                        wantRelease = release,
+                        releaseAsset = if (release) snapshot.releaseApk?.absolutePath else null,
                     )
                 activeJob = job
                 var cur = job

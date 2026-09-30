@@ -69,12 +69,14 @@ class ReleaseJobTest {
         override fun remoteTagExists(remoteUrl: String, pat: String, tag: String): Boolean = tag in remoteTags
     }
 
-    /** API fake：Release 创建计数 + 可编程已有清单。 */
+    /** API fake：Release 创建计数 + 可编程已有清单 + 资产上传计数。 */
     private class FakeApi(
         var releases: MutableList<String> = mutableListOf(),
         var createCount: Int = 0,
     ) : GitHubApi() {
         var lastNotes: String? = null
+        var uploadCount = 0
+        var lastUpload: File? = null
         override fun listReleases(pat: String, owner: String, repo: String): List<ReleaseInfo> =
             releases.map { ReleaseInfo(id = it.hashCode().toLong(), tagName = it) }
         override fun createRelease(
@@ -83,7 +85,15 @@ class ReleaseJobTest {
             createCount++
             lastNotes = notes
             releases += tag
-            return ReleaseInfo(id = createCount.toLong(), tagName = tag, body = notes)
+            return ReleaseInfo(
+                id = createCount.toLong(), tagName = tag, body = notes,
+                uploadUrl = "https://uploads.example.com/repos/$owner/$repo/releases/$createCount/assets{?name}",
+            )
+        }
+        override fun uploadAsset(pat: String, uploadUrl: String, file: File, contentType: String): AssetInfo {
+            uploadCount++
+            lastUpload = file
+            return AssetInfo(id = uploadCount.toLong(), name = file.name, size = file.length())
         }
     }
 
@@ -343,6 +353,50 @@ class ReleaseJobTest {
         assertEquals(job, again, "终态幂等：同一实例原样返回")
         assertEquals(1, api.createCount)
         assertEquals("v9", e.latest(projectId)!!.tag)
+    }
+
+    @Test
+    fun `审查补测_带releaseAsset的plan走到RELEASED且uploadAsset被调用`() = runTest {
+        setupProject()
+        val apk = File(tmp.root, "app-1.apk").apply { writeBytes(ByteArray(32)) }
+        val api = FakeApi()
+        val git = FakeGit()
+        val e = engine(git, api)
+        var job = e.plan(
+            projectId, remote, message = "发布 1.0.2", tag = "v1.0.2",
+            wantRelease = true, releaseAsset = apk.absolutePath,
+        )
+        repeat(4) { job = e.advance(job) }
+        assertEquals(ReleaseStage.RELEASED, job.stage)
+        assertEquals("v1.0.2", job.tag)
+        assertEquals(1, git.pushCount)
+        assertEquals(1, api.createCount)
+        assertEquals(1, api.uploadCount, "Release 附 APK：uploadAsset 恰好一次")
+        assertEquals(apk, api.lastUpload)
+        // 落盘证据同样带 tag 与资产路径
+        val raw = repo.readReleaseJobJson(projectId)!!
+        assertTrue("\"tag\":\"v1.0.2\"" in raw)
+        assertTrue(apk.absolutePath in raw)
+
+        // 幂等：重复 advance（重放 PUSHED）不重建 Release、不重传资产
+        e.advance(job.copy(stage = ReleaseStage.PUSHED))
+        assertEquals(1, api.createCount)
+        assertEquals(1, api.uploadCount)
+    }
+
+    @Test
+    fun `审查补测_资产文件缺失时仍建Release不崩溃`() = runTest {
+        setupProject()
+        val api = FakeApi()
+        val e = engine(api = api)
+        var job = e.plan(
+            projectId, remote, message = "m", tag = "v2",
+            wantRelease = true, releaseAsset = File(tmp.root, "absent.apk").absolutePath,
+        )
+        repeat(4) { job = e.advance(job) }
+        assertEquals(ReleaseStage.RELEASED, job.stage)
+        assertEquals(1, api.createCount, "无附件也创建 Release")
+        assertEquals(0, api.uploadCount, "缺失文件不上传")
     }
 
     @Test

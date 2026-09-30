@@ -51,5 +51,11 @@ class ToolRegistry(private val tools: List<Tool>) {
             val v = (args as? JsonObject)?.get(key) as? JsonPrimitive ?: return null
             return if (v.isString) v.content.toIntOrNull() else v.content.toIntOrNull()
         }
+
+        /** 布尔参数：布尔/字符串字面两容（模型输出容错，同 [int] 纪律）。 */
+        fun bool(args: JsonElement, key: String): Boolean? {
+            val v = (args as? JsonObject)?.get(key) as? JsonPrimitive ?: return null
+            return v.content.toBooleanStrictOrNull()
+        }
     }
 }

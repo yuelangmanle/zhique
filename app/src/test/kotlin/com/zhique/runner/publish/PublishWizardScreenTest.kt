@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
+import com.zhique.core.publish.AssetInfo
 import com.zhique.core.publish.GitHubApi
 import com.zhique.core.publish.GitRepo
 import com.zhique.core.publish.PatStore
@@ -68,12 +69,37 @@ private class WizardGit(var failPush: Boolean = false) : GitRepo() {
 
 private class WizardApi : GitHubApi() {
     var created: Triple<String, Boolean, Boolean>? = null // name/private/autoInit
+    var createCount = 0
+    var uploadCount = 0
+    var lastUpload: File? = null
     override fun createRepo(pat: String, name: String, isPrivate: Boolean, autoInit: Boolean) =
         com.zhique.core.publish.RepoCreated(
             id = 1,
             fullName = "alice/${name}",
             owner = com.zhique.core.publish.RepoCreated.Owner("alice"),
         ).also { created = Triple(name, isPrivate, autoInit) }
+
+    var releases = mutableListOf<String>()
+
+    override fun listReleases(pat: String, owner: String, repo: String): List<ReleaseInfo> =
+        releases.map { ReleaseInfo(id = it.hashCode().toLong(), tagName = it) }
+
+    override fun createRelease(
+        pat: String, owner: String, repo: String, tag: String, notes: String, prerelease: Boolean,
+    ): ReleaseInfo {
+        createCount++
+        releases += tag
+        return ReleaseInfo(
+            id = createCount.toLong(), tagName = tag, body = notes,
+            uploadUrl = "https://uploads.example.com/releases/$createCount/assets{?name}",
+        )
+    }
+
+    override fun uploadAsset(pat: String, uploadUrl: String, file: File, contentType: String): AssetInfo {
+        uploadCount++
+        lastUpload = file
+        return AssetInfo(id = uploadCount.toLong(), name = file.name, size = file.length())
+    }
 }
 
 /**
@@ -97,6 +123,7 @@ class PublishWizardScreenTest {
         val api: WizardApi,
         val engine: ReleaseJobEngine,
         val projectId: String,
+        val exportedApk: File? = null,
     )
 
     private fun build(bound: Boolean, failPush: Boolean = false): Deps {
@@ -106,6 +133,19 @@ class PublishWizardScreenTest {
         if (bound) {
             repo.bindRepo(projectId, RepoBinding("alice", "bianqian"))
             File(repo.projectDir(projectId), ".git").mkdirs()
+            repo.recordExport(
+                projectId,
+                com.zhique.core.project.ExportRecord(
+                    "com.zhique.export.bianqian", 2, "1.0.2", 111L, "min", "c".repeat(64),
+                ),
+            )
+        }
+        val exportedApk = if (bound) {
+            File(root, "exports/com.zhique.export.bianqian-2.apk").apply {
+                parentFile.mkdirs(); writeBytes(ByteArray(24))
+            }
+        } else {
+            null
         }
         val git = WizardGit(failPush)
         val api = WizardApi()
@@ -113,7 +153,7 @@ class PublishWizardScreenTest {
             save("github_pat_" + "Z".repeat(20))
         }
         val engine = ReleaseJobEngine(repo, git, api, pats = pats, io = Dispatchers.Unconfined)
-        return Deps(repo, git, api, engine, projectId)
+        return Deps(repo, git, api, engine, projectId, exportedApk)
     }
 
     private fun setContent(
@@ -133,6 +173,7 @@ class PublishWizardScreenTest {
             },
             engine = deps.engine,
             aiCommitMessage = { summary -> "AI：更新便签" },
+            apkResolver = { deps.exportedApk },
             scope = scope,
             io = io,
             onToast = {},
@@ -252,6 +293,51 @@ class PublishWizardScreenTest {
             compose.onAllNodesWithTag("publish-resume-banner").fetchSemanticsNodes().isEmpty()
         }
         compose.onAllNodesWithTag("publish-resume-banner").assertCountEquals(0)
+    }
+
+    @Test
+    fun `审查补测_Release开关默认开_确认步可见tag并上传APK到RELEASED`() = runTest {
+        val deps = build(bound = true)
+        val controller = setContent(deps, testScheduler, this)
+        compose.onNodeWithTag("publish-next").performClick()
+        compose.waitUntil(10_000) { controller.state.value.releaseApk != null }
+        compose.waitForIdle()
+        // 确认步开关默认开，展示版本号与附件
+        compose.onNodeWithTag("publish-want-release").assertExists()
+        compose.onNodeWithTag("publish-release-tag")
+            .assertTextContains("v1.0.2", substring = true)
+        compose.onNodeWithTag("publish-release-tag")
+            .assertTextContains("bianqian-2.apk", substring = true)
+        compose.onNodeWithTag("publish-push").performClick()
+        compose.waitUntil(10_000) { deps.git.pushes == 1 }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("publish-done").fetchSemanticsNodes().isNotEmpty()
+        }
+        // 状态机走满 RELEASED：Release 创建 + APK 上传各一次，tag 证据落盘
+        assertEquals(ReleaseStage.RELEASED, deps.engine.latest(deps.projectId)!!.stage)
+        assertEquals("v1.0.2", deps.engine.latest(deps.projectId)!!.tag)
+        assertEquals(1, deps.api.createCount)
+        assertEquals(1, deps.api.uploadCount)
+        assertEquals(deps.exportedApk, deps.api.lastUpload)
+    }
+
+    @Test
+    fun `审查补测_关闭Release开关则止步推送不建Release不上传`() = runTest {
+        val deps = build(bound = true)
+        val controller = setContent(deps, testScheduler, this)
+        compose.onNodeWithTag("publish-next").performClick()
+        compose.waitUntil(10_000) { controller.state.value.releaseApk != null }
+        compose.waitForIdle()
+        compose.onNodeWithTag("publish-want-release").performClick() // 关闭（默认开）
+        compose.onNodeWithTag("publish-push").performClick()
+        compose.waitUntil(10_000) { deps.git.pushes == 1 }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("publish-done").fetchSemanticsNodes().isNotEmpty()
+        }
+        // 无 Release 证据：不建 Release、不上传、无 tag（可选步被跳过）
+        assertEquals(0, deps.api.createCount)
+        assertEquals(0, deps.api.uploadCount)
+        assertEquals(null, deps.engine.latest(deps.projectId)!!.tag)
     }
 
     @Test

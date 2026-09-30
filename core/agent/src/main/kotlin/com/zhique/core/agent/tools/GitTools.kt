@@ -30,7 +30,7 @@ object GitTools {
      */
     interface Gateway {
         suspend fun createRepo(projectId: String, name: String, isPrivate: Boolean): JsonObject
-        suspend fun push(projectId: String, message: String?): JsonObject
+        suspend fun push(projectId: String, message: String?, wantRelease: Boolean, tag: String?): JsonObject
         suspend fun readReleases(projectId: String): JsonObject
     }
 
@@ -103,16 +103,21 @@ internal object CreateRepoTool : GitToolBase(
 
 internal object PushTool : GitToolBase(
     GitTools.PUSH,
-    "提交并推送项目到绑定的 GitHub 仓库（状态机驱动，可断点续跑；需用户批准）",
+    "提交并推送项目到绑定的 GitHub 仓库（状态机驱动，可断点续跑；默认同时创建 GitHub Release 并附 APK；需用户批准）",
 ) {
     override val parametersJson =
-        """{"type":"object","properties":{"message":{"type":"string","description":"commit message，留空自动生成"}},"required":[]}"""
+        """{"type":"object","properties":{"message":{"type":"string","description":"commit message，留空自动生成"},"wantRelease":{"type":"boolean","description":"是否同时创建 GitHub Release（默认 true）"},"tag":{"type":"string","description":"Release tag，如 v1.0.0；留空按导出版本号"}},"required":[]}"""
 
     override suspend fun execute(
         g: GitTools.Gateway,
         ctx: ToolContext,
         args: JsonElement,
-    ): JsonObject = g.push(ctx.projectId, ToolRegistry.str(args, "message"))
+    ): JsonObject = g.push(
+        ctx.projectId,
+        ToolRegistry.str(args, "message"),
+        ToolRegistry.bool(args, "wantRelease") ?: true,
+        ToolRegistry.str(args, "tag"),
+    )
 }
 
 internal object ReadReleasesTool : GitToolBase(

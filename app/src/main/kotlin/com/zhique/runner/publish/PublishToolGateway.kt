@@ -8,6 +8,7 @@ import com.zhique.core.publish.ReleaseJobEngine
 import com.zhique.core.publish.ReleaseStage
 import com.zhique.core.project.ProjectRepository
 import com.zhique.core.project.RepoBinding
+import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -18,6 +19,8 @@ import kotlinx.serialization.json.put
  * Agent git 工具的真实实现（M7 接线，Task 7.2）：容器构造时 `GitTools.bind`，
  * 工具仍走 requiresConfirm 批准闸。所有返回折叠为 `status/detail` JSON 供模型消费，
  * 凭据不出现在任何文本（底层 SecretRedactor 已兜底）。
+ *
+ * [apkResolver]：按项目解析最新导出的 APK（Release 附件来源；找不到则建无附件 Release）。
  */
 class PublishToolGateway(
     private val repo: ProjectRepository,
@@ -25,6 +28,7 @@ class PublishToolGateway(
     private val api: () -> GitHubApi,
     private val pats: () -> PatStore,
     private val engine: () -> ReleaseJobEngine,
+    private val apkResolver: suspend (String) -> File? = { null },
 ) : GitTools.Gateway {
 
     private val json = Json { encodeDefaults = true }
@@ -43,18 +47,28 @@ class PublishToolGateway(
             }
         }.getOrElse { e -> errorOf("create_repo", e) }
 
-    override suspend fun push(projectId: String, message: String?): JsonObject =
+    override suspend fun push(
+        projectId: String,
+        message: String?,
+        wantRelease: Boolean,
+        tag: String?,
+    ): JsonObject =
         runCatching {
             val meta = repo.meta(projectId)
             val binding = meta.repo
                 ?: error("项目未绑定远端仓库——先 create_repo 或在发布向导中绑定")
             val remoteUrl = "https://github.com/${binding.owner}/${binding.repo}.git"
             val e = engine()
+            val resolvedTag = tag ?: defaultTag(meta)
+            val asset = if (wantRelease) apkResolver(projectId) else null
             val job = e.resume(projectId) ?: e.plan(
                 projectId = projectId,
                 remoteUrl = remoteUrl,
                 branch = binding.branch,
                 message = message ?: "更新 ${meta.name}",
+                tag = if (wantRelease) resolvedTag else null,
+                wantRelease = wantRelease,
+                releaseAsset = asset?.takeIf { it.isFile }?.absolutePath,
             )
             var cur = job
             while (!cur.terminal) cur = e.advance(cur)
@@ -63,7 +77,12 @@ class PublishToolGateway(
                 put("status", "ok")
                 put("stage", cur.stage.name)
                 put("sha", cur.commitSha ?: "")
-                put("detail", "已推送 ${binding.owner}/${binding.repo}@${binding.branch}")
+                cur.tag?.let { put("tag", it) }
+                put(
+                    "detail",
+                    "已推送 ${binding.owner}/${binding.repo}@${binding.branch}" +
+                        (cur.tag?.let { "，Release $it 已创建" } ?: ""),
+                )
             }
         }.getOrElse { err -> errorOf("push", err) }
 
@@ -102,4 +121,8 @@ class PublishToolGateway(
     }
 
     private fun error(message: String): Nothing = throw IllegalStateException(message)
+
+    /** Release tag 缺省：导出记录版本号（无导出记录回退 v1.0.0）。 */
+    private fun defaultTag(meta: com.zhique.core.project.ProjectMeta): String =
+        meta.export?.let { "v${it.versionName}" } ?: "v1.0.0"
 }

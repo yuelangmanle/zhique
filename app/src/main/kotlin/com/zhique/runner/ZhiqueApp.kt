@@ -330,6 +330,9 @@ fun ZhiqueApp(
                                 pats = container.patStore,
                                 engine = container.releaseJobEngine,
                                 aiCommitMessage = { summary -> aiGen?.invoke(summary) },
+                                apkResolver = { id ->
+                                    withContext(Dispatchers.IO) { container.exportedApk(id) }
+                                },
                                 scope = scope,
                                 onToast = toast,
                             )

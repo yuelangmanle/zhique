@@ -127,7 +127,15 @@ open class ReleaseJobEngine(
                             )
                             // 幂等核对：远端已有该 tag 的 Release → 跳过重做
                             val exists = api.listReleases(pat, owner, repoName).any { it.tagName == t }
-                            if (!exists) api.createRelease(pat, owner, repoName, t, job.message ?: t)
+                            if (!exists) {
+                                val release = api.createRelease(pat, owner, repoName, t, job.message ?: t)
+                                // 附 APK 资产（规格 F8：Release 页可下载安装包）；模板 uploadUrl 剥离占位后直传
+                                val asset = job.releaseAsset?.takeIf { it.isNotBlank() }
+                                if (asset != null && release.uploadUrl != null) {
+                                    val f = File(asset)
+                                    if (f.isFile) api.uploadAsset(pat, release.uploadUrl!!, f)
+                                }
+                            }
                             tag = t
                         }
                         persist(job, ReleaseStage.RELEASED, tag = tag)

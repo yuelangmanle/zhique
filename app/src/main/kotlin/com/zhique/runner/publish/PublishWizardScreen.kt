@@ -298,6 +298,25 @@ private fun ConfirmStep(controller: PublishController, state: PublishUiState) {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.testTag("publish-confirm-message"),
         )
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("publish-release-row")) {
+            Switch(
+                checked = state.wantRelease,
+                onCheckedChange = controller::setWantRelease,
+                modifier = Modifier.testTag("publish-want-release"),
+            )
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text("同时创建 GitHub Release（附 APK）", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (state.releaseApk != null) "Release ${state.tag} · 附件 ${state.releaseApk!!.name}"
+                    else "Release ${state.tag}（未找到已导出 APK，将无附件）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("publish-release-tag"),
+                )
+            }
+        }
         state.error?.let {
             Spacer(Modifier.height(12.dp))
             Text(

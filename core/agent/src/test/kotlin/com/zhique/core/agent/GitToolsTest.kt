@@ -46,8 +46,12 @@ class GitToolsTest {
                 put("full_name", "alice/$name")
             }
         }
-        override suspend fun push(projectId: String, message: String?): JsonObject {
+        var pushedWantRelease: Boolean? = null
+        var pushedTag: String? = null
+        override suspend fun push(projectId: String, message: String?, wantRelease: Boolean, tag: String?): JsonObject {
             pushedMessage = message
+            pushedWantRelease = wantRelease
+            pushedTag = tag
             return buildJsonObject {
                 put("status", "ok")
                 put("stage", "RELEASED")
@@ -92,6 +96,18 @@ class GitToolsTest {
         val out = invoke(GitTools.PUSH, """{"message":"更新首页"}""")
         assertEquals("RELEASED", out["stage"]!!.jsonPrimitive.content)
         assertEquals("更新首页", gw.pushedMessage)
+        assertEquals(true, gw.pushedWantRelease, "缺省含 Release（发布语义）")
+        GitTools.bind(null)
+    }
+
+    @Test
+    fun `push透传wantRelease与tag到发布计划`() = runTest {
+        val gw = FakeGateway()
+        GitTools.bind(gw)
+        invoke(GitTools.PUSH, """{"message":"m","wantRelease":false}""")
+        assertEquals(false, gw.pushedWantRelease)
+        invoke(GitTools.PUSH, """{"tag":"v2.0.0"}""")
+        assertEquals("v2.0.0", gw.pushedTag)
         GitTools.bind(null)
     }
 
@@ -100,7 +116,7 @@ class GitToolsTest {
         GitTools.bind(object : GitTools.Gateway {
             override suspend fun createRepo(projectId: String, name: String, isPrivate: Boolean) =
                 throw IllegalStateException("尚未配置 GitHub PAT")
-            override suspend fun push(projectId: String, message: String?) =
+            override suspend fun push(projectId: String, message: String?, wantRelease: Boolean, tag: String?) =
                 throw IllegalStateException("push 失败")
             override suspend fun readReleases(projectId: String) =
                 throw IllegalStateException("no repo")
