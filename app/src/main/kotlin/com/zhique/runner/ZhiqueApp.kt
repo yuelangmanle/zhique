@@ -15,8 +15,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.zhique.core.ai.ModelListFetcher
 import com.zhique.core.project.ProjectMeta
+import com.zhique.runner.home.HomeController
 import com.zhique.runner.home.HomeScreen
+import com.zhique.runner.onboarding.OnboardingController
+import com.zhique.runner.onboarding.OnboardingScreen
 import com.zhique.runner.paste.PastePreviewController
 import com.zhique.runner.paste.PastePreviewScreen
 import com.zhique.runner.runner.RunnerScreen
@@ -39,6 +43,12 @@ fun ZhiqueApp(
     var pendingProjectId by rememberSaveable { mutableStateOf<String?>(null) }
     var runnerProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var pasteDraft by remember { mutableStateOf<String?>(null) }
+
+    // 首启引导：仅在未完成时显示（X4）
+    var onboardingNeeded by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(Unit) {
+        onboardingNeeded = !container.onboardingPrefs.isDone()
+    }
 
     val toast: (String) -> Unit = { msg ->
         scope.launch { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
@@ -69,6 +79,33 @@ fun ZhiqueApp(
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val meta = runnerProject
         when {
+            onboardingNeeded == null -> Unit // 引导状态读取中
+            onboardingNeeded == true -> OnboardingScreen(
+                controller = remember {
+                    OnboardingController(
+                        store = container.providerStore,
+                        prefs = container.onboardingPrefs,
+                        fetcher = ModelListFetcher(),
+                        scope = scope,
+                        onDone = { onboardingNeeded = false },
+                        onSkipPlaySample = {
+                            onboardingNeeded = false
+                            scope.launch(Dispatchers.IO) {
+                                val created = runCatching {
+                                    container.repo.create(HomeController.SAMPLE_NAME, HomeController.EMPTY_HTML)
+                                }.getOrNull()
+                                withContext(Dispatchers.Main) {
+                                    if (created != null) {
+                                        pendingProjectId = created.id
+                                    } else {
+                                        toast("示例创建失败")
+                                    }
+                                }
+                            }
+                        },
+                    )
+                },
+            )
             meta != null -> RunnerScreen(
                 project = meta,
                 projectDir = container.projectDir(meta.id),

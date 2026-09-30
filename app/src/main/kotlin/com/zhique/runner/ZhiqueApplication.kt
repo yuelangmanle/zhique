@@ -3,8 +3,15 @@ package com.zhique.runner
 import android.app.Application
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import com.zhique.core.common.crypto.CryptoStore
 import com.zhique.core.project.ProjectRepository
 import com.zhique.runner.paste.PastePreferences
+import com.zhique.runner.settings.AndroidKeystoreProvider
+import com.zhique.runner.settings.ProviderStore
+import com.zhique.runner.settings.RoleBindingStore
 import java.io.File
 
 /** 进程级依赖容器。 */
@@ -14,6 +21,25 @@ class AppContainer(context: Application) {
 
     /** 粘贴偏好（DataStore，进程内单实例）。 */
     val pastePreferences: PastePreferences by lazy { PastePreferences.fromContext(context) }
+
+    /** 设置域共享 DataStore（Provider/角色绑定/引导/用量，进程内单实例）。 */
+    private val settingsDataStore: DataStore<Preferences> by lazy {
+        val dir = File(context.filesDir, "datastore").apply { mkdirs() }
+        PreferenceDataStoreFactory.create(produceFile = { File(dir, "settings.preferences_pb") })
+    }
+
+    /** Provider 配置仓：Key 经 AndroidKeystore 主密钥加密（规格 §4.4）。 */
+    val providerStore: ProviderStore by lazy {
+        ProviderStore(settingsDataStore, CryptoStore(AndroidKeystoreProvider()))
+    }
+
+    val roleBindingStore: RoleBindingStore by lazy { RoleBindingStore(settingsDataStore) }
+    val usageMeter: com.zhique.core.ai.UsageMeter by lazy {
+        com.zhique.core.ai.UsageMeter(com.zhique.runner.settings.DataStoreUsageStore(settingsDataStore))
+    }
+    val onboardingPrefs: com.zhique.runner.onboarding.OnboardingPreferences by lazy {
+        com.zhique.runner.onboarding.OnboardingPreferences(settingsDataStore)
+    }
 
     fun projectDir(projectId: String): File = File(root, "projects/$projectId")
 }
