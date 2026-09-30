@@ -382,12 +382,19 @@ fun ZhiqueApp(
                                 onToast = toast,
                             )
                         }
+                        "about" -> AboutPage(
+                            container = container,
+                            scope = scope,
+                            onBack = { settingsPage = null },
+                            onToast = toast,
+                        )
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },
                             onOpenProviders = { settingsPage = "providers" },
                             onOpenRoleRouter = { settingsPage = "router" },
                             onOpenPermissionCenter = { settingsPage = "permissions" },
                             onOpenPublishSync = { settingsPage = "publish" },
+                            onOpenAbout = { settingsPage = "about" },
                         )
                     }
                     else -> HomeScreen(
@@ -526,6 +533,47 @@ private fun RoleRouterPage(
             )
         }
     }
+}
+
+/** 关于页（M7 Task 7.3）：版本真值 + 真实 UpdateChecker（GitHub Releases 自更新）。 */
+@Composable
+private fun AboutPage(
+    container: AppContainer,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onBack: () -> Unit,
+    onToast: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val version = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+        }.getOrDefault("0.0.0")
+    }
+    val downloadsDir = remember {
+        @Suppress("DEPRECATION")
+        context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+            ?: java.io.File(context.filesDir, "updates")
+    }
+    val controller = remember {
+        val checker = com.zhique.core.publish.UpdateChecker(container.githubApi)
+        com.zhique.runner.settings.AboutController(
+            currentVersion = version,
+            channelProvider = { container.publishPreferences.channelNow() },
+            check = { channel, current -> checker.check(channel, current) },
+            changelogs = {
+                container.githubApi.listReleases("", UpdateCheckerRefs.owner, UpdateCheckerRefs.repo)
+            },
+            download = { info, dir, onProgress -> checker.downloadApk(info, dir, onProgress) },
+            downloadsDir = downloadsDir,
+            scope = scope,
+        )
+    }
+    com.zhique.runner.settings.AboutScreen(controller = controller, onBack = onBack, onToast = onToast)
+}
+
+private object UpdateCheckerRefs {
+    const val owner = com.zhique.core.publish.UpdateChecker.ZHIQUE_OWNER
+    const val repo = com.zhique.core.publish.UpdateChecker.ZHIQUE_REPO
 }
 
 /** 权限中心页（M5）：注册表 + 项目焦点；「导出与签名」入口切到导出中心（M6 接线）。 */

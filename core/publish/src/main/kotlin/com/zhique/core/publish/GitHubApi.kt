@@ -83,7 +83,7 @@ open class GitHubApi(
 
     private fun request(pat: String, builder: Request.Builder.() -> Unit): okhttp3.Response {
         val request = Request.Builder()
-            .header("Authorization", "Bearer $pat")
+            .apply { if (pat.isNotBlank()) header("Authorization", "Bearer $pat") }
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", API_VERSION)
             .apply(builder)
