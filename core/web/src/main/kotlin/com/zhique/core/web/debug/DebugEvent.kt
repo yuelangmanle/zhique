@@ -34,6 +34,7 @@ data class DebugEvent(
     val ns: String? = null,
     val fn: String? = null,
     val args: String? = null,
+    val timeout: Long? = null, // zq_call 分级超时元数据（页面侧声明，native 同表强制）
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }

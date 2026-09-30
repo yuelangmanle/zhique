@@ -38,6 +38,15 @@ class ZqDispatcher(private val env: ZqEnv) {
         }
     }
 
+    /**
+     * 运行器销毁时的全量关停（审查修复 I2）：逐能力注销系统监听/相机，
+     * 取消全部订阅句柄与取景浮层——杜绝退出后 GPS/传感器仍向已销毁 WebView 推送。
+     */
+    fun shutdown() {
+        capabilities.values.forEach { runCatching { it.shutdown() } }
+        env.subs.cancelAll()
+    }
+
     /** 单次 zq_call 的完整调度（授权 → 执行 → 回写）。 */
     suspend fun handle(event: DebugEvent) {
         val id = event.id ?: return // 无 id 无法 settle，忽略
@@ -68,7 +77,13 @@ class ZqDispatcher(private val env: ZqEnv) {
                 env.evaluateJs(ZqProtocol.resolveJs(id, ok = true, SYSTEM_DENIED_JSON))
                 return
             }
-            val result = cap.call(fn, args, env)
+            // native 侧同表分级超时（页面侧只做兜底）：超时回 rejected 防 pending 泄漏
+            val budget = event.timeout?.takeIf { it > 0 } ?: ZqProtocol.timeoutMs(event.ns, event.fn)
+            val result = try {
+                kotlinx.coroutines.withTimeout(budget) { cap.call(fn, args, env) }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                throw IllegalStateException("timeout: $ns.$fn 超过 ${budget}ms")
+            }
             env.registry.recordUse(env.projectId, cap.required.id)
             env.evaluateJs(ZqProtocol.resolveJs(id, ok = true, result.toString()))
         } catch (e: CancellationException) {

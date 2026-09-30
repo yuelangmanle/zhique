@@ -20,6 +20,11 @@ object ZqPaths {
     }
 }
 
+/** 内联回传（dataURL / readText）的大小上限（质量审查 Minor #7）。 */
+object ZqLimits {
+    const val MAX_INLINE_BYTES: Long = 8L * 1024 * 1024
+}
+
 /**
  * 流式订阅登记表（zq.location.watch / zq.sensor.watch 的 sub 句柄）。
  * 纯逻辑：native 侧每个事件推送前复查 [isActive]，吊销/取消即停流。
@@ -40,4 +45,11 @@ class Subscriptions {
     fun isActive(id: String): Boolean = synchronized(lock) { id in active }
 
     fun count(): Int = synchronized(lock) { active.size }
+
+    /** 全量关停（运行器销毁时）：返回取消的句柄数。 */
+    fun cancelAll(): Int = synchronized(lock) {
+        val n = active.size
+        active.clear()
+        n
+    }
 }

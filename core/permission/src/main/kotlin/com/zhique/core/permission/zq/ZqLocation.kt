@@ -32,10 +32,14 @@ class ZqLocation : ZqCapability {
 
     private val listeners = ConcurrentHashMap<String, LocationListener>()
 
+    @Volatile
+    private var lmRef: LocationManager? = null
+
     override suspend fun call(fn: String, args: JsonObject, env: ZqEnv): JsonElement {
         val context = env.appContext ?: throw IllegalStateException("无宿主环境")
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             ?: throw IllegalStateException("定位服务不可用")
+        lmRef = lm
         return when (fn) {
             "get" -> {
                 requireSystemPermission(context)
@@ -80,6 +84,13 @@ class ZqLocation : ZqCapability {
             }
             else -> throw IllegalArgumentException("zq.location 未知方法: $fn")
         }
+    }
+
+/** 运行器销毁：注销全部位置监听 + 清订阅（审查修复 I2）。 */
+    override fun shutdown() {
+        val lm = lmRef
+        listeners.values.forEach { l -> runCatching { lm?.removeUpdates(l) } }
+        listeners.clear()
     }
 
     private fun candidates(lm: LocationManager): List<String> =

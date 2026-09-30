@@ -25,6 +25,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.zhique.core.permission.OsPermissionGateway
 import com.zhique.core.permission.PermissionRegistry
 import com.zhique.core.permission.zq.ProjectionGateway
+import com.zhique.core.permission.zq.ProjectionSession
 import com.zhique.core.permission.zq.SafGateway
 import com.zhique.core.permission.zq.ZqBluetooth
 import com.zhique.core.permission.zq.ZqCamera
@@ -196,7 +197,7 @@ class ActivityProjectionGateway(private val activity: ComponentActivity) : Proje
 
     private val seq = java.util.concurrent.atomic.AtomicInteger()
 
-    override suspend fun projection(): android.media.projection.MediaProjection? {
+    override suspend fun session(): ProjectionSession? {
         val mpm = activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
             as? android.media.projection.MediaProjectionManager ?: return null
         val result = suspendCancellableCoroutine<Pair<Int, android.content.Intent?>?> { cont ->
@@ -218,16 +219,74 @@ class ActivityProjectionGateway(private val activity: ComponentActivity) : Proje
         if (code != android.app.Activity.RESULT_OK || data == null) return null
         // API34+：getMediaProjection/createVirtualDisplay 前必须先起 mediaProjection 前台服务
         com.zhique.runner.screen.ZqScreenServiceController.start(activity)
-        val projection = mpm.getMediaProjection(code, data)
-        projection?.registerCallback(
-            object : android.media.projection.MediaProjection.Callback() {
-                override fun onStop() {
-                    com.zhique.runner.screen.ZqScreenServiceController.stop(activity)
-                }
-            },
-            android.os.Handler(activity.mainLooper),
+        val projection = mpm.getMediaProjection(code, data) ?: return null
+        return MediaProjectionSession(activity, projection)
+    }
+}
+
+/**
+ * MediaProjection → [ProjectionSession] 适配（审查修复 I1）：[stop] 反注册
+ * 回调 + 释放 VirtualDisplay/ImageReader + projection.stop()，幂等；
+ * 投影系统级停止时自动收掉前台服务。
+ */
+private class MediaProjectionSession(
+    private val activity: ComponentActivity,
+    private val projection: android.media.projection.MediaProjection,
+) : ProjectionSession {
+
+    private val handler = android.os.Handler(activity.mainLooper)
+    private var reader: android.media.ImageReader? = null
+    private var display: android.hardware.display.VirtualDisplay? = null
+    private var stopped = false
+
+    private val callback = object : android.media.projection.MediaProjection.Callback() {
+        override fun onStop() {
+            com.zhique.runner.screen.ZqScreenServiceController.stop(activity)
+        }
+    }
+
+    init {
+        projection.registerCallback(callback, handler)
+    }
+
+    override suspend fun grabFrame(timeoutMs: Long): android.graphics.Bitmap? {
+        val metrics = activity.resources.displayMetrics
+        val width = metrics.widthPixels
+        val height = metrics.heightPixels
+        val newReader = android.media.ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
+        reader = newReader
+        val newDisplay = projection.createVirtualDisplay(
+            "zhique-zq-screen",
+            width, height, metrics.densityDpi,
+            android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            newReader.surface, null, null,
         )
-        return projection
+        display = newDisplay
+        val image = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            suspendCancellableCoroutine<android.media.Image> { cont ->
+                newReader.setOnImageAvailableListener({ r ->
+                    val img = r.acquireLatestImage()
+                    if (img != null && cont.isActive) cont.resume(img)
+                }, handler)
+            }
+        } ?: return null
+        return try {
+            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            bitmap.copyPixelsFromBuffer(image.planes[0].buffer)
+            bitmap
+        } finally {
+            image.close()
+        }
+    }
+
+    override fun stop() {
+        if (stopped) return
+        stopped = true
+        runCatching { display?.release() }
+        runCatching { reader?.close() }
+        runCatching { projection.unregisterCallback(callback) }
+        runCatching { projection.stop() }
+        com.zhique.runner.screen.ZqScreenServiceController.stop(activity)
     }
 }
 

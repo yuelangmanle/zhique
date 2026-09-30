@@ -429,3 +429,46 @@ class PermissionRegistryTest {
         assertEquals(1, before, "首次授予恰弹一张卡")
     }
 }
+
+/** 审查修复 I4：进程死亡遗留的 ASKING → 无在途卡即按 NOT_ASKED 复原（可重弹）。 */
+class PermissionRegistryAskingRecoveryTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    @Test
+    fun `孤儿ASKING按NOT_ASKED复原并写回`() {
+        val repo = ProjectRepository(tmp.newFolder())
+        val pid = repo.create("崩溃项目", "<p></p>").id
+        repo.setPermission(pid, "camera", "ASKING", lastAsked = 1L) // 模拟进程死亡残留
+        val reopened = PermissionRegistry(repo) // 重启：pending 表为空
+        assertEquals(PState.NOT_ASKED, reopened.state(pid, "camera"))
+        assertEquals(PState.NOT_ASKED, reopened.matrix(pid)["camera"])
+        assertEquals("NOT_ASKED", repo.meta(pid).permissions["camera"]?.state, "复原必须写回磁盘")
+    }
+
+    @Test
+    fun `复原后request重新弹卡`() = runTest {
+        val repo = ProjectRepository(tmp.newFolder())
+        val pid = repo.create("崩溃重弹项目", "<p></p>").id
+        repo.setPermission(pid, "mic", "ASKING", lastAsked = 1L)
+        var asked = 0
+        val reg = PermissionRegistry(repo, prompt = { asked++; true })
+        assertEquals(PState.GRANTED, reg.request(pid, "mic", "崩溃后重试"), "孤儿 ASKING 不得吞掉后续请求")
+        assertEquals(1, asked, "复原后必须重新弹卡（不误判为已在询问）")
+    }
+
+    @Test
+    fun `在途ASKING不受复原逻辑影响`() = runTest {
+        val repo = ProjectRepository(tmp.newFolder())
+        val pid = repo.create("在途项目", "<p></p>").id
+        val gate = CompletableDeferred<Boolean>()
+        val reg = PermissionRegistry(repo, prompt = { gate.await() })
+        val job = launch { reg.request(pid, "camera", "在途") }
+        advanceUntilIdle()
+        assertEquals(PState.ASKING, reg.state(pid, "camera"), "有在途卡时 ASKING 语义不变")
+        gate.complete(true)
+        job.join()
+        assertEquals(PState.GRANTED, reg.state(pid, "camera"))
+    }
+}

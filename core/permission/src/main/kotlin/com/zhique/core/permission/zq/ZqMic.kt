@@ -8,6 +8,7 @@ import com.zhique.core.permission.Capability
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,7 +38,7 @@ class ZqMic : ZqCapability {
         val dir = File(env.projectDir, "audio").apply { mkdirs() }
         val out = File(dir, "zq-${System.currentTimeMillis()}.wav")
 
-        val pcm = withContext(Dispatchers.IO) { recordPcm(seconds) }
+        val pcm = withContext(Dispatchers.IO) { recordPcm(seconds) { isActive } }
         out.writeBytes(Wav.fromPcm(pcm, SAMPLE_RATE))
         return buildJsonObject {
             put("path", out.relativeTo(env.projectDir).path)
@@ -46,8 +47,8 @@ class ZqMic : ZqCapability {
         }
     }
 
-    /** 阻塞录制定长 PCM（IO 线程）；静默失败返回已录到的部分。 */
-    private fun recordPcm(seconds: Int): ByteArray {
+    /** 阻塞录制定长 PCM（IO 线程）；每轮检查协程取消（审查修复 Minor #6），取消即停写。 */
+    private fun recordPcm(seconds: Int, shouldContinue: () -> Boolean): ByteArray {
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val buffer = ByteArrayOutputStream()
         val recorder = AudioRecord(
@@ -64,7 +65,7 @@ class ZqMic : ZqCapability {
             recorder.startRecording()
             val chunk = ByteArray(2048)
             val deadline = System.currentTimeMillis() + seconds * 1000L
-            while (System.currentTimeMillis() < deadline) {
+            while (System.currentTimeMillis() < deadline && shouldContinue()) {
                 val n = recorder.read(chunk, 0, chunk.size)
                 if (n > 0) buffer.write(chunk, 0, n)
             }

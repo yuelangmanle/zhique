@@ -123,15 +123,11 @@ class PermissionRegistry(
     fun manifestForExport(projectId: String): List<String> =
         Capability.manifestFor(suggestForExport(projectId))
 
-    /** 权限中心矩阵：全部能力 × 当前状态（未记录的能力 = NOT_ASKED）。 */
+    /** 权限中心矩阵：全部能力 × 当前状态（未记录的能力 = NOT_ASKED；孤儿 ASKING 复原）。 */
     fun matrix(projectId: String): Map<String, PState> {
-        val meta = runCatching { repo.meta(projectId) }.getOrNull() ?: return emptyMap()
+        runCatching { repo.meta(projectId) }.getOrNull() ?: return emptyMap()
         val out = Capability.ALL.associate { it.id to PState.NOT_ASKED }.toMutableMap()
-        for ((cap, rec) in meta.permissions) {
-            if (cap in out) {
-                out[cap] = runCatching { PState.valueOf(rec.state) }.getOrDefault(PState.NOT_ASKED)
-            }
-        }
+        for (cap in Capability.ALL) out[cap.id] = readState(projectId, cap.id)
         return out
     }
 
@@ -140,7 +136,17 @@ class PermissionRegistry(
     private fun readState(projectId: String, capability: String): PState {
         val record = runCatching { repo.meta(projectId).permissions[capability] }.getOrNull()
             ?: return PState.NOT_ASKED
-        return runCatching { PState.valueOf(record.state) }.getOrDefault(PState.NOT_ASKED)
+        val stored = runCatching { PState.valueOf(record.state) }.getOrDefault(PState.NOT_ASKED)
+        // 审查修复 I4：进程死亡可能把 ASKING 留在盘上——无在途授权卡的 ASKING
+        // 是未完成请求，按 NOT_ASKED 对外并写回复原（下次 request 正常重弹）
+        if (stored == PState.ASKING) {
+            val hasPending = synchronized(lock) { pending.containsKey(key(projectId, capability)) }
+            if (!hasPending) {
+                persist(projectId, capability, PState.NOT_ASKED)
+                return PState.NOT_ASKED
+            }
+        }
+        return stored
     }
 
     private fun persist(projectId: String, capability: String, state: PState) {

@@ -31,10 +31,14 @@ class ZqSensor : ZqCapability {
 
     private val listeners = ConcurrentHashMap<String, SensorEventListener>()
 
+    @Volatile
+    private var smRef: SensorManager? = null
+
     override suspend fun call(fn: String, args: JsonObject, env: ZqEnv): JsonElement {
         val context = env.appContext ?: throw IllegalStateException("无宿主环境")
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
             ?: throw IllegalStateException("传感器服务不可用")
+        smRef = sm
         return when (fn) {
             "watch" -> {
                 val spec = Spec.parse(args.zqOptText("type") ?: "", args.zqOptText("rate"))
@@ -78,6 +82,13 @@ class ZqSensor : ZqCapability {
             }
             else -> throw IllegalArgumentException("zq.sensor 未知方法: $fn")
         }
+    }
+
+/** 运行器销毁：注销全部传感器监听 + 清订阅（审查修复 I2）。 */
+    override fun shutdown() {
+        val sm = smRef
+        listeners.values.forEach { l -> runCatching { sm?.unregisterListener(l) } }
+        listeners.clear()
     }
 
     /** 类型/频率映射（纯逻辑；常量为 API 1 起稳定的 SensorManager 常量）。 */

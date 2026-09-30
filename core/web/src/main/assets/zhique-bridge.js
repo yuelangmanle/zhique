@@ -34,15 +34,17 @@
   }, 1200));
   // zq.* 桥（M5）：请求-响应走 Proxy → zq_call/__zqResolve；
   // 订阅流（sensor/location）走 zq.on(sub, cb) + native 侧 __zqEvent 推送
+  const ZQ_TIMEOUTS = { 'mic.record': 120000, 'screen.capture': 120000 }; // 分级超时（Minor #5，与 ZqProtocol.timeoutMs 一致）
   window.zq = Z.api = new Proxy({}, { get: (_, ns) => ns === 'on'
     ? (sub, cb) => { Z.subs = Z.subs || {}; Z.subs[sub] = cb; return sub; }
     : new Proxy({}, { get: (__, fn) => (...args) =>
     new Promise((res, rej) => {
       const id = ++Z.seq;
+      const timeout = ZQ_TIMEOUTS[ns + '.' + fn] || 30000;
       Z.pending = Z.pending || {}; Z.pending[id] = { res, rej };
-      post('zq_call', { id, ns, fn, args: JSON.stringify(args || []) });
-      // 30s 超时兜底：native 侧未命中/丢失时 promise 也必须 settle，防 pending 泄漏
-      setTimeout(() => { if (Z.pending && Z.pending[id]) window.__zqResolve(id, false, 'timeout: ' + ns + '.' + fn); }, 30000);
+      post('zq_call', { id, ns, fn, args: JSON.stringify(args || []), timeout: timeout });
+      // 分级超时兜底：native 侧未命中/丢失时 promise 也必须 settle，防 pending 泄漏
+      setTimeout(() => { if (Z.pending && Z.pending[id]) window.__zqResolve(id, false, 'timeout: ' + ns + '.' + fn); }, timeout);
     }) }) });
   window.__zqResolve = (id, ok, value) => { const p = Z.pending && Z.pending[id]; if (p) { delete Z.pending[id]; ok ? p.res(JSON.parse(value)) : p.rej(new Error(value)); } };
   window.__zqEvent = (sub, value) => { const s = Z.subs && Z.subs[sub]; if (s) { try { s(JSON.parse(value)); } catch (e) {} } };

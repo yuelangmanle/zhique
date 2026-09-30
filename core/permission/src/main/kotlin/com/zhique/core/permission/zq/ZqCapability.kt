@@ -34,6 +34,12 @@ interface ZqCapability {
      * （`__zqResolve(id, true, json)`）。抛错 → 页面拿到 rejected。
      */
     suspend fun call(fn: String, args: JsonObject, env: ZqEnv): JsonElement
+
+    /**
+     * 运行器销毁时的资源关停（审查修复 I2）：注销系统监听/相机/取景浮层，
+     * 停掉仍在向已销毁 WebView 推送的流。默认无资源。
+     */
+    fun shutdown() {}
 }
 
 /** SAF pick/save 网关（Activity Result 在 :app 侧注册）。 */
@@ -42,9 +48,23 @@ interface SafGateway {
     suspend fun save(name: String, mime: String?, content: String): JsonElement
 }
 
+/**
+ * 投影会话最小面（审查修复 I1）：MediaProjection 适配在 :app，[stop] 必须
+ * 反注册回调并停投影（幂等）——调用方在 finally 里调用，杜绝投影指示灯/
+ * 常驻通知滞留。测试用假会话记录 stop 语义。
+ */
+interface ProjectionSession {
+    /** 抓一帧屏幕；返回 ARGB 位图（超时/无帧返回 null）。 */
+    suspend fun grabFrame(timeoutMs: Long): android.graphics.Bitmap?
+
+    /** 结束会话：反注册回调 + 停投影（幂等，重复调用无害）。 */
+    fun stop()
+}
+
 /** MediaProjection 网关（系统投影授权流在 :app 侧注册；截屏独立授权）。 */
-interface ProjectionGateway {
-    suspend fun projection(): android.media.projection.MediaProjection?
+fun interface ProjectionGateway {
+    /** 每次截屏取一个新会话（含投影令牌换取 + 前台服务保障）。 */
+    suspend fun session(): ProjectionSession?
 }
 
 /**

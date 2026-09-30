@@ -9,6 +9,8 @@ import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 
 /** zq 基础件：沙盒路径、订阅句柄、WAV 封头、参数解析、扫描折叠、传感器映射。 */
 class ZqInfraTest {
@@ -159,5 +161,61 @@ class ZqInfraTest {
             ZqEvents.pushJs("s1", "{\"v\":1}"),
         )
         assertTrue(ZqEvents.pushJs("s1", "a\"b\nc").contains("a\\\"b\\nc"), "引号与换行必须转义")
+    }
+}
+
+/** 质量审查 Minor：转义补全、8MB 上限、订阅全量关停。 */
+class ZqMinorHardeningTest {
+
+    @Test
+    fun `转义包含r与行分隔符`() {
+        assertEquals(
+            "window.__zqEvent && __zqEvent(\"s\", \"a\\rb\\u2028c\")",
+            ZqEvents.pushJs("s", "a\rb\u2028c"),
+        )
+    }
+
+    @Test
+    fun `Subscriptions_cancelAll全量关停`() {
+        val subs = Subscriptions()
+        subs.new(); subs.new(); subs.new()
+        assertEquals(3, subs.cancelAll())
+        assertEquals(0, subs.count())
+        assertEquals(0, subs.cancelAll(), "重复关停幂等")
+    }
+
+    @Test
+    fun `ZqFile_read超出8MB回too large`() = kotlinx.coroutines.test.runTest {
+        val dir = org.junit.rules.TemporaryFolder().apply { create() }
+        val big = File(dir.root, "big.txt")
+        java.io.RandomAccessFile(big, "rw").use { it.setLength(ZqLimits.MAX_INLINE_BYTES + 1) } // 稀疏文件
+        val repo = com.zhique.core.project.ProjectRepository(dir.root)
+        val pid = repo.create("大小项目", "<p></p>").id
+        val env = ZqEnv(
+            pid, dir.root,
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            com.zhique.core.permission.PermissionRegistry(repo), {},
+        )
+        val args = kotlinx.serialization.json.buildJsonObject { put("path", "big.txt") }
+        val err = kotlin.runCatching { ZqFile().call("read", args, env) }.exceptionOrNull()
+        kotlin.test.assertEquals("too large", err?.message, "超出 8MB 必须回 rejected too large")
+        dir.delete()
+    }
+
+    @Test
+    fun `ZqFile_read小文件正常`() = kotlinx.coroutines.test.runTest {
+        val dir = org.junit.rules.TemporaryFolder().apply { create() }
+        File(dir.root, "ok.txt").writeText("hello")
+        val repo = com.zhique.core.project.ProjectRepository(dir.root)
+        val pid = repo.create("小文件项目", "<p></p>").id
+        val env = ZqEnv(
+            pid, dir.root,
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            com.zhique.core.permission.PermissionRegistry(repo), {},
+        )
+        val args = kotlinx.serialization.json.buildJsonObject { put("path", "ok.txt") }
+        val out = ZqFile().call("read", args, env)
+        kotlin.test.assertEquals("hello", out.toString().let { kotlinx.serialization.json.Json.parseToJsonElement(it).jsonObject["content"]?.toString().orEmpty().trim('"') })
+        dir.delete()
     }
 }

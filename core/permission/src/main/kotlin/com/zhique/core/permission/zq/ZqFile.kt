@@ -31,6 +31,8 @@ class ZqFile : ZqCapability {
     override suspend fun call(fn: String, args: JsonObject, env: ZqEnv): JsonElement = when (fn) {
         "read" -> {
             val f = ZqPaths.resolveInSandbox(env.projectDir, args.zqText("path"))
+            // 内联回传大小上限（审查修复 Minor #7）：超出回 rejected "too large"
+            require(f.length() <= ZqLimits.MAX_INLINE_BYTES) { "too large" }
             buildJsonObject { put("content", f.readText()) }
         }
         "write" -> {

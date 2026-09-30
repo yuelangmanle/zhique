@@ -239,12 +239,14 @@ fun RunnerScreen(
     }
     val composeScope = rememberCoroutineScope()
 
-    // M5：zq 全能力桥（dispatcher + W3C 网关）；运行中登记 + 随运行器销毁取消订阅流
+    // M5：zq 全能力桥（dispatcher + W3C 网关）；运行中登记；销毁时全量关停
+    // （审查修复 I2：location/sensor 监听、订阅句柄、相机取景浮层一并收掉）
     DisposableEffect(host, registry) {
-        registry?.let { ZqWiring.install(project, projectDir, context, host, composeScope, it) }
+        val dispatcher = registry?.let { ZqWiring.install(project, projectDir, context, host, composeScope, it) }
         com.zhique.runner.permission.RunningProjects.enter(project.id)
         onDispose {
             com.zhique.runner.permission.RunningProjects.exit(project.id)
+            dispatcher?.shutdown()
         }
     }
 
