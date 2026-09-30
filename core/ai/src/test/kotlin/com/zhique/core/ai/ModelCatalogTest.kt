@@ -116,7 +116,7 @@ class ModelCatalogTest {
 
     private fun baseReq() = ChatRequest(
         baseUrl = "https://example.invalid",
-        apiKey = "test-key-" + "x".repeat(8),
+        apiKey = fakeApiKey,
         model = "test-model",
         messages = listOf(ChatMessage("user", "hi")),
         maxTokens = 4096,

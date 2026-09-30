@@ -9,6 +9,7 @@ import com.zhique.core.ai.ChatMessage
 import com.zhique.core.ai.ChatRequest
 import com.zhique.core.ai.StreamEvent
 import com.zhique.core.ai.StopReason
+import com.zhique.runner.fakeApiKey
 import com.zhique.runner.ui.theme.ZqTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -47,7 +48,7 @@ class ChatScreenUiTest {
             newRequest = { history ->
                 ChatRequest(
                     baseUrl = "https://example.invalid",
-                    apiKey = "test-key-" + "z".repeat(8),
+                    apiKey = fakeApiKey,
                     model = "test-model",
                     messages = history,
                     maxTokens = 8192,

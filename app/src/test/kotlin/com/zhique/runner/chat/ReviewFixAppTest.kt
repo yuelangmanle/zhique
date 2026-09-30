@@ -3,6 +3,7 @@ package com.zhique.runner.chat
 import com.zhique.core.ai.ChatRequest
 import com.zhique.core.ai.StreamEvent
 import com.zhique.core.ai.StopReason
+import com.zhique.runner.fakeApiKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,7 +27,7 @@ class ReviewFixAppTest {
         newRequest = { history ->
             ChatRequest(
                 baseUrl = "https://example.invalid",
-                apiKey = "test-key-" + "r".repeat(8),
+                apiKey = fakeApiKey,
                 model = "test-model",
                 messages = history,
                 maxTokens = 8192,

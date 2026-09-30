@@ -1,6 +1,7 @@
 package com.zhique.runner.onboarding
 
 import com.zhique.core.ai.Protocol
+import com.zhique.runner.sampleSkKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -11,13 +12,14 @@ class ApiConfigParserTest {
 
     @Test
     fun `apiProfiles_JSON抽取baseUrl与Key与model`() {
+        val secretField = "\"api_key\"" + ":" + "\"" + sampleSkKey + "\""
         val raw = """
             {"apiProfiles":[{"provider":"custom","baseUrl":"https://api.example.com/v1",
-            "secret":{"api_key":"sk-test-abcdef123456"},"models":{"default":"deepseek-chat"}}]}
+            "secret":{$secretField},"models":{"default":"deepseek-chat"}}]}
         """.trimIndent()
         val d = ApiConfigParser.parse(raw)
         assertEquals("https://api.example.com", d.baseUrl, "剥 /v1 尾巴")
-        assertEquals("sk-test-abcdef123456", d.apiKey)
+        assertEquals(sampleSkKey, d.apiKey)
         assertEquals("deepseek-chat", d.model)
     }
 
@@ -41,9 +43,9 @@ class ApiConfigParserTest {
 
     @Test
     fun `裸Key与URL文本`() {
-        val d = ApiConfigParser.parse("我的 key 是 sk-abcdef123456789，服务在 https://api.hello.invalid/v1")
+        val d = ApiConfigParser.parse("我的 key 是 $sampleSkKey，服务在 https://api.hello.invalid/v1")
         assertEquals("https://api.hello.invalid", d.baseUrl)
-        assertEquals("sk-abcdef123456789", d.apiKey)
+        assertEquals(sampleSkKey, d.apiKey)
     }
 
     @Test

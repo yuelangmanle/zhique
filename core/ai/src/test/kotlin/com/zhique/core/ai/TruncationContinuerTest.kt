@@ -36,7 +36,7 @@ class TruncationContinuerTest {
 
     private fun baseReq() = ChatRequest(
         baseUrl = "https://example.invalid",
-        apiKey = "test-key-" + "x".repeat(8),
+        apiKey = fakeApiKey,
         model = "test-model",
         messages = listOf(ChatMessage("user", "写一个网页")),
         maxTokens = ModelCatalog.CONTINUE_SEGMENT_MAX_OUTPUT,
