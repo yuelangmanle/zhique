@@ -23,5 +23,11 @@ dependencies {
     implementation(project(":core:project"))
     implementation(project(":core:ai"))
     implementation(project(":core:web"))
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 }

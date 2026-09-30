@@ -62,6 +62,9 @@ class ProjectRepository(private val root: File) {
     /** 运行器模式写回（drawer | split | bubble），选中即持久化。 */
     fun setRunnerMode(id: String, mode: String): ProjectMeta = mutate(id) { it.runnerMode = mode }
 
+    /** 项目目录（只读视图用途：Agent 文件遍历/编辑器文件 Tab；写路径仍走 writeFile 沙箱）。 */
+    fun projectDir(id: String): File = dir(id)
+
     fun writeFile(id: String, path: String, content: String) {
         val f = resolveIn(dir(id), path)
         f.parentFile?.mkdirs()
