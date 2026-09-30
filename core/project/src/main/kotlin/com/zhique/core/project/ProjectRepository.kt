@@ -62,6 +62,21 @@ class ProjectRepository(private val root: File) {
     /** 运行器模式写回（drawer | split | bubble），选中即持久化。 */
     fun setRunnerMode(id: String, mode: String): ProjectMeta = mutate(id) { it.runnerMode = mode }
 
+    /** 权限矩阵写回（M5 权限桥：state ∈ NOT_ASKED/ASKING/GRANTED/DENIED）。 */
+    fun setPermission(
+        id: String,
+        capability: String,
+        state: String,
+        lastAsked: Long = System.currentTimeMillis(),
+    ): ProjectMeta = mutate(id) {
+        it.permissions[capability] = PermissionRecord(capability, state, lastAsked)
+    }
+
+    /** 运行期真实使用计数 +1（M5：导出最小权限建议的依据，规格 §4.6）。 */
+    fun bumpPermissionUsage(id: String, capability: String): ProjectMeta = mutate(id) {
+        it.permissionUsage[capability] = (it.permissionUsage[capability] ?: 0) + 1
+    }
+
     /** 项目目录（只读视图用途：Agent 文件遍历/编辑器文件 Tab；写路径仍走 writeFile 沙箱）。 */
     fun projectDir(id: String): File = dir(id)
 
