@@ -44,6 +44,7 @@ import com.zhique.runner.home.HomeScreen
 import com.zhique.runner.onboarding.OnboardingController
 import com.zhique.runner.onboarding.OnboardingScreen
 import com.zhique.runner.paste.PastePreviewController
+import com.zhique.runner.paste.ProviderAiFallback
 import com.zhique.runner.paste.PastePreviewScreen
 import com.zhique.runner.runner.RunnerScreen
 import com.zhique.runner.settings.ProvidersController
@@ -239,6 +240,11 @@ fun ZhiqueApp(
                             )
                         }
                         LaunchedEffect(controller) {
+                            // AI 兜底接线（Task 4.6）：快循环角色通道注入后再跑管道
+                            val wired = runCatching {
+                                AiWiring(container).wire(com.zhique.core.ai.AgentRole.FAST_LOOP)
+                            }.getOrNull()
+                            if (wired != null) controller.setAiParser(ProviderAiFallback(wired))
                             pasteDraft?.let { controller.start(it) }
                         }
                         PastePreviewScreen(

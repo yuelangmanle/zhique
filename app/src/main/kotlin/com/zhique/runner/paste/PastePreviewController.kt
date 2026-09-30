@@ -1,5 +1,7 @@
 package com.zhique.runner.paste
 
+import com.zhique.core.paste.AiFallback
+import com.zhique.core.paste.Assembled
 import com.zhique.core.paste.Assembler
 import com.zhique.core.paste.CleanAction
 import com.zhique.core.paste.Cleaner
@@ -34,6 +36,7 @@ class PastePreviewController(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val autoRunStore: PasteAutoRunStore? = null,
+    private val aiParser: AiFallback.Parser? = null,
     private val onToast: (String) -> Unit = {},
     private val onRun: (ProjectMeta) -> Unit = {},
 ) {
@@ -51,8 +54,11 @@ class PastePreviewController(
         val autoRun: Boolean = false,
         val busy: Boolean = false,
 
-        /** 置信度低于阈值 → 预览屏提示「AI 兜底解析」（M4 接线）。 */
+        /** 置信度低于阈值 → 预览屏提示「AI 兜底解析」。 */
         val aiFallbackSuggested: Boolean = false,
+
+        /** AI 兜底解析已应用（结构化结果替换规则组装；失败则保持规则结果）。 */
+        val aiFallbackUsed: Boolean = false,
 
         /** 保存/落盘失败的用户可读提示（下次成功保存或重开管道时清除）。 */
         val error: String? = null,
@@ -62,6 +68,14 @@ class PastePreviewController(
 
     /** 粘贴预览 UI 态。 */
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** AI 兜底解析器（异步接线后可注入；构造时未配 Provider 的场景）。 */
+    @Volatile
+    private var activeParser: AiFallback.Parser? = aiParser
+
+    fun setAiParser(parser: AiFallback.Parser?) {
+        activeParser = parser
+    }
 
     /** 入口：剪贴板卡 / 系统分享 / 手动粘贴，统一从 [raw] 启动管道。 */
     fun start(raw: String) {
@@ -172,8 +186,25 @@ class PastePreviewController(
         // 重活只依赖 raw/cleaningApplied 快照；结果合并走 update，保住并发进来的 name 等编辑
         val classified = PasteClassifier().classify(snapshot.raw)
         val cleaned = Cleaner.clean(snapshot.raw, enabled = snapshot.cleaningApplied)
-        val assembled = Assembler.assemble(classified.form, cleaned)
+        var assembled = Assembler.assemble(classified.form, cleaned)
         val hints = CompatScanner.scan(assembled.html)
+
+        // AI 兜底（规格 §4.1.3）：置信度 < 阈值时走快循环角色「仅解析重组」；
+        // 失败/异常保留规则组装结果（原文入库语义不变，永不丢数据）
+        val fallbackUsed = classified.confidence < PasteConfidence.AI_FALLBACK_THRESHOLD &&
+            activeParser != null &&
+            classified.form is PasteForm.Unknown
+        var fallbackTitle: String? = null
+        var fallbackApplied = false
+        if (fallbackUsed) {
+            val aiResult = runCatching { activeParser?.parse(snapshot.raw) }.getOrNull()
+            if (aiResult != null && aiResult.html.isNotBlank()) {
+                assembled = Assembled(aiResult.html, aiResult.title)
+                fallbackTitle = aiResult.title
+                fallbackApplied = true
+            }
+        }
+
         _state.update { s ->
             s.copy(
                 form = classified.form,
@@ -182,8 +213,9 @@ class PastePreviewController(
                 assembledHtml = assembled.html,
                 actions = cleaned.actions,
                 hints = hints,
-                name = s.name.ifBlank { assembled.title ?: Assembler.DEFAULT_TITLE },
+                name = s.name.ifBlank { fallbackTitle ?: assembled.title ?: Assembler.DEFAULT_TITLE },
                 aiFallbackSuggested = classified.confidence < PasteConfidence.AI_FALLBACK_THRESHOLD,
+                aiFallbackUsed = fallbackApplied,
                 error = null,
                 busy = false,
             )

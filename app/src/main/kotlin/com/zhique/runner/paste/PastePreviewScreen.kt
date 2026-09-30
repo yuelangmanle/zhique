@@ -126,6 +126,14 @@ fun PastePreviewScreen(
                             modifier = Modifier.testTag("paste-ai-fallback"),
                         )
                     }
+                    if (s.aiFallbackUsed) {
+                        Text(
+                            "已用 AI 兜底解析（仅结构化，不改逻辑）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.testTag("paste-ai-fallback-used"),
+                        )
+                    }
                     if (s.hints.isNotEmpty()) {
                         Text(
                             "检测到 ${s.hints.size} 项兼容性提示：${s.hints.joinToString("、") { it.api }}",
