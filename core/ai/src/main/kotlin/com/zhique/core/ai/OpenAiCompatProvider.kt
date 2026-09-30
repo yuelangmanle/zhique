@@ -39,44 +39,8 @@ class OpenAiCompatProvider(private val client: OkHttpClient = defaultClient()) :
 
     override val id = Protocol.OPENAI_COMPATIBLE
 
-    override suspend fun chatStream(req: ChatRequest): Flow<StreamEvent> = flow {
-        val call = client.newCall(buildHttpRequest(req))
-        val response = try {
-            call.execute()
-        } catch (e: IOException) {
-            throw AiError.Network("连接失败：${e.message}", e)
-        }
-        try {
-            if (!response.isSuccessful) {
-                throw HttpErrors.fromCode(response.code, response.body?.string())
-            }
-            val reader = BufferedReader(InputStreamReader(response.body!!.byteStream(), Charsets.UTF_8))
-            val parser = SseParser()
-            var done = false
-            suspend fun handle(frames: List<SseParser.Frame>) {
-                for (frame in frames) {
-                    when (frame) {
-                        SseParser.Frame.DoneSentinel -> done = true
-                        is SseParser.Frame.Data -> for (e in parseChunk(frame.payload)) {
-                            if (e is StreamEvent.Done) done = true
-                            emit(e)
-                        }
-                    }
-                }
-            }
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                val line = reader.readLine() ?: break
-                handle(parser.feed(line + "\n"))
-                if (done) break
-            }
-            handle(parser.finish())
-            if (!done) emit(StreamEvent.Done(StopReason.STOP))
-        } finally {
-            runCatching { response.close() }
-            call.cancel()
-        }
-    }.flowOn(Dispatchers.IO)
+    override suspend fun chatStream(req: ChatRequest): Flow<StreamEvent> =
+        sseChatFlow(client, buildHttpRequest(req)) { { payload -> parseChunk(payload) } }
 
     internal fun buildHttpRequest(req: ChatRequest): Request = Request.Builder()
         .url(req.baseUrl.trimEnd('/') + PATH)
@@ -90,11 +54,7 @@ class OpenAiCompatProvider(private val client: OkHttpClient = defaultClient()) :
         const val PATH = "/v1/chat/completions"
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(300, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
+        fun defaultClient(): OkHttpClient = defaultHttpClient()
     }
 }
 
