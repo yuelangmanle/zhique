@@ -281,31 +281,36 @@ class ChatController(
         }
     }
 
-    private fun chatSession() = object : CompactableSession {
-        override val goal: String
-            get() = _state.value.turns.firstOrNull { it.role == "user" }?.content ?: ""
+    private fun chatSession(): CompactableSession {
+        // 目标在压缩前定格（applyCompaction 替换轮次后首条用户消息已非原 goal）
+        val goalSnapshot = _state.value.turns.firstOrNull { it.role == "user" }?.content ?: ""
+        return object : CompactableSession {
+            override val goal: String = goalSnapshot
 
-        override fun turnsSnapshot(): List<Turn> =
-            _state.value.turns.map { Turn(it.role, it.content) }
+            override fun turnsSnapshot(): List<Turn> =
+                _state.value.turns.map { Turn(it.role, it.content) }
 
-        override fun estimateTokens(): Int =
-            _state.value.turns.sumOf { estimateTokens(it.content) }
+            override fun estimateTokens(): Int =
+                _state.value.turns.sumOf { estimateTokens(it.content) }
 
-        override fun applyCompaction(summary: String) {
-            _state.update { s ->
-                if (s.turns.size <= Compactor.KEEP_RECENT) {
-                    s
-                } else {
-                    val keep = s.turns.takeLast(Compactor.KEEP_RECENT)
-                    val summaryTurn = ChatTurn(role = "assistant", content = "[已压缩上下文]\n$summary")
-                    s.copy(turns = listOf(summaryTurn) + keep)
+            override fun applyCompaction(summary: String) {
+                _state.update { s ->
+                    if (s.turns.size <= Compactor.KEEP_RECENT) {
+                        s
+                    } else {
+                        val keep = s.turns.takeLast(Compactor.KEEP_RECENT)
+                        val summaryTurn = ChatTurn(role = "assistant", content = "[已压缩上下文]\n$summary")
+                        s.copy(turns = listOf(summaryTurn) + keep)
+                    }
                 }
-            }
-            synchronized(history) {
-                val keep = history.takeLast(Compactor.KEEP_RECENT)
-                history.clear()
-                history += ChatMessage("assistant", "[已压缩上下文]\n$summary")
-                history += keep
+                synchronized(history) {
+                    val keep = history.takeLast(Compactor.KEEP_RECENT)
+                    history.clear()
+                    // 任务目标显式保留为首条不变量消息（不只活在摘要文本里）
+                    if (goalSnapshot.isNotBlank()) history += ChatMessage("user", "任务目标：$goalSnapshot")
+                    history += ChatMessage("assistant", "[已压缩上下文]\n$summary")
+                    history += keep
+                }
             }
         }
     }

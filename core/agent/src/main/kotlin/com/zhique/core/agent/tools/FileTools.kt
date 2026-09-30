@@ -178,6 +178,12 @@ object ProjectFiles {
     }
 }
 
+/** script/style 块（含未闭合块）提取：FileMap 剔除内联 JS/CSS 用。 */
+internal val SCRIPT_STYLE_BLOCK = Regex(
+    "<script\\b[^>]*>[\\s\\S]*?(?:</script\\s*>|\\z)|<style\\b[^>]*>[\\s\\S]*?(?:</style\\s*>|\\z)",
+    RegexOption.IGNORE_CASE,
+)
+
 /**
  * 未闭合检测（M3 规格审查遗留接线 d）：括号平衡 + `<script>/<style>/<html>` 闭合标签校验。
  * HTML 只检查标签闭合与 script/style 块内括号（页面正文文本不参与括号统计，避免误报）；

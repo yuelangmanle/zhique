@@ -1,5 +1,8 @@
 package com.zhique.core.agent
 
+import com.zhique.core.agent.tools.SCRIPT_STYLE_BLOCK
+import com.zhique.core.agent.tools.UnclosedDetector
+
 /**
  * 文件地图（规格 §4.5 三层记忆：repo map 简化版——结构树 + 符号索引，不塞全文；
  * 每文件段 ≤[PER_FILE_CAP] 字节，大项目靠 read_file/grep 按需取用）。
@@ -42,7 +45,12 @@ object FileMap {
         }
     }
 
-    private fun htmlSymbols(content: String): List<String> {
+    private fun htmlSymbols(contentRaw: String): List<String> {
+        // 内联 script/style 块剔除（含未闭合块）：JS 的 el.id = / className = 赋值会误配进索引。
+        // 复用 UnclosedDetector 的字符串/注释剥离口径先把块内字符串内容中和，再整块移除。
+        val content = SCRIPT_STYLE_BLOCK.replace(contentRaw) { m ->
+            UnclosedDetector.stripStringsAndComments(m.value).ifBlank { "" }
+        }
         val ids = HTML_ID.findAll(content).map { it.groupValues[1] }.distinct().take(SYMBOL_CAP).toList()
         val classes = HTML_CLASS.findAll(content)
             .flatMap { m -> m.groupValues[1].split(Regex("\\s+")) }

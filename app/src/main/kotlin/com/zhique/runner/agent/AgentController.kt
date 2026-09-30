@@ -102,6 +102,7 @@ class AgentController(
     private var compactor: Compactor? = null
     private var pendingEdit: Pair<String, String>? = null // path → before content
     private val registry = ToolRegistry(defaultTools())
+    private val confirmGate = com.zhique.core.agent.ConfirmGate()
 
     fun setGoal(text: String) {
         _state.update { it.copy(goal = text) }
@@ -163,38 +164,21 @@ class AgentController(
         }
     }
 
-    /** AwaitConfirm 批准：直接执行该工具一次（M4 git 类为 NotReady 占位；M7 接真实批准流）。 */
+    /**
+     * AwaitConfirm 批准：恢复挂起的编排循环，工具由编排器执行（挂起期间轮数/预算定格，
+     * 批准卡不会被重复请求覆盖）。执行/审计/回写均在编排器侧。
+     */
     fun approve() {
-        val confirm = _state.value.awaitConfirm ?: return
-        _state.update { it.copy(awaitConfirm = null, steps = it.steps + StepUi(confirm.tool, null, "已批准，执行中…")) }
-        scope.launch(io) {
-            val web = deps.web ?: NullWebControl
-            val ctx = ToolContext(deps.projectId, web, deps.repo, deps.repo.history, deps.vision)
-            val result = runCatching { registry.invoke(ctx, ToolCall("confirm", confirm.tool, confirm.argsJson)) }
-            assembler?.appendTurn(
-                "tool",
-                "用户已批准并执行 ${confirm.tool}：" + result.fold({ it.toString() }, { it.message ?: "失败" }),
-            )
-            _state.update { s ->
-                s.copy(
-                    steps = s.steps.dropLast(1) + StepUi(
-                        confirm.tool,
-                        ok = result.isSuccess,
-                        detail = result.fold({ it.toString() }, { it.message ?: "执行失败" }),
-                    ),
-                )
-            }
-        }
+        if (_state.value.awaitConfirm == null) return
+        _state.update { it.copy(awaitConfirm = null) }
+        confirmGate.approveCurrent()
     }
 
+    /** 拒绝：恢复循环但不执行；「用户拒绝」回写由编排器落会话记忆。 */
     fun deny() {
-        val confirm = _state.value.awaitConfirm ?: return
-        // 拒绝回写会话记忆：告知模型勿重复发起，改用其他方案
-        assembler?.appendTurn(
-            "tool",
-            "用户拒绝了 ${confirm.tool} 操作；请勿再次发起该工具，改用其他方案或直接汇报",
-        )
+        if (_state.value.awaitConfirm == null) return
         _state.update { it.copy(awaitConfirm = null) }
+        confirmGate.denyCurrent()
     }
 
     fun dismissCompression() {
@@ -247,6 +231,7 @@ class AgentController(
                 tools = registry,
                 budget = b,
                 recordUsage = deps.recordUsage,
+                confirmGate = confirmGate,
             )
             try {
                 orch.run(_state.value.goal, ctx).collect { onEvent(it, asm, b) }

@@ -178,6 +178,14 @@ object EditorLanguages {
 class ZqCodeEditor(context: Context) : CodeEditor(context) {
     var onSelectionChangedCallback: (() -> Unit)? = null
 
+    internal var releaseObserved = false
+        private set
+
+    override fun release() {
+        releaseObserved = true
+        super.release()
+    }
+
     override fun onSelectionChanged(newPos: Int) {
         super.onSelectionChanged(newPos)
         onSelectionChangedCallback?.invoke()
@@ -365,7 +373,7 @@ fun EditorContent(
     }
 }
 
-/** 真实 sora-editor 互操作（AndroidView + TextMate 高亮 + 内容/选中透出）。 */
+/** 真实 sora-editor 互操作（AndroidView + TextMate 高亮 + 内容/选中透出；离开组合即 [CodeEditor.release]）。 */
 @Composable
 fun RealEditorSlot(
     modifier: Modifier,
@@ -374,32 +382,38 @@ fun RealEditorSlot(
     readOnly: Boolean,
     onContentChange: (String) -> Unit,
     onSelection: (String) -> Unit,
+    onEditorCreated: (ZqCodeEditor) -> Unit = {},
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val editor = androidx.compose.runtime.remember(path) {
+        ZqCodeEditor(context).apply {
+            setEditorLanguage(EditorLanguages.create(context, path))
+            EditorLanguages.colorScheme(context)?.let { setColorScheme(it) }
+            isEditable = !readOnly
+            subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
+                if (event.action != ContentChangeEvent.ACTION_SET_NEW_TEXT) {
+                    onContentChange(text.toString())
+                }
+            }
+            onSelectionChangedCallback = {
+                val cursor = cursor
+                onSelection(
+                    if (cursor.isSelected) text.substring(cursor.left, cursor.right) else "",
+                )
+            }
+        }.also(onEditorCreated)
+    }
     androidx.compose.ui.viewinterop.AndroidView(
         modifier = modifier.background(Color(0xFF12131A), RoundedCornerShape(8.dp)),
-        factory = { ctx ->
-            ZqCodeEditor(ctx).apply {
-                setEditorLanguage(EditorLanguages.create(ctx, path))
-                EditorLanguages.colorScheme(ctx)?.let { setColorScheme(it) }
-                isEditable = !readOnly
-                subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
-                    if (event.action != ContentChangeEvent.ACTION_SET_NEW_TEXT) {
-                        onContentChange(text.toString())
-                    }
-                }
-                onSelectionChangedCallback = {
-                    val cursor = cursor
-                    onSelection(
-                        if (cursor.isSelected) text.substring(cursor.left, cursor.right) else "",
-                    )
-                }
+        factory = { editor },
+        update = { e ->
+            if (e.text.toString() != content) {
+                e.setText(content)
             }
-        },
-        update = { editor ->
-            if (editor.text.toString() != content) {
-                editor.setText(content)
-            }
-            editor.isEditable = !readOnly
+            e.isEditable = !readOnly
         },
     )
+    androidx.compose.runtime.DisposableEffect(path) {
+        onDispose { editor.release() }
+    }
 }

@@ -26,9 +26,11 @@ class ChatCompactTest {
         scripts: ArrayDeque<List<StreamEvent>>,
         contextWindow: Int = 100_000,
         onFastRequest: (ChatRequest) -> Unit = {},
+        onMainRequest: (ChatRequest) -> Unit = {},
     ): ChatController {
         val chat: suspend (ChatRequest) -> Flow<StreamEvent> = { req ->
             flow {
+                onMainRequest(req)
                 val script = scripts.removeFirstOrNull() ?: error("脚本耗尽")
                 script.forEach { emit(it) }
             }
@@ -78,10 +80,12 @@ class ChatCompactTest {
                 round("近期二"),
                 round("近期三"),
                 round("近期四（最后）"),
+                round("压缩后的一轮"),
             ),
         )
         var fastSeen: ChatRequest? = null
-        val c = newController(scripts, onFastRequest = { fastSeen = it })
+        val seenRequests = mutableListOf<ChatRequest>()
+        val c = newController(scripts, onFastRequest = { fastSeen = it }, onMainRequest = { seenRequests += it })
         repeat(8) { c.send("t$it") }
 
         c.compactNow()
@@ -95,6 +99,16 @@ class ChatCompactTest {
         assertEquals(5, turns.size, "摘要 1 条 + 最近 4 轮")
         assertTrue(turns.first().content.contains("已压缩上下文"))
         assertTrue(turns.last().content.contains("近期四（最后）"), "最近一轮原文保留")
+
+        // Minor 9：任务目标显式保留为首条不变量消息（不只活在摘要文本）
+        c.send("再来一轮")
+        assertTrue(seenRequests.isNotEmpty(), "发送历史捕获为空")
+        val next = seenRequests.last()
+        assertTrue(
+            next.messages.first().let { it.role == "user" && it.content.startsWith("任务目标：") },
+            "压缩后首条历史须为任务目标消息：${next.messages.firstOrNull()}",
+        )
+        assertEquals("任务目标：t0", next.messages.first().content, "goal = 首条用户消息原文")
         assertTrue(report.kept.any { it.contains("任务目标") }, "目标原文为压缩不变量")
     }
 

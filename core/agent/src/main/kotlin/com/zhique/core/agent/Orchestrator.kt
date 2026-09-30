@@ -34,7 +34,13 @@ class Orchestrator(
     private val continuer: TruncationContinuer = TruncationContinuer(llm),
     private val snapshotPolicy: SnapshotPolicy = SnapshotPolicy(),
     private val recordUsage: (suspend (tokens: Int) -> Unit)? = null,
+    private val confirmGate: ConfirmGate = ConfirmGate(),
 ) {
+    /** 挂起中的外发工具（UI 批准卡对应）。 */
+    val pendingConfirm: ToolCall? get() = confirmGate.pendingCall
+
+    /** 预算读视图（UI 预算弧/测试断言）。 */
+    val budgetView: Budget get() = budget
 
     suspend fun run(goal: String, ctx: AgentContext): Flow<AgentEvent> = channelFlow {
         budget.start()
@@ -54,7 +60,20 @@ class Orchestrator(
                 val out = try {
                     continuer.generate(req)
                 } catch (e: AiErrorException) {
+                    appendAudit(history, projectId, "orchestrator:error", e.message ?: "模型流内错误")
                     send(AgentEvent.Failed(e.message ?: "模型流内错误"))
+                    return@channelFlow
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 非 AiError（网络直抛等）同样留痕后终止，不留无声黑洞
+                    appendAudit(
+                        history,
+                        projectId,
+                        "orchestrator:error",
+                        "${e::class.simpleName}: ${e.message}",
+                    )
+                    send(AgentEvent.Failed(e.message ?: "会话异常"))
                     return@channelFlow
                 }
                 budget.recordTokens(estimateTokens(out.content + out.thinking))
@@ -94,10 +113,22 @@ class Orchestrator(
                         continue
                     }
                     if (tool.requiresConfirm && !ctx.autoApproved) {
-                        // 外发动作默认逐项确认：发 AwaitConfirm 暂停，未批准不执行（M7 接真实批准流）
+                        // 外发动作默认逐项确认：真挂起等用户裁决——挂起期间不烧轮数/预算，
+                        // 模型不会被再次调用（批准卡不会被重复请求覆盖）
                         appendAudit(history, projectId, "await-confirm:${c.name}", c.argumentsJson)
                         send(AgentEvent.AwaitConfirm(c.name, c.argumentsJson))
-                        continue
+                        val approved = confirmGate.await(c)
+                        if (!approved) {
+                            appendAudit(history, projectId, "confirm-denied:${c.name}", "")
+                            ctx.assembler.appendTurn(
+                                "tool",
+                                "用户拒绝了 ${c.name} 操作；请勿再次发起该工具，改用其他方案或直接汇报",
+                            )
+                            send(AgentEvent.StepResult(round, c.name, ok = false, detail = "用户拒绝了该操作"))
+                            continue
+                        }
+                        appendAudit(history, projectId, "confirm-approved:${c.name}", "")
+                        ctx.assembler.appendTurn("tool", "用户已批准 ${c.name} 操作，开始执行")
                     }
                     val snapshotId = snapshotPolicy.snapshotBefore(
                         history, projectId, c, round,
@@ -109,7 +140,11 @@ class Orchestrator(
                         onSuccess = { result ->
                             val detail = result.toString()
                             appendAudit(history, projectId, "tool:${c.name}:ok", detail)
-                            ctx.assembler.appendTurn("tool", "${c.name} 结果：$detail")
+                            ctx.assembler.appendTurn(
+                                "tool",
+                                "${c.name} 结果：$detail",
+                                kind = Turn.Kind.TOOL_RESULT,
+                            )
                             budget.recordTokens(estimateTokens(detail))
                             send(AgentEvent.StepResult(round, c.name, ok = true, detail = detail))
                         },
@@ -188,6 +223,8 @@ class Orchestrator(
                 if (e is StreamEvent.ContentDelta) content += e.text
             }
             content
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -236,9 +273,12 @@ class Orchestrator(
                     if (body.startsWith("[")) null else emptyList()
                 }
             } else {
-                val start = content.indexOf('[')
+                // 无围栏：仅当形如 [{"tool" / [{"name" 才尝试解析（markdown 链接等 [ ] 不触发修正重试）
+                val start = listOf("[{\"tool\"", "[{\"name\"")
+                    .map { content.indexOf(it) }.filter { it >= 0 }.minOrNull()
+                    ?: return emptyList()
                 val end = content.lastIndexOf(']')
-                if (start >= 0 && end > start) parseArray(content.substring(start, end + 1)) else emptyList()
+                if (end > start) parseArray(content.substring(start, end + 1)) else emptyList()
             }
         }
 

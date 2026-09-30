@@ -38,8 +38,8 @@ interface AgentMemory {
 interface ContextAssembler {
     fun build(goal: String, round: Int): ChatRequest
 
-    /** 记录一步工具结果（进近期轮次）。 */
-    fun appendTurn(role: String, content: String, starred: Boolean = false)
+    /** 记录一轮进近期轮次（工具结果须标 [com.zhique.core.agent.Turn.Kind.TOOL_RESULT]：滚动窗口/截断/不计长期预算）。 */
+    fun appendTurn(role: String, content: String, starred: Boolean = false, kind: Turn.Kind = Turn.Kind.NORMAL)
 
     /** 记录一条报错（进报错时间线）。 */
     fun appendError(line: String)

@@ -1,6 +1,13 @@
 package com.zhique.runner.editor
 
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -108,6 +115,41 @@ class EditorScreenUiTest {
         // 状态未回流时兜底问题 + 选中上下文必须随行
         assertEquals("看这段代码", asked?.question)
         assertEquals("div.sky", asked?.selection)
+    }
+
+    @Test
+    fun `编辑器离开组合即release`() {
+        val editorBox = arrayOfNulls<ZqCodeEditor>(1)
+        compose.setContent {
+            ZqTheme {
+                var show by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+                if (show) {
+                    RealEditorSlot(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .testTag("real-editor"),
+                        path = "index.html",
+                        content = "<html></html>",
+                        readOnly = false,
+                        onContentChange = {},
+                        onSelection = {},
+                        onEditorCreated = { editorBox[0] = it },
+                    )
+                }
+                androidx.compose.material3.Button(
+                    onClick = { show = false },
+                    modifier = Modifier.testTag("remove-editor"),
+                ) { androidx.compose.material3.Text("移除") }
+            }
+        }
+        compose.waitForIdle()
+        val editor = editorBox[0]
+        kotlin.test.assertNotNull(editor, "真实编辑器应被创建")
+        org.junit.Assert.assertFalse(editor!!.releaseObserved)
+        compose.onNodeWithTag("remove-editor").performClick()
+        compose.waitForIdle()
+        org.junit.Assert.assertTrue("离开组合必须 release()", editor!!.releaseObserved)
     }
 
     @Test

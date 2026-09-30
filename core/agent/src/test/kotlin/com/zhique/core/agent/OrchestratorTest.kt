@@ -11,9 +11,12 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -59,7 +62,7 @@ class OrchestratorTest {
             maxTokens = 2048,
         ).also { lastGoal = goal }
 
-        override fun appendTurn(role: String, content: String, starred: Boolean) {
+        override fun appendTurn(role: String, content: String, starred: Boolean, kind: Turn.Kind) {
             turns += role to content
         }
 
@@ -101,11 +104,12 @@ class OrchestratorTest {
             }
         }
 
-        fun orchestrator(maxRounds: Int = 5, vision: Boolean = true): Orchestrator = Orchestrator(
+        fun orchestrator(maxRounds: Int = 5, vision: Boolean = true, gate: ConfirmGate = ConfirmGate()): Orchestrator = Orchestrator(
             llm = chat,
             tools = ToolRegistry(defaultTools()),
             budget = Budget(maxRounds = maxRounds),
             recordUsage = { usage += it },
+            confirmGate = gate,
         )
 
         fun ctx(projectId: String, vision: Boolean = true, autoApproved: Boolean = false): AgentContext =
@@ -244,7 +248,8 @@ class OrchestratorTest {
     // ---- 外发动作确认 ----
 
     @Test
-    fun `requiresConfirm工具发AwaitConfirm且不执行`() = runTest {
+    fun `requiresConfirm工具发AwaitConfirm且挂起不执行_批准后恢复`() = runTest {
+        val gate = ConfirmGate()
         val h = Harness(
             ArrayDeque(
                 listOf(
@@ -253,10 +258,19 @@ class OrchestratorTest {
                 ),
             ),
         )
-        val events = h.run("发布项目", projectId = "p1")
+        val orch = h.orchestrator(gate = gate)
+        val events = mutableListOf<AgentEvent>()
+        val collector = launch { orch.run("发布项目", h.ctx("p1")).collect { events += it } }
+        runCurrent()
         val confirm = events.filterIsInstance<AgentEvent.AwaitConfirm>().single()
         assertEquals("push", confirm.tool)
         assertTrue(events.filterIsInstance<AgentEvent.StepResult>().isEmpty(), "未批准不得执行")
+        assertEquals(1, orch.budgetView.roundsUsed, "挂起期间不消耗轮数")
+        gate.approveCurrent()
+        collector.join()
+        val ok = events.filterIsInstance<AgentEvent.StepResult>().single { it.tool == "push" }
+        assertTrue(ok.ok && ok.detail.contains("NotReady"))
+        assertTrue(events.last() is AgentEvent.Finished)
     }
 
     @Test

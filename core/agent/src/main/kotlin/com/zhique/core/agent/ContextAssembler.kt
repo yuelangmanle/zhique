@@ -53,14 +53,11 @@ class MemoryContextAssembler(
     /** 报错时间线快照（UI/调试用）。 */
     fun errorsSnapshot(): List<String> = synchronized(errorLinesInternal) { errorLinesInternal.toList() }
 
-    fun appendTurn(role: String, content: String, starred: Boolean = false, kind: Turn.Kind = Turn.Kind.NORMAL) {
+    override fun appendTurn(role: String, content: String, starred: Boolean, kind: Turn.Kind) {
         synchronized(turnsInternal) { turnsInternal += Turn(role, content, starred, kind) }
         if (starred) memory?.addSessionNote("⭐ $content") // 关键结论同步沉淀进项目记忆
         maybeAutoCompact()
     }
-
-    override fun appendTurn(role: String, content: String, starred: Boolean) =
-        appendTurn(role, content, starred, Turn.Kind.NORMAL)
 
     override fun appendError(line: String) {
         synchronized(errorLinesInternal) {
@@ -102,10 +99,11 @@ class MemoryContextAssembler(
         var kept = turnsSnapshot()
         var errors = errorsSnapshot()
 
+        // 口径与 usage() 一致：工具结果走滚动窗口，不计入长期预算
         fun overBudget(): Boolean {
             val tokens = listOf(systemSpec, memorySummary, goal).sumOf { estimateTokens(it) } +
                 estimateTokens(fileMap) + errors.sumOf { estimateTokens(it) } +
-                kept.sumOf { estimateTokens(it.content) }
+                kept.filter { it.kind != Turn.Kind.TOOL_RESULT }.sumOf { estimateTokens(it.content) }
             return tokens > budget.workLimit
         }
 
