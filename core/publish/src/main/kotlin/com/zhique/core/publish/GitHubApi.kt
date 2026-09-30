@@ -24,6 +24,10 @@ sealed class GitHubException(val code: Int, message: String) : Exception(message
     /** 422：参数被拒（重名/非法 tag 等）。 */
     class Validation(detail: String) : GitHubException(422, "GitHub 校验失败：$detail")
 
+    /** 429：限流（Minor-6）：携带 Retry-After 秒数，供上层退避重试，不与 403 混义。 */
+    class RateLimited(val retryAfterSeconds: Int, detail: String) :
+        GitHubException(429, "GitHub 限流，${retryAfterSeconds}s 后可重试：$detail")
+
     /** 其他 HTTP 状态。 */
     class Http(code: Int, detail: String) : GitHubException(code, "GitHub 请求失败（$code）：$detail")
 }
@@ -94,13 +98,15 @@ open class GitHubApi(
 
     private fun redactUrl(url: String): String = url
 
-    /** 按 GitHub HTTP 语义分类（401/403/422/其他），正文读取后关闭响应。 */
+    /** 按 GitHub HTTP 语义分类（401/403/422/429/其他），正文读取后关闭响应。 */
     private fun classify(response: okhttp3.Response, what: String): Nothing {
+        val retryAfter = response.header("Retry-After")?.trim()?.toIntOrNull()
         val body = response.use { it.body?.string() }.orEmpty().take(500)
         throw when (response.code) {
             401 -> GitHubException.Unauthorized(body)
             403 -> GitHubException.Forbidden(body)
             422 -> GitHubException.Validation(body)
+            429 -> GitHubException.RateLimited(retryAfter ?: 60, body)
             else -> GitHubException.Http(response.code, body)
         }.also { audit("$what 失败：${it.message}") }
     }

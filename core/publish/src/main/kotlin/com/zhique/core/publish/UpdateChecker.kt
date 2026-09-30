@@ -74,6 +74,10 @@ open class UpdateChecker(
     /**
      * 下载更新 APK 到 [targetDir]（Downloads 域由调用方传入），进度回调 0..1。
      * 返回落盘文件；流式写盘，不整包驻留内存。
+     *
+     * 安全口径（Minor-7，明确不声明为已校验）：APK 经 api.github.com / github.com
+     * HTTPS 获取，完整性目前仅依赖 TLS 信任链，**暂无内容 hash/签名校验**；
+     * 安装侧由 PackageInstaller 同签名约束兜底（决策29）。
      */
     open fun downloadApk(
         info: UpdateInfo,

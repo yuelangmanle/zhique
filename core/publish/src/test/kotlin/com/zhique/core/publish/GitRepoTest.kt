@@ -2,6 +2,7 @@ package com.zhique.core.publish
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -101,7 +102,7 @@ class GitRepoTest {
     }
 
     @Test
-    fun `push到无权限场景对file协议不挂凭据且PAT不出现在异常文本`() {
+    fun `push空仓库成功对file协议不挂凭据且PAT不出现在异常文本`() {
         val dir = newProject("p5")
         val remote = newBareRemote("p5")
         repo.initRepo(dir)
@@ -110,6 +111,67 @@ class GitRepoTest {
         val pat = "github_pat_" + "X".repeat(20)
         val pushed = repo.push(dir, remote, pat, "main")
         assertTrue(pushed.isNotBlank())
+    }
+
+    @Test
+    fun `审查I4_gitignore隔离history目录且commit幂等写隔离`() {
+        val dir = newProject("p6")
+        repo.initRepo(dir)
+        val ignore = File(dir, ".gitignore")
+        assertTrue(ignore.isFile, "init 即写 .gitignore")
+        assertTrue("history/" in ignore.readText())
+
+        File(dir, "index.html").writeText("<html>v1</html>")
+        File(dir, "history").apply { mkdirs() }
+        File(dir, "history/release-job.json").writeText("{\"id\":\"x\",\"device\":\"/Users/someone/...\"}")
+        val sha = repo.commit(dir, "init") // commit 前幂等补写 .gitignore（即使被删）
+        ignore.delete()
+        File(dir, "app.js").writeText("x")
+        repo.commit(dir, "second")
+
+        val s = repo.status(dir)
+        assertTrue(s.clean, "history/ 不得入状态（.gitignore 隔离）：${s.summary()}")
+        assertTrue(File(dir, ".gitignore").isFile, "commit 幂等重建 .gitignore")
+        assertEquals(40, sha.length)
+    }
+
+    @Test
+    fun `审查I4b_跟踪树不含history目录`() {
+        val dir = newProject("p7")
+        repo.initRepo(dir)
+        File(dir, "index.html").writeText("<html>v1</html>")
+        File(dir, "history").apply { mkdirs() }
+        File(dir, "history/snap-1.html").writeText("<html>snapshot</html>")
+        repo.commit(dir, "init")
+        Git.open(dir).use { git ->
+            val commit = git.repository.parseCommit(git.repository.resolve("HEAD"))
+            val walk = org.eclipse.jgit.treewalk.TreeWalk.forPath(
+                git.repository, "history/snap-1.html", commit.tree,
+            )
+            assertTrue(walk == null, "history/ 不得进入跟踪树")
+            assertTrue(
+                org.eclipse.jgit.treewalk.TreeWalk.forPath(git.repository, "index.html", commit.tree) != null,
+                "正常项目文件仍被跟踪",
+            )
+        }
+    }
+
+    @Test
+    fun `审查M8_push到已有分叉历史的远端被REJECTED_NONFASTFORWARD拒绝`() {
+        tmp.create()
+        val remote = newBareRemote("ff")
+        val a = newProject("ffa")
+        repo.initRepo(a)
+        File(a, "index.html").writeText("<html>A</html>")
+        repo.commit(a, "A1")
+        repo.push(a, remote, "dummy-pat", "main")
+
+        val b = newProject("ffb") // 独立历史
+        repo.initRepo(b)
+        File(b, "index.html").writeText("<html>B</html>")
+        repo.commit(b, "B1")
+        val e = assertFailsWith<PublishException> { repo.push(b, remote, "dummy-pat", "main") }
+        assertTrue("REJECTED_NONFASTFORWARD" in (e.message ?: ""), e.message)
     }
 
     @Test

@@ -104,6 +104,7 @@ fun PublishSyncScreen(
                     onValueChange = { patInput = it },
                     label = { Text(if (hasPat) "输入新令牌以替换" else "粘贴 fine-grained PAT") },
                     singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth().testTag("pat-input"),
                 )
                 Spacer(Modifier.height(8.dp))

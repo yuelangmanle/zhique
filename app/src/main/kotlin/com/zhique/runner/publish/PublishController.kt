@@ -169,7 +169,10 @@ class PublishController(
                 val remoteUrl = "https://github.com/${binding.owner}/${binding.repo}.git"
                 // 断点任务接管（非取消的）；已取消/终态一律重新 plan（同项目新一次发布）
                 val release = snapshot.wantRelease
+                val apkPath = if (release) snapshot.releaseApk?.takeIf { it.isFile }?.absolutePath else null
+                // 断点任务磁盘证据只存文件名：解析到真身则回注绝对路径（资产补传可达）
                 val job = engine.resume(projectId)?.takeIf { !it.canceled }
+                    ?.let { resumed -> apkPath?.let { resumed.copy(releaseAsset = it) } ?: resumed }
                     ?: engine.plan(
                         projectId = projectId,
                         remoteUrl = remoteUrl,
@@ -177,7 +180,7 @@ class PublishController(
                         message = snapshot.commitMessage,
                         tag = if (release) snapshot.tag else null,
                         wantRelease = release,
-                        releaseAsset = if (release) snapshot.releaseApk?.absolutePath else null,
+                        releaseAsset = apkPath,
                     )
                 activeJob = job
                 var cur = job

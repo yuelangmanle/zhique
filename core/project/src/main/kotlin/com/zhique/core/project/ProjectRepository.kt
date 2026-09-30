@@ -125,7 +125,8 @@ class ProjectRepository(private val root: File) {
         )
         val dst = dir(newMeta.id)
         dst.mkdirs()
-        copyDir(dir(id), dst, skip = setOf(HISTORY_DIR, "project.json"))
+        // .git 一并排除（质量审查 Important-4：复制不带走版本库元数据）
+        copyDir(dir(id), dst, skip = setOf(HISTORY_DIR, "project.json", ".git"))
         save(newMeta)
         return newMeta
     }
@@ -144,7 +145,8 @@ class ProjectRepository(private val root: File) {
         val dir = dir(id)
         val entries = buildMap {
             put("project.json", readMeta(dir).let { json.encodeToString(ProjectMeta.serializer(), it) }.toByteArray())
-            collectFiles(dir, dir, skip = setOf(HISTORY_DIR)).forEach { (rel, f) ->
+            // .git 随 history/ 一并排除：导出 zip 面向打包/迁移，不携带版本库元数据（Important-4）
+            collectFiles(dir, dir, skip = setOf(HISTORY_DIR, ".git")).forEach { (rel, f) ->
                 put(rel, f.readBytes())
             }
         }

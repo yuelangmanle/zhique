@@ -141,6 +141,26 @@ class GitHubApiTest {
     }
 
     @Test
+    fun `429分类为RateLimited并解析RetryAfter秒数`() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setResponseCode(429)
+                    .setHeader("Retry-After", "42")
+                    .setBody("""{"message":"API rate limit exceeded"}"""),
+            )
+            val e = assertFailsWith<GitHubException.RateLimited> { api(server).listReleases(pat, "a", "b") }
+            assertEquals(429, e.code)
+            assertEquals(42, e.retryAfterSeconds)
+            assertTrue("限流" in (e.message ?: ""))
+        }
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(429).setBody("throttled"))
+            val e = assertFailsWith<GitHubException.RateLimited> { api(server).listReleases(pat, "a", "b") }
+            assertEquals(60, e.retryAfterSeconds, "缺 Retry-After 头给保守缺省 60s")
+        }
+    }
+
+    @Test
     fun `其他HTTP状态分类为Http`() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(500).setBody("oops"))

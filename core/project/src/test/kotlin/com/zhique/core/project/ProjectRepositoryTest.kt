@@ -153,4 +153,21 @@ class ProjectRepositoryTest {
             .toList()
         assertTrue(leftovers.isEmpty())
     }
+
+    @Test
+    fun `审查I4_exportZip与copy排除git目录`() {
+        val meta = repo.create("带版本库", "<p></p>")
+        val gitDir = java.io.File(repo.projectDir(meta.id), ".git").apply { mkdirs() }
+        java.io.File(gitDir, "HEAD").writeText("ref: refs/heads/main")
+        repo.writeFile(meta.id, "index.html", "<p>x</p>")
+
+        val zip = repo.exportZip(meta.id)
+        val entries = ZipIO.read(zip).keys
+        assertTrue(entries.none { it.startsWith(".git") }, "zip 不得携带版本库元数据：$entries")
+        assertTrue("index.html" in entries)
+
+        val copied = repo.copy(meta.id)
+        assertTrue(!java.io.File(repo.projectDir(copied.id), ".git").exists(), "复制不带走 .git")
+        assertTrue(java.io.File(repo.projectDir(copied.id), "index.html").isFile)
+    }
 }

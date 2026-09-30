@@ -10,6 +10,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.rules.TemporaryFolder
 
@@ -69,7 +70,7 @@ class ReleaseJobTest {
         override fun remoteTagExists(remoteUrl: String, pat: String, tag: String): Boolean = tag in remoteTags
     }
 
-    /** API fake：Release 创建计数 + 可编程已有清单 + 资产上传计数。 */
+    /** API fake：Release 创建计数 + 可编程已有清单（含资产）+ 资产上传计数。 */
     private class FakeApi(
         var releases: MutableList<String> = mutableListOf(),
         var createCount: Int = 0,
@@ -77,22 +78,36 @@ class ReleaseJobTest {
         var lastNotes: String? = null
         var uploadCount = 0
         var lastUpload: File? = null
+        var lastTag: String? = null
+        val assetsByTag: MutableMap<String, MutableList<String>> = mutableMapOf()
+
         override fun listReleases(pat: String, owner: String, repo: String): List<ReleaseInfo> =
-            releases.map { ReleaseInfo(id = it.hashCode().toLong(), tagName = it) }
+            releases.map { tag ->
+                ReleaseInfo(
+                    id = tag.hashCode().toLong(),
+                    tagName = tag,
+                    uploadUrl = "https://uploads.example.com/repos/$owner/$repo/releases/${tag.hashCode()}/assets{?name}",
+                    assets = (assetsByTag[tag] ?: emptyList()).map { AssetInfo(id = 1, name = it) },
+                )
+            }
+
         override fun createRelease(
             pat: String, owner: String, repo: String, tag: String, notes: String, prerelease: Boolean,
         ): ReleaseInfo {
             createCount++
             lastNotes = notes
+            lastTag = tag
             releases += tag
             return ReleaseInfo(
                 id = createCount.toLong(), tagName = tag, body = notes,
                 uploadUrl = "https://uploads.example.com/repos/$owner/$repo/releases/$createCount/assets{?name}",
             )
         }
+
         override fun uploadAsset(pat: String, uploadUrl: String, file: File, contentType: String): AssetInfo {
             uploadCount++
             lastUpload = file
+            lastTag?.let { assetsByTag.getOrPut(it) { mutableListOf() } += file.name }
             return AssetInfo(id = uploadCount.toLong(), name = file.name, size = file.length())
         }
     }
@@ -373,10 +388,12 @@ class ReleaseJobTest {
         assertEquals(1, api.createCount)
         assertEquals(1, api.uploadCount, "Release 附 APK：uploadAsset 恰好一次")
         assertEquals(apk, api.lastUpload)
-        // 落盘证据同样带 tag 与资产路径
+        // 落盘证据带 tag 与资产文件名，但绝不带设备绝对路径（质量审查 Important-4）
         val raw = repo.readReleaseJobJson(projectId)!!
         assertTrue("\"tag\":\"v1.0.2\"" in raw)
-        assertTrue(apk.absolutePath in raw)
+        assertTrue(apk.name in raw, "资产证据为文件名")
+        assertFalse(apk.absolutePath in raw, "绝对路径不得落盘")
+        assertFalse(tmp.root.path in raw)
 
         // 幂等：重复 advance（重放 PUSHED）不重建 Release、不重传资产
         e.advance(job.copy(stage = ReleaseStage.PUSHED))
@@ -397,6 +414,43 @@ class ReleaseJobTest {
         assertEquals(ReleaseStage.RELEASED, job.stage)
         assertEquals(1, api.createCount, "无附件也创建 Release")
         assertEquals(0, api.uploadCount, "缺失文件不上传")
+    }
+
+    @Test
+    fun `审查I1_两协程并发advance同一任务_单commit单push`() = runTest {
+        setupProject()
+        val git = FakeGit()
+        val api = FakeApi()
+        val e = engine(git, api)
+        var job = e.plan(projectId, remote, message = "并发竞争", tag = "v1", wantRelease = true)
+        job = e.advance(job) // CHECKED：两协程都从 CHECKED 出发（陈旧快照）
+        kotlinx.coroutines.coroutineScope {
+            val a = launch(Dispatchers.Default) { e.advance(job) }
+            val b = launch(Dispatchers.Default) { e.advance(job) }
+            a.join(); b.join()
+        }
+        assertEquals(1, git.commitCount, "互斥+快照对齐：commit 不重复")
+        assertEquals(1, git.pushCount, "交错 push 不发生")
+        assertEquals(ReleaseStage.PUSHED, e.latest(projectId)!!.stage)
+    }
+
+    @Test
+    fun `审查I3_Release已存在但缺资产时按名补传一次`() = runTest {
+        setupProject()
+        val apk = File(tmp.root, "app-1.2.apk").apply { writeBytes(ByteArray(16)) }
+        val api = FakeApi(releases = mutableListOf("v1.2")) // 远端已有 Release，无资产
+        val e = engine(api = api)
+        var job = e.plan(
+            projectId, remote, message = "补传", tag = "v1.2",
+            wantRelease = true, releaseAsset = apk.absolutePath,
+        )
+        repeat(3) { job = e.advance(job) } // → PUSHED
+        val released = e.advance(job)      // RELEASE 步：不重建，仅补传
+        assertEquals(ReleaseStage.RELEASED, released.stage)
+        assertEquals(0, api.createCount, "已存在的 Release 不重建")
+        assertEquals(1, api.uploadCount, "缺资产按名补传恰好一次")
+        assertEquals(apk, api.lastUpload)
+        assertEquals("v1.2", api.lastTag ?: "v1.2")
     }
 
     @Test

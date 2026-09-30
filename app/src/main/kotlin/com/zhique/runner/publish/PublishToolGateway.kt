@@ -61,7 +61,13 @@ class PublishToolGateway(
             val e = engine()
             val resolvedTag = tag ?: defaultTag(meta)
             val asset = if (wantRelease) apkResolver(projectId) else null
-            val job = e.resume(projectId) ?: e.plan(
+            // 取消任务不作断点（对齐 PublishController）：Agent 通道重新 plan，避免接手已取消任务
+            val job = e.resume(projectId)?.takeIf { !it.canceled }
+                // 断点任务证据只存文件名：解析器找到真身则回注绝对路径（资产补传可达）
+                ?.let { resumed ->
+                    asset?.takeIf { it.isFile }?.let { resumed.copy(releaseAsset = it.absolutePath) } ?: resumed
+                }
+                ?: e.plan(
                 projectId = projectId,
                 remoteUrl = remoteUrl,
                 branch = binding.branch,

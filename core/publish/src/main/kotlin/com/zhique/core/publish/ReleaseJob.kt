@@ -5,6 +5,9 @@ import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -85,69 +88,86 @@ open class ReleaseJobEngine(
     }
 
     /**
-     * 推进一步。每步执行前幂等核对：
+     * 推进一步。**per-project 互斥**（质量审查 Important-1）：向导与 Agent 可并发触发
+     * 同一项目——引擎内按 projectId 取 [Mutex] 全程持锁，杜绝双 commit/交错 push。
+     * 每步执行前幂等核对：
+     * - 锁入口对齐磁盘最新快照（并发下另一方已推进时以磁盘为准，陈旧快照不重做）；
      * - PUSHED 前：远端分支已含本 sha → 跳过 push（重复 advance 不重推）；
-     * - RELEASED 前：远端已有该 tag 的 Release → 跳过创建。
+     * - RELEASED 前：远端已有该 tag 的 Release → 跳过创建；Release 已存在但缺本
+     *   APK 资产 → 按名补传（质量审查 Important-3：上传失败重试不得丢附件）。
      */
     open suspend fun advance(job: ReleaseJob): ReleaseJob {
         if (job.canceled) throw ReleaseCanceledException(job)
-        return withContext(io) {
-            try {
-                when (job.stage) {
-                    ReleaseStage.PLANNED -> {
-                        // check：变更核对（git status 非空即有可发布内容；空树也放行，交由用户确认语义）
-                        val dir = projectDir(job)
-                        if (File(dir, ".git").exists()) git.status(dir)
-                        persist(job, ReleaseStage.CHECKED)
-                    }
-                    ReleaseStage.CHECKED -> {
-                        val message = requireNotNull(job.message) { "CHECKED 前须有 commit message" }
-                        val dir = projectDir(job)
-                        git.initRepo(dir)
-                        val sha = git.commit(dir, message)
-                        persist(job, ReleaseStage.COMMITTED, sha = sha)
-                    }
-                    ReleaseStage.COMMITTED -> {
-                        val sha = requireNotNull(job.commitSha) { "COMMITTED 阶段须有 sha" }
-                        val pat = requirePat()
-                        val remote = requireNotNull(job.remoteUrl) { "COMMITTED 阶段须有 remoteUrl" }
-                        // 幂等核对：远端已含 sha → 跳过重推（断点续跑/重复触发安全）
-                        if (git.remoteBranchSha(remote, pat, job.branch) != sha) {
-                            git.push(projectDir(job), remote, pat, job.branch)
-                        }
-                        persist(job, ReleaseStage.PUSHED)
-                    }
-                    ReleaseStage.PUSHED -> {
-                        var tag = job.tag
-                        if (job.wantRelease) {
-                            val t = requireNotNull(tag) { "wantRelease=true 须给 tag" }
-                            val pat = requirePat()
-                            val (owner, repoName) = api.ownerRepo(
-                                requireNotNull(job.remoteUrl) { "RELEASE 前须有 remoteUrl" },
-                            )
-                            // 幂等核对：远端已有该 tag 的 Release → 跳过重做
-                            val exists = api.listReleases(pat, owner, repoName).any { it.tagName == t }
-                            if (!exists) {
-                                val release = api.createRelease(pat, owner, repoName, t, job.message ?: t)
-                                // 附 APK 资产（规格 F8：Release 页可下载安装包）；模板 uploadUrl 剥离占位后直传
-                                val asset = job.releaseAsset?.takeIf { it.isNotBlank() }
-                                if (asset != null && release.uploadUrl != null) {
-                                    val f = File(asset)
-                                    if (f.isFile) api.uploadAsset(pat, release.uploadUrl!!, f)
-                                }
-                            }
-                            tag = t
-                        }
-                        persist(job, ReleaseStage.RELEASED, tag = tag)
-                    }
-                    ReleaseStage.RELEASED -> job // 终态幂等：重复 advance 原样返回
+        return lockFor(job.projectId).withLock {
+            withContext(io) {
+                // 并发对齐：另一通道可能已把任务推进得更远——以磁盘为准，不重做已完成步
+                val persisted = latest(job.projectId)
+                val base = if (persisted != null && persisted.id == job.id &&
+                    persisted.stage.ordinal > job.stage.ordinal
+                ) {
+                    persisted
+                } else {
+                    job
                 }
-            } catch (e: ReleaseCanceledException) {
-                throw e
-            } catch (t: Throwable) {
-                // 失败：阶段不动，错误证据落盘（重试从当前阶段继续，不回退）
-                persist(job, job.stage, error = t.message)
-                throw PublishException(SecretRedactor.redact(t.message ?: "发布失败"))
+                if (base.canceled) throw ReleaseCanceledException(base)
+                try {
+                    when (base.stage) {
+                        ReleaseStage.PLANNED -> {
+                            // check：变更核对（git status 非空即有可发布内容；空树也放行，交由用户确认语义）
+                            val dir = projectDir(base)
+                            if (File(dir, ".git").exists()) git.status(dir)
+                            persist(base, ReleaseStage.CHECKED)
+                        }
+                        ReleaseStage.CHECKED -> {
+                            val message = requireNotNull(base.message) { "CHECKED 前须有 commit message" }
+                            val dir = projectDir(base)
+                            git.initRepo(dir)
+                            val sha = git.commit(dir, message)
+                            persist(base, ReleaseStage.COMMITTED, sha = sha)
+                        }
+                        ReleaseStage.COMMITTED -> {
+                            val sha = requireNotNull(base.commitSha) { "COMMITTED 阶段须有 sha" }
+                            val pat = requirePat()
+                            val remote = requireNotNull(base.remoteUrl) { "COMMITTED 阶段须有 remoteUrl" }
+                            // 幂等核对：远端已含 sha → 跳过重推（断点续跑/重复触发安全）
+                            if (git.remoteBranchSha(remote, pat, base.branch) != sha) {
+                                git.push(projectDir(base), remote, pat, base.branch)
+                            }
+                            persist(base, ReleaseStage.PUSHED)
+                        }
+                        ReleaseStage.PUSHED -> {
+                            var tag = base.tag
+                            if (base.wantRelease) {
+                                val t = requireNotNull(tag) { "wantRelease=true 须给 tag" }
+                                val pat = requirePat()
+                                val (owner, repoName) = api.ownerRepo(
+                                    requireNotNull(base.remoteUrl) { "RELEASE 前须有 remoteUrl" },
+                                )
+                                val existing = api.listReleases(pat, owner, repoName).firstOrNull {
+                                    it.tagName == t
+                                }
+                                val asset = base.releaseAsset?.takeIf { it.isNotBlank() }?.let { File(it) }
+                                if (existing == null) {
+                                    val release = api.createRelease(pat, owner, repoName, t, base.message ?: t)
+                                    uploadAssetIfPresent(pat, release.uploadUrl, asset)
+                                } else if (asset != null && asset.isFile) {
+                                    // 幂等补传：Release 已在但缺本资产（上次 uploadAsset 失败）→ 按名补传一次
+                                    val missing = existing.assets.none { it.name == asset.name }
+                                    if (missing) uploadAssetIfPresent(pat, existing.uploadUrl, asset)
+                                }
+                                tag = t
+                            }
+                            persist(base, ReleaseStage.RELEASED, tag = tag)
+                        }
+                        ReleaseStage.RELEASED -> base // 终态幂等：重复 advance 原样返回
+                    }
+                } catch (e: ReleaseCanceledException) {
+                    throw e
+                } catch (t: Throwable) {
+                    // 失败：阶段不动，错误证据落盘（重试从当前阶段继续，不回退）
+                    persist(base, base.stage, error = t.message)
+                    throw PublishException(SecretRedactor.redact(t.message ?: "发布失败"))
+                }
             }
         }
     }
@@ -169,12 +189,15 @@ open class ReleaseJobEngine(
     }
 
     /**
-     * 用户取消：置 canceled=true 并落盘。此后 advance 抛 [ReleaseCanceledException]
-     * 且不执行任何 Git/API 动作——取消不是失败，不触发自动重试。
+     * 用户取消：置 canceled=true 并落盘（与 advance 共用 per-project 锁，防交错写）。
+     * 此后 advance 抛 [ReleaseCanceledException] 且不执行任何 Git/API 动作——
+     * 取消不是失败，不触发自动重试。
      */
-    fun cancel(job: ReleaseJob): ReleaseJob = persist(job.copy(canceled = true), job.stage)
+    fun cancel(job: ReleaseJob): ReleaseJob =
+        runBlocking { lockFor(job.projectId).withLock { persist(job.copy(canceled = true), job.stage) } }
 
-    /** 落盘证据：stage/sha/tag/时间戳一次写入（崩溃安全：原子替换）；成功路径清空 error。 */
+    /** 落盘证据：stage/sha/tag/时间戳一次写入（崩溃安全：原子替换）；成功路径清空 error。
+     *  releaseAsset 只落文件名（质量审查 Important-4：设备绝对路径不得进 evidence/随 history 外泄）。 */
     private fun persist(
         job: ReleaseJob,
         stage: ReleaseStage,
@@ -182,6 +205,8 @@ open class ReleaseJobEngine(
         tag: String? = job.tag,
         error: String? = null,
     ): ReleaseJob {
+        // 返回值保留调用方的内存资产路径（本次推进后续步仍可用）；
+        // 落盘证据只写文件名——设备绝对路径不进 release-job.json（质量审查 Important-4）
         val updated = job.copy(
             stage = stage,
             commitSha = sha,
@@ -189,9 +214,22 @@ open class ReleaseJobEngine(
             error = error,
             updatedAt = now(),
         )
-        repo.saveReleaseJobJson(job.projectId, json.encodeToString(ReleaseJob.serializer(), updated))
+        val evidence = updated.copy(releaseAsset = updated.releaseAsset?.let { File(it).name })
+        repo.saveReleaseJobJson(job.projectId, json.encodeToString(ReleaseJob.serializer(), evidence))
         return updated
     }
+
+    /** uploadAsset 安全包装：uploadUrl 缺失或文件不存在则静默跳过（Release 已建，资产可后补）。 */
+    private fun uploadAssetIfPresent(pat: String, uploadUrl: String?, asset: File?) {
+        if (asset == null || uploadUrl == null) return
+        if (asset.isFile) api.uploadAsset(pat, uploadUrl, asset)
+    }
+
+    /** per-project 互斥锁（质量审查 Important-1）：同一项目同时只有一个 advance/cancel 在跑。 */
+    private fun lockFor(projectId: String): Mutex =
+        locks.computeIfAbsent(projectId) { Mutex() }
+
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
     private fun projectDir(job: ReleaseJob): File = repo.projectDir(job.projectId)
 
