@@ -1,6 +1,7 @@
 package com.zhique.runner.settings
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -19,30 +20,43 @@ data class RoleBindings(
     val projectOverrides: Map<String, Map<String, ModelRef>> = emptyMap(),
 )
 
+/** 角色绑定仓：读改写在 `edit{}` 单事务内完成（并发 bind 不丢更新，fix 11）。 */
 class RoleBindingStore(private val store: DataStore<Preferences>, private val json: Json = Json { ignoreUnknownKeys = true }) {
 
-    val bindings: Flow<RoleBindings> = store.data.map { prefs ->
-        val raw = prefs[KEY] ?: return@map RoleBindings()
-        runCatching { json.decodeFromString(RoleBindings.serializer(), raw) }.getOrDefault(RoleBindings())
-    }
+    val bindings: Flow<RoleBindings> = store.data.map { prefs -> decode(prefs) }
 
     suspend fun current(): RoleBindings = bindings.first()
 
-    suspend fun setPreset(preset: String) = write(current().copy(preset = preset))
-
-    suspend fun bind(role: String, ref: ModelRef) = write(current().copy(roles = current().roles + (role to ref)))
-
-    suspend fun unbind(role: String) = write(current().copy(roles = current().roles - role))
-
-    suspend fun setProjectOverride(projectId: String, role: String, ref: ModelRef?) {
-        val cur = current()
-        val forProject = (cur.projectOverrides[projectId] ?: emptyMap()).toMutableMap()
-        if (ref == null) forProject.remove(role) else forProject[role] = ref
-        write(cur.copy(projectOverrides = cur.projectOverrides + (projectId to forProject)))
+    suspend fun setPreset(preset: String) {
+        store.edit { prefs -> write(prefs) { it.copy(preset = preset) } }
     }
 
-    private suspend fun write(value: RoleBindings) {
-        store.edit { it[KEY] = json.encodeToString(RoleBindings.serializer(), value) }
+    suspend fun bind(role: String, ref: ModelRef) {
+        store.edit { prefs -> write(prefs) { it.copy(roles = it.roles + (role to ref)) } }
+    }
+
+    suspend fun unbind(role: String) {
+        store.edit { prefs -> write(prefs) { it.copy(roles = it.roles - role) } }
+    }
+
+    suspend fun setProjectOverride(projectId: String, role: String, ref: ModelRef?) {
+        store.edit { prefs ->
+            write(prefs) { cur ->
+                val map = (cur.projectOverrides[projectId] ?: emptyMap()).toMutableMap()
+                if (ref == null) map.remove(role) else map[role] = ref
+                cur.copy(projectOverrides = cur.projectOverrides + (projectId to map))
+            }
+        }
+    }
+
+    private fun decode(prefs: Preferences): RoleBindings =
+        prefs[KEY]
+            ?.let { raw -> runCatching { json.decodeFromString(RoleBindings.serializer(), raw) }.getOrNull() }
+            ?: RoleBindings()
+
+    /** 单事务内的原子读改写。 */
+    private fun write(prefs: MutablePreferences, transform: (RoleBindings) -> RoleBindings) {
+        prefs[KEY] = json.encodeToString(RoleBindings.serializer(), transform(decode(prefs)))
     }
 
     companion object {

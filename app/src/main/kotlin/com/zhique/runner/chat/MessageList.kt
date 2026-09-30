@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -21,19 +23,53 @@ import androidx.compose.ui.unit.dp
 /**
  * 消息渲染区（X7）：思考块与正文两个独立渲染区——思考块永远在正文之前、独立组件，
  * 任何情况下思考不插入正文流。assistant 轮带「已续写 N 段」徽标与触顶警告条。
+ * LazyColumn（key=turn 序号+role，流式替换内容不丢滚动）承载全部轮次与流式/错误条目。
  */
 @Composable
 internal fun MessageList(
     turns: List<ChatTurn>,
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
+    streaming: Boolean = false,
+    liveThinking: String = "",
+    liveContent: String = "",
+    error: String? = null,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        turns.forEachIndexed { i, turn ->
+    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        itemsIndexed(turns, key = { i, turn -> "turn-$i-${turn.role}" }) { i, turn ->
             if (turn.role == "user") {
                 UserBubble(turn, i)
             } else {
                 AssistantBubble(turn, i, onContinue)
+            }
+        }
+        if (streaming) {
+            item(key = "live") {
+                Column {
+                    ThinkingBlock(
+                        thinking = liveThinking,
+                        seconds = null,
+                        tokens = estimateTokens(liveThinking),
+                        streaming = true,
+                    )
+                    if (liveContent.isNotEmpty()) {
+                        Text(
+                            text = liveContent,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.testTag("live-content"),
+                        )
+                    }
+                }
+            }
+        }
+        error?.let { err ->
+            item(key = "error") {
+                Text(
+                    text = err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.testTag("chat-error"),
+                )
             }
         }
     }

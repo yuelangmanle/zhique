@@ -42,17 +42,17 @@ fun ThinkingBlock(
 ) {
     if (thinking.isEmpty()) return
     var expanded by remember { mutableStateOf(false) }
-    // 逐字回放游标：已展开看过的缓冲不重置；新增量到达时续播
-    val reveal = remember(thinking) { Animatable(thinking.length.toFloat()) }
+    // 逐字回放游标：首次展开从 0 推进到当前已缓冲长度；不随 thinking 重建，
+    // 新增量到达时从当前游标续播到新长度，收起再展开不重置
+    val reveal = remember { Animatable(0f) }
 
     LaunchedEffect(expanded, thinking) {
         if (expanded) {
             val target = thinking.length.toFloat()
             if (reveal.value < target) {
-                reveal.snapTo(minOf(reveal.value, target))
                 reveal.animateTo(
                     target,
-                    tween(((target - reveal.value) * 2.5f).toInt().coerceIn(120, 900)),
+                    tween((thinking.length * 30L).coerceIn(240, 900).toInt()),
                 )
             }
         }

@@ -50,6 +50,21 @@ data class ChatUiState(
             .coerceIn(0f, 1.2f)
 }
 
+/** 流式缓冲：StringBuilder 复用 + 超上限仅保留尾部（防长思考/长正文撑爆内存与 O(n²) 拼接）。 */
+internal class TailBuffer(private val cap: Int) {
+    private val sb = StringBuilder()
+
+    fun append(text: String): TailBuffer {
+        sb.append(text)
+        if (sb.length > cap) sb.delete(0, sb.length - cap)
+        return this
+    }
+
+    fun value(): String = sb.toString()
+    fun length(): Int = sb.length
+    fun reset() = sb.setLength(0)
+}
+
 /**
  * 对话面板控制器（HomeController 模式：IO 协程 + StateFlow + update{}）。
  *
@@ -72,6 +87,8 @@ class ChatController(
     private val history = mutableListOf<ChatMessage>()
     private var lastRequest: ChatRequest? = null
     private var thinkingStartMs = 0L
+    private val liveThinkingBuf = TailBuffer(LIVE_BUFFER_CAP)
+    private val liveContentBuf = TailBuffer(LIVE_BUFFER_CAP)
 
     fun setInput(text: String) {
         _state.update { it.copy(input = text) }
@@ -81,6 +98,8 @@ class ChatController(
         val body = text.trim()
         if (body.isEmpty() || _state.value.busy) return
         history += ChatMessage("user", body)
+        liveThinkingBuf.reset()
+        liveContentBuf.reset()
         _state.update {
             it.copy(
                 turns = it.turns + ChatTurn(role = "user", content = body),
@@ -126,6 +145,9 @@ class ChatController(
                 replaceLastAssistant(out.content, out.segments, out.limitHit)
             } catch (e: TruncationContinuer.Truncated) {
                 replaceLastAssistant(e.partial, e.segments + partialSegments(), limitHit = true)
+            } catch (e: CancellationException) {
+                fail("已取消")
+                throw e
             } catch (e: Exception) {
                 fail(e.message ?: "续写失败")
             }
@@ -139,9 +161,13 @@ class ChatController(
         when (e) {
             is StreamEvent.ThinkingDelta -> {
                 if (thinkingStartMs == 0L) thinkingStartMs = System.currentTimeMillis()
-                _state.update { it.copy(liveThinking = it.liveThinking + e.text) }
+                liveThinkingBuf.append(e.text)
+                _state.update { it.copy(liveThinking = liveThinkingBuf.value()) }
             }
-            is StreamEvent.ContentDelta -> _state.update { it.copy(liveContent = it.liveContent + e.text) }
+            is StreamEvent.ContentDelta -> {
+                liveContentBuf.append(e.text)
+                _state.update { it.copy(liveContent = liveContentBuf.value()) }
+            }
             else -> {}
         }
     }
@@ -152,7 +178,7 @@ class ChatController(
     }
 
     private fun finishTurn(content: String, segments: Int, truncated: Boolean) {
-        val thinking = _state.value.liveThinking
+        val thinking = liveThinkingBuf.value()
         val turn = ChatTurn(
             role = "assistant",
             content = content,
@@ -176,7 +202,7 @@ class ChatController(
     }
 
     private fun replaceLastAssistant(stitched: String, segments: Int, limitHit: Boolean) {
-        val thinking = _state.value.liveThinking
+        val thinking = liveThinkingBuf.value()
         val idx = _state.value.turns.indexOfLast { it.role == "assistant" }
         _state.update { s ->
             val turns = s.turns.toMutableList()
@@ -197,5 +223,10 @@ class ChatController(
 
     private fun fail(msg: String) {
         _state.update { it.copy(busy = false, streaming = false, error = msg) }
+    }
+
+    companion object {
+        /** 流式缓冲上限：超出仅保留尾部（思考流展示与落轮都用尾部）。 */
+        const val LIVE_BUFFER_CAP = 64 * 1024
     }
 }

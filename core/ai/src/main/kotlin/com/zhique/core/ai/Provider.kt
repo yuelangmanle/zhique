@@ -60,7 +60,12 @@ data class ChatRequest(
     val maxTokens: Int,
     val temperature: Double = 0.3,
     val thinkingEnabled: Boolean = true,
-)
+) {
+    /** 抹除 apiKey：防 DebugDrawer/日志间接泄漏（Key 永不出现在日志，规格 §6）。 */
+    override fun toString(): String =
+        "ChatRequest(baseUrl=$baseUrl, apiKey=***, model=$model, messages=${messages.size}条, " +
+            "tools=${tools.size}个, maxTokens=$maxTokens, temperature=$temperature, thinkingEnabled=$thinkingEnabled)"
+}
 
 /** 可插拔 Provider（规格 §4.4 三协议：openai_compatible / anthropic_messages / google_genai）。 */
 interface Provider {

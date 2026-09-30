@@ -60,7 +60,7 @@ internal fun buildAnthropicRequestJson(req: ChatRequest): JsonObject {
         if (req.thinkingEnabled) {
             put("thinking", buildJsonObject {
                 put("type", "enabled")
-                put("budget_tokens", maxOf(MIN_THINKING_BUDGET, req.maxTokens / 2))
+                put("budget_tokens", thinkingBudget(req.maxTokens))
             })
         } else {
             put("temperature", req.temperature)
@@ -178,5 +178,9 @@ internal fun JsonObject?.str(key: String): String? =
 
 internal fun JsonObject?.int(key: String): Int? =
     (this?.get(key) as? JsonPrimitive)?.intOrNull
+
+/** 思考预算：≥1024 且必须 < max_tokens（== 会被 400），maxTokens 过小时退到 maxTokens-1。 */
+internal fun thinkingBudget(maxTokens: Int): Int =
+    maxOf(MIN_THINKING_BUDGET, maxTokens / 2).coerceAtMost(maxOf(1, maxTokens - 1))
 
 private const val MIN_THINKING_BUDGET = 1024

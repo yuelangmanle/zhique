@@ -9,6 +9,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import com.zhique.runner.ui.theme.ZqTheme
 import org.junit.Rule
 import org.junit.Test
@@ -44,11 +46,30 @@ class ThinkingBlockUiTest {
     }
 
     @Test
-    fun `点击展开_逐字回放思考文本_再点收起`() {
+    fun `点击展开_逐字回放存在中间帧_播完为全文_再点收起`() {
+        compose.mainClock.autoAdvance = false
         compose.setContent { ZqTheme { ThinkingBlock(thinking, seconds = 3.0, tokens = 21) } }
+        // 冻结时钟下先起一帧完成首次组合/测量，否则点击不命中
+        compose.mainClock.advanceTimeBy(16)
+        compose.waitForIdle()
         compose.onNodeWithTag("thinking-toggle").performClick()
-        compose.waitUntil(5_000) { compose.renderedThinking() == thinking }
-        compose.onNodeWithTag("thinking-replay-text").assertExists()
+        // 起帧：recomposition + LaunchedEffect 启动
+        compose.mainClock.advanceTimeBy(16)
+        compose.waitForIdle()
+        // 中间帧：回放推进中，已显示部分文本
+        compose.mainClock.advanceTimeBy(200)
+        compose.waitForIdle()
+        val mid = compose.renderedThinking()
+        assertTrue(
+            mid.isNotEmpty() && mid.length < thinking.length,
+            "回放应有中间帧（首展开从 0 推进）：mid=\"$mid\"",
+        )
+        // 播完 → 全文
+        compose.mainClock.advanceTimeBy(5_000)
+        compose.waitForIdle()
+        assertEquals(thinking, compose.renderedThinking())
+        // 收起
+        compose.mainClock.autoAdvance = true
         compose.onNodeWithTag("thinking-toggle").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("thinking-replay-text").assertDoesNotExist()

@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -24,6 +25,8 @@ internal fun sseChatFlow(
     newParser: () -> (String) -> List<StreamEvent>,
 ): Flow<StreamEvent> = flow {
     val call = client.newCall(request)
+    // 注册到当前 Job：collector 取消时立即 call.cancel()，中断阻塞 readLine（协作取消）
+    currentCoroutineContext().job.invokeOnCompletion { call.cancel() }
     val response = try {
         call.execute()
     } catch (e: IOException) {
@@ -50,7 +53,12 @@ internal fun sseChatFlow(
         }
         while (true) {
             currentCoroutineContext().ensureActive()
-            val line = reader.readLine() ?: break
+            val line = try {
+                readCappedLine(reader)
+            } catch (e: IOException) {
+                currentCoroutineContext().ensureActive() // 取消竞态：以 CancellationException 为准
+                throw e
+            } ?: break
             handle(parser.feed(line + "\n"))
             if (stopReading) break
         }
@@ -61,6 +69,22 @@ internal fun sseChatFlow(
         call.cancel()
     }
 }.flowOn(Dispatchers.IO)
+
+/** 单行读取上限：超过即断流（防失控响应撑爆内存）。 */
+internal const val SSE_MAX_LINE_CHARS = 1 shl 20
+
+/** 带行长上限的 readLine（返回 null = EOF；\n 终止、剥尾部 \r）。 */
+private fun readCappedLine(reader: BufferedReader): String? {
+    val sb = StringBuilder(256)
+    while (true) {
+        val i = reader.read()
+        if (i < 0) return if (sb.isEmpty()) null else sb.toString()
+        val c = i.toChar()
+        if (c == '\n') return sb.toString().removeSuffix("\r")
+        sb.append(c)
+        if (sb.length > SSE_MAX_LINE_CHARS) throw AiError.Protocol("SSE 行超长（>${SSE_MAX_LINE_CHARS}），已断流")
+    }
+}
 
 /** 三协议共用默认客户端（SSE 长读 300s）。 */
 internal fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()

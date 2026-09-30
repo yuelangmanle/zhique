@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -68,41 +66,18 @@ fun ChatScreen(
                 )
             }
 
-            Column(
-                Modifier
+            MessageList(
+                turns = state.turns,
+                onContinue = controller::continueOutput,
+                modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                MessageList(turns = state.turns, onContinue = controller::continueOutput)
-                if (state.streaming) {
-                    Column {
-                        ThinkingBlock(
-                            thinking = state.liveThinking,
-                            seconds = null,
-                            tokens = estimateTokens(state.liveThinking),
-                            streaming = true,
-                        )
-                        if (state.liveContent.isNotEmpty()) {
-                            Text(
-                                text = state.liveContent,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.testTag("live-content"),
-                            )
-                        }
-                    }
-                }
-                state.error?.let { err ->
-                    Text(
-                        text = err,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.testTag("chat-error"),
-                    )
-                }
-            }
+                streaming = state.streaming,
+                liveThinking = state.liveThinking,
+                liveContent = state.liveContent,
+                error = state.error,
+            )
 
             Row(
                 Modifier

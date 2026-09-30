@@ -1,6 +1,7 @@
 package com.zhique.runner.settings
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -26,26 +27,26 @@ data class ProviderConfig(
     val contextManual: Int = 0,
 )
 
-/** Provider 配置仓：DataStore 存 JSON 列表，Key 密文经 [CryptoStore]。 */
+/**
+ * Provider 配置仓：DataStore 存 JSON 列表，Key 密文经 [CryptoStore]。
+ * 读改写全部在 `edit{}` 单事务内完成（并发 upsert 不丢更新，fix 11）。
+ */
 class ProviderStore(
     private val store: DataStore<Preferences>,
     private val crypto: CryptoStore,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    val providers: Flow<List<ProviderConfig>> = store.data.map { prefs ->
-        val raw = prefs[KEY_PROVIDERS] ?: return@map emptyList()
-        runCatching { json.decodeFromString(ListSerializer(ProviderConfig.serializer()), raw) }
-            .getOrDefault(emptyList())
-    }
+    val providers: Flow<List<ProviderConfig>> = store.data.map { prefs -> decode(prefs) }
 
     suspend fun list(): List<ProviderConfig> = providers.first()
 
     suspend fun upsert(config: ProviderConfig) {
-        val next = list().filterNot { it.id == config.id } + config
-        write(next)
+        store.edit { prefs -> write(prefs) { it.filterNot { c -> c.id == config.id } + config } }
     }
 
-    suspend fun remove(id: String) = write(list().filterNot { it.id == id })
+    suspend fun remove(id: String) {
+        store.edit { prefs -> write(prefs) { it.filterNot { c -> c.id == id } } }
+    }
 
     suspend fun get(id: String): ProviderConfig? = list().firstOrNull { it.id == id }
 
@@ -55,10 +56,14 @@ class ProviderStore(
     fun decryptKey(config: ProviderConfig): String =
         runCatching { crypto.decrypt(config.keyCipher) }.getOrDefault("")
 
-    private suspend fun write(configs: List<ProviderConfig>) {
-        store.edit { prefs ->
-            prefs[KEY_PROVIDERS] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), configs)
-        }
+    private fun decode(prefs: Preferences): List<ProviderConfig> =
+        prefs[KEY_PROVIDERS]
+            ?.let { raw -> runCatching { json.decodeFromString(ListSerializer(ProviderConfig.serializer()), raw) }.getOrNull() }
+            ?: emptyList()
+
+    /** 单事务内的原子读改写。 */
+    private fun write(prefs: MutablePreferences, transform: (List<ProviderConfig>) -> List<ProviderConfig>) {
+        prefs[KEY_PROVIDERS] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), transform(decode(prefs)))
     }
 
     companion object {

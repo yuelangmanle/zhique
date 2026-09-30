@@ -61,7 +61,7 @@ class TruncationContinuer(
                 StopReason.LENGTH -> {
                     if (seg >= maxSegments) throw Truncated(content, seg)
                     seg++
-                    val tail = content.takeLast(TAIL_WINDOW) // 前缀窗口防膨胀
+                    val tail = tailCodePoints(content, TAIL_WINDOW) // 前缀窗口防膨胀（代理对安全）
                     r = req.copy(
                         messages = req.messages +
                             ChatMessage(ROLE_ASSISTANT, tail) +
@@ -84,7 +84,7 @@ class TruncationContinuer(
         val segBuf = StringBuilder()
         val cont = req.copy(
             messages = req.messages +
-                ChatMessage(ROLE_ASSISTANT, partial.takeLast(TAIL_WINDOW)) +
+                ChatMessage(ROLE_ASSISTANT, tailCodePoints(partial, TAIL_WINDOW)) +
                 ChatMessage(ROLE_USER, CONTINUE_PROMPT),
         )
         chat(cont).collect { e ->
@@ -118,7 +118,9 @@ class TruncationContinuer(
 
 /**
  * 拼接去重（行级双指针）：找前段尾与续段头最长公共重叠（≤4 行）并去一；
- * 代码边界（前段止于行中、续段首为空行）→ 去空行直接衔接。
+ * 代码边界（前段止于行中、续段首为空行）→ 仅当**前段尾是悬空 token**
+ * （运算符/逗号/开括号/`=` 或 return 等后接残缺标识符）才去空行直接衔接，
+ * 否则保留换行（避免把两行并行合并）。
  * 换行边界归一：前段尾换行/续段头换行先剥掉再按行匹配，避免空行假重叠。
  */
 internal fun stitch(prev: String, next: String): String {
@@ -137,6 +139,30 @@ internal fun stitch(prev: String, next: String): String {
             return (prevLines + nextLines.drop(k)).joinToString("\n")
         }
     }
-    // 无行级重叠：行中截断 + 续段以换行开头 → 去掉续段首个换行直接衔接
-    return if (!prevEndsNl && nextStartsNl) prev + next.removePrefix("\n") else prev + next
+    // 无行级重叠：仅前段止于悬空 token 且续段以换行开头 → 去掉续段首个换行直接衔接
+    return if (!prevEndsNl && nextStartsNl && danglingTail(prev)) {
+        prev + next.removePrefix("\n")
+    } else {
+        prev + next
+    }
+}
+
+/** 行尾悬空 token：标点运算符/开括号收尾，或 `=`/return/await/new/case/throw 后接残缺标识符。 */
+private val DANGLING_TAIL_KEYWORD = Regex("""(?:=|\breturn|\bawait|\bnew|\bcase|\bthrow)\s*[A-Za-z0-9_]*$""")
+private const val DANGLING_PUNCT = "([{'\",;:?!.+-*/%<>=&|~^"
+
+internal fun danglingTail(prev: String): Boolean {
+    val last = prev.substringAfterLast('\n').trimEnd()
+    if (last.isEmpty()) return false
+    if (DANGLING_PUNCT.contains(last.last())) return true
+    return DANGLING_TAIL_KEYWORD.containsMatchIn(last)
+}
+
+/** 按 code point 安全取尾部 n 字符（不切半代理对，如 emoji）。 */
+internal fun tailCodePoints(s: String, n: Int): String {
+    if (s.length <= n) return s
+    var start = s.length - n
+    // 起点落在低代理上（高代理被排除）→ 回退一位把整对保留进来
+    if (start > 0 && s[start].isLowSurrogate()) start--
+    return s.substring(start)
 }

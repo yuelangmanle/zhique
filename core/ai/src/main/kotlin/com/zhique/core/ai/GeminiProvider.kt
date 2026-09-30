@@ -73,6 +73,23 @@ internal fun buildGeminiRequestJson(req: ChatRequest): JsonObject {
                                 })
                             })
                         }
+                        // assistant 历史的工具调用 → functionCall parts
+                        // （Gemini 约束：functionResponse 的前一条 model 轮必须含对应 functionCall）
+                        if (m.role == "assistant" && m.toolCallsJson != null) {
+                            val calls = runCatching { Json.parseToJsonElement(m.toolCallsJson) }
+                                .getOrNull() as? JsonArray
+                            calls?.forEach { el ->
+                                val o = el as? JsonObject ?: return@forEach
+                                val argsRaw = o["arguments"]?.let { (it as? JsonPrimitive)?.contentOrNull }
+                                add(buildJsonObject {
+                                    put("functionCall", buildJsonObject {
+                                        put("name", o.str("name") ?: "")
+                                        put("args", runCatching { Json.parseToJsonElement(argsRaw ?: "{}") }
+                                            .getOrElse { buildJsonObject { } })
+                                    })
+                                })
+                            }
+                        }
                         if (m.role == "tool") {
                             add(buildJsonObject {
                                 put("functionResponse", buildJsonObject {
