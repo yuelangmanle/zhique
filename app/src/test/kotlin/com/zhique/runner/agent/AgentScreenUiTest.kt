@@ -34,6 +34,7 @@ class AgentScreenUiTest {
         onCompact: () -> Unit = {},
         onApprove: () -> Unit = {},
         onDeny: () -> Unit = {},
+        onAutoChange: (Boolean) -> Unit = {},
     ) {
         compose.setContent {
             ZqTheme {
@@ -49,9 +50,22 @@ class AgentScreenUiTest {
                     onRollback = {},
                     onApprove = onApprove,
                     onDeny = onDeny,
+                    onAutoChange = onAutoChange,
                 )
             }
         }
+    }
+
+    @Test
+    fun `全自动开关渲染与回调`() {
+        var toggled: Boolean? = null
+        setContent(
+            state = AgentUiState(autoApproved = false),
+            onAutoChange = { toggled = it },
+        )
+        compose.onNodeWithTag("agent-auto-switch").assertExists()
+        compose.onNodeWithTag("agent-auto-switch").performClick()
+        org.junit.Assert.assertEquals(true, toggled)
     }
 
     @Test

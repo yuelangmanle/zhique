@@ -75,6 +75,8 @@ fun ZhiqueApp(
     val agentBridge = remember { AgentBridge() }
     var editorProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var chatAsk by remember { mutableStateOf<EditorAskContext?>(null) }
+    // Agent 会话运行真值（编辑器只读横幅的依据；不靠全屏互斥兜底）
+    var agentRunning by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(TAB_PROJECTS) }
     var settingsPage by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -184,6 +186,7 @@ fun ZhiqueApp(
                                         projectName = agentMeta.name,
                                         repo = container.repo,
                                         vision = w.vision,
+                                        contextLimit = w.contextWindow,
                                         llm = w.chat,
                                         fastChat = w.fastChat,
                                         template = w.template,
@@ -197,6 +200,9 @@ fun ZhiqueApp(
                             }
                             if (wired == null) toast("请先在「AI 服务商」添加服务商")
                         }
+                        LaunchedEffect(agentController) {
+                            agentController?.state?.collect { agentRunning = it.running }
+                        }
                         val controller = agentController
                         if (controller != null) {
                             AgentScreen(controller = controller, onBack = { agentProject = null })
@@ -209,11 +215,14 @@ fun ZhiqueApp(
                                 repo = container.repo,
                                 projectId = editorMeta.id,
                                 scope = scope,
+                                agentRunningProvider = { agentRunning },
                                 onToast = toast,
                             )
                         }
-                        LaunchedEffect(editorMeta.id) { controller.open() }
-                        LaunchedEffect(agentProject != null) { controller.refreshAgentRunning() }
+                        LaunchedEffect(editorMeta.id, agentRunning) {
+                            controller.open()
+                            controller.refreshAgentRunning()
+                        }
                         EditorScreen(
                             controller = controller,
                             onBack = { editorProject = null },
@@ -347,6 +356,9 @@ private fun ChatPage(
                 chat = w.chat,
                 newRequest = { history -> w.template.copy(messages = history) },
                 contextWindow = w.contextWindow,
+                contextBudget = com.zhique.core.agent.ContextBudget(contextLimit = w.contextWindow),
+                fastChat = w.fastChat,
+                fastTemplate = w.fastTemplate,
                 recordUsage = w.recordUsage,
                 scope = scope,
             )

@@ -78,6 +78,7 @@ fun AgentScreen(
         onRollback = controller::rollback,
         onApprove = controller::approve,
         onDeny = controller::deny,
+        onAutoChange = controller::setAutoApproved,
         modifier = modifier,
     )
 }
@@ -96,6 +97,7 @@ fun AgentContent(
     onRollback: (String) -> Unit,
     onApprove: () -> Unit,
     onDeny: () -> Unit,
+    onAutoChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showSnapshots by remember { mutableStateOf(false) }
@@ -177,6 +179,14 @@ fun AgentContent(
                     onClick = { showSnapshots = true },
                     modifier = Modifier.testTag("snapshots-button"),
                 ) { Text("快照") }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("agent-auto-row")) {
+                    Text("全自动", style = MaterialTheme.typography.labelSmall)
+                    androidx.compose.material3.Switch(
+                        checked = state.autoApproved,
+                        onCheckedChange = onAutoChange,
+                        modifier = Modifier.testTag("agent-auto-switch"),
+                    )
+                }
                 TextButton(onClick = onCompact, modifier = Modifier.testTag("compact-button")) {
                     Text("压缩上下文")
                 }

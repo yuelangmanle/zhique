@@ -37,10 +37,10 @@ class MemoryContextAssembler(
     private val fileMapProvider: () -> String = { "" },
     private val autoCompact: (suspend (MemoryContextAssembler) -> Unit)? = null,
     private val autoScope: CoroutineScope? = null,
-) : ContextAssembler {
+) : ContextAssembler, CompactableSession {
 
     /** 任务目标原文（不变量）。 */
-    var goal: String = ""
+    override var goal: String = ""
         private set
 
     private val turnsInternal = mutableListOf<Turn>()
@@ -48,7 +48,7 @@ class MemoryContextAssembler(
     private val compacting = AtomicBoolean(false)
 
     /** 已完成轮次快照（Compactor 消费）。 */
-    fun turnsSnapshot(): List<Turn> = synchronized(turnsInternal) { turnsInternal.toList() }
+    override fun turnsSnapshot(): List<Turn> = synchronized(turnsInternal) { turnsInternal.toList() }
 
     /** 报错时间线快照（UI/调试用）。 */
     fun errorsSnapshot(): List<String> = synchronized(errorLinesInternal) { errorLinesInternal.toList() }
@@ -73,13 +73,13 @@ class MemoryContextAssembler(
     override fun usage(): Float = budget.usage(estimateTokens())
 
     /** 长期记忆件 tokens（摘要卡 before/after 与用量共用口径）。 */
-    fun estimateTokens(): Int =
+    override fun estimateTokens(): Int =
         longTermPieces().sumOf { estimateTokens(it) } + turnsSnapshot()
             .filter { it.kind != Turn.Kind.TOOL_RESULT }
             .sumOf { estimateTokens(it.content) }
 
     /** 压缩落位：星标轮保留原位语义，非星标早期轮次替换为一条摘要轮。 */
-    fun applyCompaction(summary: String) {
+    override fun applyCompaction(summary: String) {
         synchronized(turnsInternal) {
             if (turnsInternal.size <= KEEP_RECENT) return
             val keep = turnsInternal.takeLast(KEEP_RECENT)

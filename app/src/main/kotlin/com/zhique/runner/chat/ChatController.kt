@@ -7,6 +7,10 @@ import com.zhique.core.ai.ChatRequest
 import com.zhique.core.ai.ModelCatalog
 import com.zhique.core.ai.StreamEvent
 import com.zhique.core.ai.TruncationContinuer
+import com.zhique.core.agent.CompactableSession
+import com.zhique.core.agent.Compactor
+import com.zhique.core.agent.ContextBudget
+import com.zhique.core.agent.Turn
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -74,8 +78,11 @@ internal class TailBuffer(private val cap: Int) {
 class ChatController(
     private val chat: suspend (ChatRequest) -> Flow<StreamEvent>,
     private val newRequest: (List<ChatMessage>) -> ChatRequest,
-    val contextWindow: Int = ModelCatalog.DEFAULT_CONTEXT_WINDOW, // M4 接目录真值
+    val contextWindow: Int = ModelCatalog.DEFAULT_CONTEXT_WINDOW, // 模型窗口（三层解析真值）
+    val contextBudget: ContextBudget = ContextBudget(contextWindow), // 工作预算真值（默认 75%）
     maxSegments: Int = TruncationContinuer.DEFAULT_MAX_SEGMENTS,
+    private val fastChat: (suspend (ChatRequest) -> Flow<StreamEvent>)? = null, // 快循环通道（压缩用）
+    private val fastTemplate: ChatRequest? = null,
     private val recordUsage: (suspend (tokens: Int) -> Unit)? = null, // M4：UsageMeter.record 挂点
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -83,6 +90,14 @@ class ChatController(
     private val continuer = TruncationContinuer(chat, maxSegments)
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
+
+    /** 最近一次压缩摘要卡数据（压缩上下文按钮产物）。 */
+    private val _compression = MutableStateFlow<Compactor.CompressionReport?>(null)
+    val compression: StateFlow<Compactor.CompressionReport?> = _compression.asStateFlow()
+
+    fun dismissCompression() {
+        _compression.value = null
+    }
 
     /** 发送历史（仅 role/content；思考不进历史）。 */
     private val history = mutableListOf<ChatMessage>()
@@ -249,6 +264,50 @@ class ChatController(
 
     private fun fail(msg: String) {
         _state.update { it.copy(busy = false, streaming = false, error = msg) }
+    }
+
+    /**
+     * 「压缩上下文」（规格 §4.5.4：对话面板常驻）：快循环模型把早期轮次压成摘要，
+     * 任务目标（首条用户消息）与最近 KEEP_RECENT 轮原文保留；产物出摘要卡。
+     */
+    fun compactNow() {
+        val fast = fastChat ?: return
+        val template = fastTemplate ?: return
+        scope.launch(io) {
+            val report = runCatching {
+                Compactor(fast, template).compactNow(chatSession(), manual = true)
+            }.getOrNull()
+            _compression.value = report
+        }
+    }
+
+    private fun chatSession() = object : CompactableSession {
+        override val goal: String
+            get() = _state.value.turns.firstOrNull { it.role == "user" }?.content ?: ""
+
+        override fun turnsSnapshot(): List<Turn> =
+            _state.value.turns.map { Turn(it.role, it.content) }
+
+        override fun estimateTokens(): Int =
+            _state.value.turns.sumOf { estimateTokens(it.content) }
+
+        override fun applyCompaction(summary: String) {
+            _state.update { s ->
+                if (s.turns.size <= Compactor.KEEP_RECENT) {
+                    s
+                } else {
+                    val keep = s.turns.takeLast(Compactor.KEEP_RECENT)
+                    val summaryTurn = ChatTurn(role = "assistant", content = "[已压缩上下文]\n$summary")
+                    s.copy(turns = listOf(summaryTurn) + keep)
+                }
+            }
+            synchronized(history) {
+                val keep = history.takeLast(Compactor.KEEP_RECENT)
+                history.clear()
+                history += ChatMessage("assistant", "[已压缩上下文]\n$summary")
+                history += keep
+            }
+        }
     }
 
     companion object {

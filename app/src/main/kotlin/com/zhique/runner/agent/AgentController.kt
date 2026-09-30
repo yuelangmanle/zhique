@@ -56,6 +56,7 @@ data class AgentUiState(
     val budgetHit: Boolean = false,
     val error: String? = null,
     val vision: Boolean = false,
+    val autoApproved: Boolean = false,
     val rounds: List<RoundUi> = emptyList(),
     val steps: List<StepUi> = emptyList(),
     val snapshots: List<Snapshot> = emptyList(),
@@ -79,6 +80,9 @@ class AgentController(
         val projectName: String,
         val repo: ProjectRepository,
         val vision: Boolean,
+
+        /** 上下文上限真值（AiWiring 三层解析：手动覆盖 > 模型目录 > 默认）。 */
+        val contextLimit: Int = com.zhique.core.ai.ModelCatalog.DEFAULT_CONTEXT_WINDOW,
         val llm: suspend (ChatRequest) -> Flow<StreamEvent>,
         val fastChat: suspend (ChatRequest) -> Flow<StreamEvent>,
         val template: ChatRequest,
@@ -101,6 +105,11 @@ class AgentController(
 
     fun setGoal(text: String) {
         _state.update { it.copy(goal = text) }
+    }
+
+    /** 「全自动模式」：开时 requiresConfirm 工具免批准直接执行（默认关）。 */
+    fun setAutoApproved(enabled: Boolean) {
+        _state.update { it.copy(autoApproved = enabled) }
     }
 
     /** 开始一次会话（预算默认 5 轮）。 */
@@ -162,6 +171,10 @@ class AgentController(
             val web = deps.web ?: NullWebControl
             val ctx = ToolContext(deps.projectId, web, deps.repo, deps.repo.history, deps.vision)
             val result = runCatching { registry.invoke(ctx, ToolCall("confirm", confirm.tool, confirm.argsJson)) }
+            assembler?.appendTurn(
+                "tool",
+                "用户已批准并执行 ${confirm.tool}：" + result.fold({ it.toString() }, { it.message ?: "失败" }),
+            )
             _state.update { s ->
                 s.copy(
                     steps = s.steps.dropLast(1) + StepUi(
@@ -175,6 +188,12 @@ class AgentController(
     }
 
     fun deny() {
+        val confirm = _state.value.awaitConfirm ?: return
+        // 拒绝回写会话记忆：告知模型勿重复发起，改用其他方案
+        assembler?.appendTurn(
+            "tool",
+            "用户拒绝了 ${confirm.tool} 操作；请勿再次发起该工具，改用其他方案或直接汇报",
+        )
         _state.update { it.copy(awaitConfirm = null) }
     }
 
@@ -186,7 +205,7 @@ class AgentController(
 
     private fun newAssembler(): MemoryContextAssembler {
         return MemoryContextAssembler(
-            budget = ContextBudgetOf(deps.template.model),
+            budget = ContextBudgetOf(),
             requestTemplate = deps.template,
             memory = deps.memory,
             projectId = deps.projectId,
@@ -202,9 +221,9 @@ class AgentController(
         )
     }
 
-    /** Agent 主力模型的上下文窗口三层解析（目录口径；设置手动覆盖由 wiring 折进 template）。 */
-    private fun ContextBudgetOf(model: String): com.zhique.core.agent.ContextBudget =
-        com.zhique.core.agent.ContextBudget.resolve(model, manual = null)
+    /** 上下文预算：上限由 wiring 三层解析（手动覆盖第三层填充对 Agent 生效）。 */
+    private fun ContextBudgetOf(): com.zhique.core.agent.ContextBudget =
+        com.zhique.core.agent.ContextBudget(contextLimit = deps.contextLimit)
 
     private fun listProjectFiles(): List<Pair<String, String>> =
         com.zhique.core.agent.tools.ProjectFiles.walk(deps.repo, deps.projectId)
@@ -221,7 +240,7 @@ class AgentController(
                 toolCtx = ToolContext(deps.projectId, web, deps.repo, deps.repo.history, deps.vision),
                 assembler = asm,
                 memory = deps.memory,
-                autoApproved = false,
+                autoApproved = _state.value.autoApproved,
             )
             val orch = Orchestrator(
                 llm = deps.llm,
@@ -287,7 +306,11 @@ class AgentController(
                 }
                 refreshSnapshots()
             }
-            is AgentEvent.AwaitConfirm -> _state.update { it.copy(awaitConfirm = e) }
+            is AgentEvent.AwaitConfirm -> {
+                // 待批状态回写会话记忆：防模型下一轮重复发起同一外发工具烧预算
+                asm.appendTurn("tool", "工具 ${e.tool} 为外发动作，已提交用户批准；批准前不得再次发起")
+                _state.update { it.copy(awaitConfirm = e) }
+            }
             AgentEvent.BudgetHit -> _state.update { it.copy(running = false, budgetHit = true, budget = budgetUi(b)) }
             is AgentEvent.Finished -> _state.update {
                 it.copy(running = false, finished = true, contextUsage = asm.usage(), budget = budgetUi(b))
@@ -309,6 +332,9 @@ class AgentController(
         val snaps = runCatching { deps.repo.history.list(deps.projectId) }.getOrDefault(emptyList())
         _state.update { it.copy(snapshots = snaps) }
     }
+
+    /** 测试观察口：当前会话组装器（预算/拒绝回写断言用）。 */
+    internal fun currentAssembler(): MemoryContextAssembler? = assembler
 
     companion object {
         const val RESUME_ROUNDS = 5

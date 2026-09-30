@@ -18,9 +18,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +43,8 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by controller.state.collectAsState()
+    val compression by controller.compression.collectAsState()
+    val scope = rememberCoroutineScope()
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column {
             Row(
@@ -59,11 +64,17 @@ fun ChatScreen(
                 )
                 UsageRing(
                     label = "上下文",
-                    fraction = state.contextFraction(controller.contextWindow),
+                    // 工作预算真值：长期 tokens ÷ 工作预算（窗口 75%，规格 §4.5.4）
+                    fraction = state.contextFraction(controller.contextBudget.workLimit),
                     modifier = Modifier
                         .padding(start = 10.dp)
                         .testTag("ring-context"),
                 )
+                TextButton(
+                    onClick = { scope.launch { controller.compactNow() } },
+                    enabled = !state.busy,
+                    modifier = Modifier.testTag("chat-compact"),
+                ) { Text("压缩上下文") }
             }
 
             MessageList(
@@ -78,6 +89,17 @@ fun ChatScreen(
                 liveContent = state.liveContent,
                 error = state.error,
             )
+
+            // 压缩摘要卡（保留/丢弃清单 + token 前后对比，复用 Agent 卡）
+            compression?.let { report ->
+                com.zhique.runner.agent.CompressionCard(
+                    kept = report.kept,
+                    dropped = report.dropped,
+                    before = report.before,
+                    after = report.after,
+                    onDismiss = controller::dismissCompression,
+                )
+            }
 
             Row(
                 Modifier

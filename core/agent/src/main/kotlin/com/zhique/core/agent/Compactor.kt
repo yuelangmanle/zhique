@@ -9,6 +9,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
 /**
+ * 可压缩会话口：[MemoryContextAssembler] 与 :app 的 Chat 会话共同实现，
+ * Compactor 只依赖本接口（压缩管线单份）。
+ */
+interface CompactableSession {
+    /** 任务目标原文（不变量；Chat 会话取首条用户消息）。 */
+    val goal: String
+
+    fun turnsSnapshot(): List<Turn>
+
+    fun estimateTokens(): Int
+
+    /** 压缩落位：非星标早期轮次替换为一条摘要轮（最近 KEEP_RECENT 轮原文保留）。 */
+    fun applyCompaction(summary: String)
+}
+
+/**
  * 上下文压缩（规格 §4.5 第 4 条，决策 27 ★）：
  * 用快循环角色模型把早期轮次压成摘要；任务目标、⭐标记结论、最近 [KEEP_RECENT] 轮原文
  * 是**压缩不变量**——任何情况不进摘要、不丢弃。
@@ -29,8 +45,8 @@ class Compactor(
     )
 
     /** 手动/同步压缩：轮次不足返回 null（无可压缩）。 */
-    suspend fun compactNow(assembler: MemoryContextAssembler, manual: Boolean = true): CompressionReport? {
-        val turns = assembler.turnsSnapshot()
+    suspend fun compactNow(session: CompactableSession, manual: Boolean = true): CompressionReport? {
+        val turns = session.turnsSnapshot()
         if (turns.size <= KEEP_RECENT) return null
         val mid = turns.dropLast(KEEP_RECENT)
         val starred = mid.filter { it.starred }
@@ -38,10 +54,10 @@ class Compactor(
         val toSummarize = mid.filter { !it.starred && it.kind == Turn.Kind.NORMAL }
         if (toSummarize.isEmpty()) return null
 
-        val before = assembler.estimateTokens()
-        val summary = summarize(assembler.goal, starred, toSummarize)
+        val before = session.estimateTokens()
+        val summary = summarize(session.goal, starred, toSummarize)
         val dropped = toSummarize.map { "${it.role}: ${it.content.take(40)}…" }
-        assembler.applyCompaction(summary)
+        session.applyCompaction(summary)
         return CompressionReport(
             kept = listOf(
                 "任务目标（原文）",
@@ -51,7 +67,7 @@ class Compactor(
             ),
             dropped = dropped,
             before = before,
-            after = assembler.estimateTokens(),
+            after = session.estimateTokens(),
             manual = manual,
         )
     }
