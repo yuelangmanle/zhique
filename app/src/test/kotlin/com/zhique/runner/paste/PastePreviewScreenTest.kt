@@ -82,7 +82,12 @@ class PastePreviewScreenTest {
         compose.onNodeWithTag("paste-undo-clean").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("恢复清洗").assertExists()
-        kotlin.test.assertTrue("```js" in c.state.value.assembledHtml, "撤销清洗=原始输入重跑")
+        kotlin.test.assertTrue("```" !in c.state.value.assembledHtml, "撤销后围栏仍按结构剥离")
+        kotlin.test.assertTrue("const a = 1;" in c.state.value.assembledHtml, "原始内容保留")
+        kotlin.test.assertTrue(
+            c.state.value.assembledHtml.startsWith("<!DOCTYPE html>"),
+            "撤销后仍可运行",
+        )
     }
 
     @Test

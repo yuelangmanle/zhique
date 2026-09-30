@@ -275,4 +275,61 @@ class PasteClassifierTest {
         assertIs<PasteForm.Unknown>(r.form)
         assertEquals(1.0f, r.confidence)
     }
+
+    // ---- 质量审查修复：行号剥离阈值边界 / 长输入护栏 / 输入上限 ----
+
+    private fun numberedLines(count: Int): String =
+        (1..count).joinToString("\n") { n -> "%02d | line %d".format(n, n) }
+
+    private fun plainLines(count: Int): String =
+        (1..count).joinToString("\n") { n -> "plain $n" }
+
+    @Test
+    fun `行号剥离_79不剥_80剥`() {
+        val under = numberedLines(79) + "\n" + plainLines(21)
+        assertEquals(under, stripLineNumberPrefixes(under), "79%（<80%）不应剥离")
+        val at = numberedLines(80) + "\n" + plainLines(20)
+        assertTrue(
+            "01 |" !in stripLineNumberPrefixes(at) && "plain 20" in stripLineNumberPrefixes(at),
+            "80%（≥80%）应剥离",
+        )
+    }
+
+    @Test
+    fun `病态css特征长输入线性完成`() {
+        // 无闭 brace 的选择器轰炸：旧回溯正则 O(n²) 会卡死，线性扫描应毫秒级
+        val pathological = ".a{".repeat(60_000)
+        val t0 = System.nanoTime()
+        val r = c.classify(pathological)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        assertTrue(ms < 5_000, "分类应线性完成，实际 ${ms}ms")
+        assertIs<PasteForm.Unknown>(r.form)
+    }
+
+    @Test
+    fun `输入超256KB截断并降置信度`() {
+        val base = "<!DOCTYPE html>\n<html><body>"
+        val atCap = base + "x".repeat(PasteClassifier.MAX_INPUT_CHARS - base.length)
+        val exact = c.classify(atCap)
+        assertIs<PasteForm.CompleteHtml>(exact.form)
+        assertEquals(0.95f, exact.confidence, "恰好等于上限不截断不降置信")
+
+        val over = c.classify(atCap + "tail")
+        assertIs<PasteForm.CompleteHtml>(over.form)
+        assertTrue(
+            over.confidence <= PasteConfidence.TRUNCATED_MAX,
+            "超限应降置信度: ${over.confidence}",
+        )
+    }
+
+    @Test
+    fun `嵌套围栏超深度上限不栈溢出`() {
+        var s = "```js\nconst a = 1;\n```"
+        repeat(2000) { s = "````\n$s\n````" }
+        val t0 = System.nanoTime()
+        val doc = FenceParser.parse(s)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        assertTrue(doc.blocks.isNotEmpty(), "深嵌套应安全终止并保留外层块")
+        assertTrue(ms < 5_000, "解析应受深度上限约束，实际 ${ms}ms")
+    }
 }

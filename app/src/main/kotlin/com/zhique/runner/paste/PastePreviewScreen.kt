@@ -136,6 +136,14 @@ fun PastePreviewScreen(
                             modifier = Modifier.testTag("paste-hints"),
                         )
                     }
+                    s.error?.let { error ->
+                        Text(
+                            error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("paste-error"),
+                        )
+                    }
                 }
             }
 

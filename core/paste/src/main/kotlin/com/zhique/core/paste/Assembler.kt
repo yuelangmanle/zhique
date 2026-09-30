@@ -23,12 +23,12 @@ object Assembler {
             val js = mutableListOf<String>()
             for (b in cleaned.blocks) {
                 when {
-                    b.lang == "html" -> if (body.isBlank()) body = b.code
-                    b.lang in JS_LANGS -> js += b.code
-                    b.lang in CSS_LANGS -> css += b.code
-                    HTML_ANY.containsMatchIn(b.code) -> if (body.isBlank()) body = b.code
-                    CSS_FEATURE.containsMatchIn(b.code) -> css += b.code
-                    JS_FEATURE.containsMatchIn(b.code) -> js += b.code
+                    b.lang == PasteClassifier.LANG_HTML -> if (body.isBlank()) body = b.code
+                    b.lang in PasteClassifier.LANG_JS -> js += b.code
+                    b.lang in PasteClassifier.LANG_CSS -> css += b.code
+                    PasteClassifier.HTML_ANY_TAG.containsMatchIn(b.code) -> if (body.isBlank()) body = b.code
+                    looksCssLike(b.code) -> css += b.code
+                    PasteClassifier.JS_STRONG.containsMatchIn(b.code) -> js += b.code
                 }
             }
             skeleton(
@@ -66,7 +66,8 @@ object Assembler {
         sb.append("<html lang=\"zh-CN\">\n<head>\n")
         sb.append("<meta charset=\"utf-8\">\n")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
-        sb.append("<title>").append(t).append("</title>\n")
+        // title 可能取自粘贴原文（<title>/首行注释），拼入骨架前必须转义，防 `</title><script>` 注入
+        sb.append("<title>").append(escapeHtml(t)).append("</title>\n")
         if (css.isNotEmpty()) sb.append("<style>\n").append(css.joinToString("\n")).append("\n</style>\n")
         sb.append("</head>\n<body>\n")
         if (body.isNotBlank()) sb.append(body).append('\n')
@@ -79,10 +80,4 @@ object Assembler {
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
-
-    private val JS_LANGS = setOf("js", "javascript", "jsx", "ts", "typescript", "node")
-    private val CSS_LANGS = setOf("css", "scss", "less")
-    private val HTML_ANY = Regex("""</?(?:html|head|body|div|span|p|a|img|ul|ol|li|table|canvas|svg|video|script|style|h[1-6]|section|button|input)\b""", RegexOption.IGNORE_CASE)
-    private val CSS_FEATURE = Regex("""@media|@import|@keyframes|[.#]?[A-Za-z][\w-]*\s*\{[^{}]*:[^{}]*;""")
-    private val JS_FEATURE = Regex("""\bfunction\s*\w*\s*\(|\bconst\s|\blet\s|\bvar\s|\bdocument\.|\bwindow\.|\baddEventListener\(""")
 }

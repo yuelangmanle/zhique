@@ -20,6 +20,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
+        // 分享文本已消费即清掉 extras：旋转重建会复用原 intent，不清会重新填充
+        // sharedText 把用户弹回预览（消费过一次的分享不应重放）
+        intent?.replaceExtras(Bundle())
         val app = application as ZhiqueApplication
         setContent {
             ZqTheme {
@@ -31,6 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+        intent.replaceExtras(Bundle())
     }
 
     private fun handleIntent(intent: Intent?) {

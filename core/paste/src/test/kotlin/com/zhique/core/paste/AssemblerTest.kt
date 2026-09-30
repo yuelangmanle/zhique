@@ -2,6 +2,7 @@ package com.zhique.core.paste
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** 组装引擎：统一 <!DOCTYPE html> 骨架（css→style / js→script defer / title 提取）。 */
@@ -113,13 +114,24 @@ class AssemblerTest {
         assertTrue(html.indexOf(".one") < html.indexOf(".two"), "css 保序")
         assertTrue(html.indexOf("const one") < html.indexOf("const two"), "js 保序")
     }
+
+    @Test
+    fun `title注入被转义`() {
+        val a = pipeline("// </title><script>x</script>\nconst a = 1;")
+        assertTrue(
+            "&lt;/title&gt;&lt;script&gt;" in a.html,
+            "title 拼入骨架前应转义: ${a.html}",
+        )
+        assertFalse("</title><script>" in a.html, "不得出现可闭合 title 的原文")
+        assertTrue("<title>&lt;/title&gt;&lt;script&gt;x&lt;/script&gt;</title>" in a.html)
+    }
 }
 
 /** 反向兜底钩子：组装后扫描标准权限 API 与 zq 调用，产出 CompatHint（M4/M8 接线）。 */
 class CompatHintTest {
 
     @Test
-    fun `四类标准权限API检出`() {
+    fun `标准权限API检出且getUserMedia不双报`() {
         val hints = CompatScanner.scan(
             """
             <script>
@@ -131,10 +143,25 @@ class CompatHintTest {
             """.trimIndent(),
         )
         val std = hints.filter { it.kind == CompatKind.STANDARD_PERMISSION_API }.map { it.api }
-        assertTrue("navigator.mediaDevices" in std)
-        assertTrue("getUserMedia" in std)
-        assertTrue("navigator.geolocation" in std)
-        assertTrue("Notification." in std)
+        assertEquals(
+            listOf("navigator.mediaDevices", "navigator.geolocation", "Notification."),
+            std,
+            "getUserMedia 已被 navigator.mediaDevices 覆盖，不重复上报",
+        )
+    }
+
+    @Test
+    fun `getUserMedia单独出现仍检出`() {
+        val hints = CompatScanner.scan("navigator.getUserMedia({video: true}, cb);")
+        assertTrue(hints.any { it.api == "getUserMedia" && it.kind == CompatKind.STANDARD_PERMISSION_API })
+    }
+
+    @Test
+    fun `Notification子串不误报`() {
+        assertTrue(
+            CompatScanner.scan("const myNotification = makeNotification(); myNotification.show();").isEmpty(),
+            "myNotification./makeNotification() 不应命中 Notification.",
+        )
     }
 
     @Test

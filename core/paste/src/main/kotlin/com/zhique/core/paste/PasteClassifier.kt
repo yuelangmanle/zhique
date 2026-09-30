@@ -36,6 +36,9 @@ data class Classified(val form: PasteForm, val confidence: Float)
 /** 置信度阈值常量（规格 §4.1.3：低于阈值交内置 AI 解析重组，仅结构化不改逻辑）。 */
 object PasteConfidence {
     const val AI_FALLBACK_THRESHOLD = 0.5f
+
+    /** 超长输入截断分类后的置信度上限（规则仍定向，但只看了前缀，降档示意）。 */
+    const val TRUNCATED_MAX = 0.79f
 }
 
 /**
@@ -43,6 +46,9 @@ object PasteConfidence {
  * `<html|<!DOCTYPE` 探测、语言标注识别（大小写不敏感）、代码指纹
  * （`function\s*\(|const ` 等 vs `@media|{...:...;}`）、
  * `sk-/Bearer/apiProfiles/curl` 关键词路由。
+ *
+ * 输入上限：超过 [PasteClassifier.MAX_INPUT_CHARS]（256KB）只对前缀分类，
+ * 形态判定保留但置信度压到 [PasteConfidence.TRUNCATED_MAX] 以下。
  */
 class PasteClassifier {
 
@@ -52,6 +58,20 @@ class PasteClassifier {
         // 空输入：确定性 unknown
         if (trimmed.isEmpty()) return Classified(PasteForm.Unknown(raw), 1.0f)
 
+        // 0) 超长输入护栏：截断后分类 + 降置信度（防长输入下正则/扫描开销失控）
+        val oversized = trimmed.length > MAX_INPUT_CHARS
+        val probe = if (oversized) trimmed.take(MAX_INPUT_CHARS) else trimmed
+        val result = classifyInput(probe, raw)
+        return if (oversized) {
+            Classified(result.form, minOf(result.confidence, PasteConfidence.TRUNCATED_MAX))
+        } else {
+            result
+        }
+    }
+
+    // ---- internals ----
+
+    private fun classifyInput(trimmed: String, raw: String): Classified {
         // 1) 接口配置路由（cURL / Apilot JSON / 鉴权头），优先于代码探测
         if (looksLikeApiConfig(trimmed)) return Classified(PasteForm.ApiConfig(raw), 0.9f)
 
@@ -63,15 +83,13 @@ class PasteClassifier {
         if (HTML_TAG.containsMatchIn(sniff)) return Classified(PasteForm.CompleteHtml(raw), 0.85f)
 
         // 3) 围栏解析 → 混排 / 多块 / 单块
-        val doc = FenceParser.parse(raw)
+        val doc = FenceParser.parse(trimmed)
         return if (doc.blocks.isEmpty()) {
             classifyFreeForm(sniff, raw)
         } else {
             classifyFenced(doc, raw)
         }
     }
-
-    // ---- internals ----
 
     private fun classifyFenced(doc: ParsedDoc, raw: String): Classified {
         if (doc.prose.isNotBlank()) return Classified(PasteForm.MixedBlocks(doc.blocks, doc.prose), 0.9f)
@@ -140,30 +158,33 @@ class PasteClassifier {
     private fun jsScore(s: String): Int =
         JS_STRONG.findAll(s).count() * 2 + JS_WEAK.findAll(s).count()
 
-    private fun looksCss(s: String): Boolean = CSS.containsMatchIn(s)
+    private fun looksCss(s: String): Boolean = looksCssLike(s)
 
     companion object {
+        /** 分类输入上限：256KB。超出部分不参与形态判定（Cleaner/Assembler 仍处理完整原文）。 */
+        const val MAX_INPUT_CHARS = 256 * 1024
+
         private const val JS_STRONG_ENOUGH = 2
 
-        private val LANG_HTML = "html"
-        private val LANG_JS = setOf("js", "javascript", "jsx", "ts", "typescript", "node")
-        private val LANG_CSS = setOf("css", "scss", "less")
+        /** 共享行号前缀定义（分类器嗅探 / [Cleaner] 报告 / [stripLineNumberPrefixes] 单一来源）。 */
+        internal val LINE_NUMBERED = Regex("""^\s*\d{1,4}\s*[|:]\s?""")
 
-        private val HTML_TAG = Regex("<html[\\s>]", RegexOption.IGNORE_CASE)
-        private val HTML_ANY_TAG = Regex(
+        internal val LANG_HTML = "html"
+        internal val LANG_JS = setOf("js", "javascript", "jsx", "ts", "typescript", "node")
+        internal val LANG_CSS = setOf("css", "scss", "less")
+
+        internal val HTML_TAG = Regex("<html[\\s>]", RegexOption.IGNORE_CASE)
+        internal val HTML_ANY_TAG = Regex(
             """</?(?:html|head|body|div|span|p|a|img|ul|ol|li|table|canvas|svg|video|script|style|h[1-6]|section|button|input)\b""",
             RegexOption.IGNORE_CASE,
         )
-        private val JS_STRONG = Regex(
+        internal val JS_STRONG = Regex(
             """\bfunction\s*\w*\s*\(|\bconst\s|\blet\s|\bvar\s|\bdocument\.|\bwindow\.|\baddEventListener\(""",
         )
         private val JS_WEAK = Regex("=>")
-        private val CSS = Regex("""@media|@import|@keyframes|[.#]?[A-Za-z][\w-]*\s*\{[^{}]*:[^{}]*;""")
         private val BEARER = Regex("""Bearer\s+[A-Za-z0-9._\-]+""")
         private val SECRET_KEY = Regex("""sk-[A-Za-z0-9_\-]{8,}""")
         private val API_PROFILES_KEYS = Regex(""""(apiProfiles|baseUrl|apiKey|providers)"\s*:""")
-
-        private val LINE_NO = Regex("""^\s*\d{1,4}\s*[|:]\s?""")
     }
 }
 
@@ -176,10 +197,58 @@ internal fun stripLineNumberPrefixes(code: String): String {
     val lines = code.lines()
     val nonBlank = lines.filter { it.isNotBlank() }
     if (nonBlank.isEmpty()) return code
-    val lineNo = Regex("""^\s*\d{1,4}\s*[|:]\s?""")
+    val lineNo = PasteClassifier.LINE_NUMBERED
     val hits = nonBlank.count { lineNo.containsMatchIn(it) }
     if (hits * 5 < nonBlank.size * 4) return code
     return lines.joinToString("\n") { it.replaceFirst(lineNo, "") }
+}
+
+/**
+ * CSS 特征判定（共享线性实现，替代回溯正则 `\{[^{}]*:[^{}]*;`——后者在
+ * 长无匹配输入上是 O(n²)）。语义与原正则一致：@规则，或
+ * 「可选 `.`/`#` 前缀的标识符选择器 `{` 块内冒号声明再遇分号（块内无嵌套花括号）」。
+ * 整体单趟扫描：每个 `{` 的块内区间只扫一次、互不重叠。
+ */
+internal fun looksCssLike(s: String): Boolean {
+    if ("@media" in s || "@import" in s || "@keyframes" in s) return true
+    val n = s.length
+    var i = 0
+    while (i < n) {
+        if (s[i] == '{') {
+            var j = i + 1
+            var hasColon = false
+            var declared = false
+            while (j < n && s[j] != '}') {
+                when (s[j]) {
+                    ':' -> hasColon = true
+                    ';' -> if (hasColon) { declared = true; break }
+                }
+                j++
+            }
+            if (declared && hasSelectorBefore(s, i)) return true
+            // 跳过整个块（无闭合则到末尾），保证每个字符至多属于一个扫描区间
+            i = if (j < n) j + 1 else n
+        } else {
+            i++
+        }
+    }
+    return false
+}
+
+/**
+ * 与原正则 `[.#]?[A-Za-z][\w-]*\s*\{` 等价的后向检查：`{` 前紧跟 `\s*`，
+ * 再往前是一段 `[\w-]*` 词段，词段内含 ASCII 字母即可成为选择器起点
+ * （字母在段首或段中都能作为正则的 `[A-Za-z]` 起点）。
+ */
+private fun hasSelectorBefore(s: String, open: Int): Boolean {
+    var k = open - 1
+    while (k >= 0 && s[k].isWhitespace()) k--
+    var hasLetter = false
+    while (k >= 0 && (s[k].isLetterOrDigit() || s[k] == '_' || s[k] == '-')) {
+        if (s[k] in 'a'..'z' || s[k] in 'A'..'Z') hasLetter = true
+        k--
+    }
+    return hasLetter
 }
 
 /** 围栏解析产物：代码块 + 围栏外的说明文字 + 开栏行原文（清洗报告摘录用）。 */
@@ -189,7 +258,10 @@ internal data class ParsedDoc(val blocks: List<CodeBlock>, val prose: String, va
 internal object FenceParser {
     private val FENCE = Regex("""^\s{0,3}(`{3,}|~{3,})\s*([\w+#.-]*)\s*$""")
 
-    fun parse(text: String): ParsedDoc {
+    /** 嵌套围栏递归展开深度上限（防病态深嵌套栈溢出，超出后内层按普通块保留）。 */
+    internal const val MAX_DEPTH = 8
+
+    fun parse(text: String, depth: Int = 0): ParsedDoc {
         val blocks = mutableListOf<CodeBlock>()
         val prose = StringBuilder()
         val fenceLines = mutableListOf<String>()
@@ -221,9 +293,9 @@ internal object FenceParser {
                 i++
             }
             val code = body.toString().trimEnd('\n')
-            // 嵌套围栏：内容本身仍是完整围栏块 → 递归展开成内层块
-            val inner = parse(code)
-            if (inner.prose.isBlank() && inner.blocks.isNotEmpty()) {
+            // 嵌套围栏：内容本身仍是完整围栏块 → 递归展开成内层块（受 [MAX_DEPTH] 约束）
+            val inner = if (depth < MAX_DEPTH) parse(code, depth + 1) else null
+            if (inner != null && inner.prose.isBlank() && inner.blocks.isNotEmpty()) {
                 blocks += inner.blocks
                 fenceLines += inner.fenceLines
             } else {

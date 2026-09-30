@@ -2,6 +2,7 @@ package com.zhique.core.paste
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** 清洗器：剥围栏 / 剥行号 / 剔说明文字，报告（动作+原文摘录），整体可回滚。 */
@@ -78,5 +79,22 @@ class CleanerTest {
         val fenced = "```js\nconst a = 1;\n```"
         val r = cleaner.clean("$longProse\n\n$fenced")
         assertTrue(r.actions.all { it.excerpt.length <= 48 }, "摘录应截断: ${r.actions.map { it.excerpt.length }}")
+    }
+
+    @Test
+    fun `撤销清洗_围栏仍按结构剥离_污染保留`() {
+        val raw = "```js\n01 | const a = 1;\n02 | const b = 2;\n```"
+        val r = cleaner.clean(raw, enabled = false)
+        assertFalse("```" in r.text, "围栏是结构标记，撤销后仍应剥离: ${r.text}")
+        assertTrue("01 | const a = 1;" in r.text, "行号污染等内容应保留")
+        assertTrue(r.actions.isEmpty(), "撤销不出报告")
+        assertEquals(raw, r.original)
+    }
+
+    @Test
+    fun `撤销清洗_无围栏原样保留`() {
+        val raw = "  body { color: red; }  "
+        val r = cleaner.clean(raw, enabled = false)
+        assertEquals("body { color: red; }", r.text)
     }
 }

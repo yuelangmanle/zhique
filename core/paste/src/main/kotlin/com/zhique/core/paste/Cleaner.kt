@@ -30,14 +30,20 @@ object Cleaner {
     fun clean(raw: String, enabled: Boolean = true): CleanResult {
         if (raw.isBlank()) return CleanResult("", emptyList(), emptyList(), raw)
 
-        // 撤销清洗 = 原始输入重跑：只做围栏结构解析（组装路由需要 blocks），不剥任何污染、不出报告
+        val doc = FenceParser.parse(raw)
+
+        // 撤销清洗 = 原始输入重跑：行号污染、说明文字等内容全部保留、不出报告。
+        // 围栏是结构标记而非内容，仍按块剥离——否则 ``` 会被塞进 <script>/<style>，
+        // 产出不可运行（撤销后同样要能组装出完整文档）。
         if (!enabled) {
-            val doc = FenceParser.parse(raw)
-            return CleanResult(raw.trim(), doc.blocks, emptyList(), raw)
+            return if (doc.blocks.isEmpty()) {
+                CleanResult(raw.trim(), emptyList(), emptyList(), raw)
+            } else {
+                CleanResult(doc.blocks.joinToString("\n\n") { it.code.trim() }, doc.blocks, emptyList(), raw)
+            }
         }
 
         val actions = mutableListOf<CleanAction>()
-        val doc = FenceParser.parse(raw)
 
         // 无围栏：只做行号污染剥离
         if (doc.blocks.isEmpty()) {
@@ -66,8 +72,6 @@ object Cleaner {
     }
 
     private fun firstNumberedLine(code: String): String =
-        code.lines().firstOrNull { LINE_NUMBERED.containsMatchIn(it) }
+        code.lines().firstOrNull { PasteClassifier.LINE_NUMBERED.containsMatchIn(it) }
             ?.trim()?.take(EXCERPT_MAX) ?: ""
-
-    internal val LINE_NUMBERED = Regex("""^\s*\d{1,4}\s*[|:]\s?""")
 }

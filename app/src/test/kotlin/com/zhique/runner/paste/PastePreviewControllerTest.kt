@@ -84,16 +84,30 @@ class PastePreviewControllerTest {
     }
 
     @Test
-    fun `撤销清洗_原始输入重跑`() {
+    fun `撤销清洗_原始输入重跑且仍可运行`() {
         val c = newController()
         val raw = "```js\nconst a = 1;\n```"
         c.start(raw)
         assertFalse("```" in c.state.value.assembledHtml, "清洗后不应残留围栏")
         c.setCleaning(false)
-        assertTrue("```js" in c.state.value.assembledHtml, "撤销清洗=原始输入重跑")
-        assertTrue(c.state.value.actions.isEmpty())
+        val s = c.state.value
+        assertFalse("```" in s.assembledHtml, "围栏是结构标记，撤销后仍应剥离")
+        assertTrue("const a = 1;" in s.assembledHtml, "原始内容保留")
+        assertTrue(s.assembledHtml.startsWith("<!DOCTYPE html>"), "撤销后仍可运行")
+        assertTrue(s.actions.isEmpty())
         c.setCleaning(true)
         assertFalse("```" in c.state.value.assembledHtml, "可恢复清洗")
+    }
+
+    @Test
+    fun `撤销清洗_污染保留但产出仍是完整文档`() {
+        val c = newController()
+        c.start("```js\n01 | const a = 1;\n```")
+        c.setCleaning(false)
+        val s = c.state.value
+        assertFalse("```" in s.assembledHtml, "围栏应按结构剥离")
+        assertTrue("01 | const a = 1;" in s.assembledHtml, "撤销=不剥污染，行号保留")
+        assertTrue(s.assembledHtml.startsWith("<!DOCTYPE html>"), "产出仍可运行")
     }
 
     @Test
@@ -168,6 +182,38 @@ class PastePreviewControllerTest {
         assertEquals("未识别", c.state.value.formLabel)
         assertTrue(c.state.value.aiFallbackSuggested)
         assertTrue(c.state.value.confidence < PasteConfidence.AI_FALLBACK_THRESHOLD)
+    }
+
+    @Test
+    fun `autoRun开启_接口配置形态停在预览`() {
+        var ran: ProjectMeta? = null
+        val c = newController(onRun = { ran = it }, autoRunStore = FakeAutoRun(true))
+        c.start("""curl -X POST https://api.example.com/v1/chat -H "Authorization: Bearer sk-test12345678"""")
+        assertEquals(null, ran, "ApiConfig 应走 M3 转存流程，不自动运行")
+        assertEquals("接口配置", c.state.value.formLabel)
+        assertFalse(c.state.value.busy)
+    }
+
+    @Test
+    fun `保存失败_错误入UiState且不崩溃`() {
+        val blocker = tmp.newFile("blocker") // 根是文件 → mkdirs 失败 → 写盘抛 IOException
+        val badRepo = com.zhique.core.project.ProjectRepository(blocker)
+        val d = UnconfinedTestDispatcher()
+        val c = PastePreviewController(
+            repo = badRepo,
+            scope = CoroutineScope(d),
+            io = d,
+            onToast = {},
+            onRun = {},
+        )
+        c.start("<!DOCTYPE html>\n<html><body>ok</body></html>")
+        c.saveAndRun()
+        val s = c.state.value
+        assertTrue(s.error != null, "失败信息应入 UiState: ${s.error}")
+        assertFalse(s.busy, "失败后应复位 busy")
+        c.saveAsDraft()
+        assertTrue(c.state.value.error != null, "草稿保存失败同样入 UiState")
+        assertFalse(c.state.value.busy)
     }
 
     @Test

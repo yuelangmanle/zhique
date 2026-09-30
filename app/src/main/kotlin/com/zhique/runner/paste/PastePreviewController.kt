@@ -17,12 +17,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
  * 粘贴预览控制器（HomeController 同款模式）：解析→清洗→组装全在 [io] 协程，
  * UI 态以 [state] StateFlow 暴露，主线程零磁盘 IO。
  * 「撤销清洗」语义 = 原始输入重跑（[Cleaner.clean] 的 enabled=false 路径）。
+ *
+ * 并发纪律：所有状态变更一律走 `MutableStateFlow.update {}`（CAS 原子，IO 协程里的
+ * 重算结果不会覆盖并发进来的 setName/setCleaning）；保存类操作以 [UiState.busy]
+ * 作重入闸（双击/连点不重复建项目）。
  */
 class PastePreviewController(
     private val repo: ProjectRepository,
@@ -35,6 +40,7 @@ class PastePreviewController(
 
     data class UiState(
         val raw: String = "",
+        val form: PasteForm? = null,
         val formLabel: String = "",
         val confidence: Float = 0f,
         val assembledHtml: String = "",
@@ -47,6 +53,9 @@ class PastePreviewController(
 
         /** 置信度低于阈值 → 预览屏提示「AI 兜底解析」（M4 接线）。 */
         val aiFallbackSuggested: Boolean = false,
+
+        /** 保存/落盘失败的用户可读提示（下次成功保存或重开管道时清除）。 */
+        val error: String? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -57,27 +66,33 @@ class PastePreviewController(
     /** 入口：剪贴板卡 / 系统分享 / 手动粘贴，统一从 [raw] 启动管道。 */
     fun start(raw: String) {
         scope.launch(io) {
-            _state.value = UiState(raw = raw, busy = true, autoRun = _state.value.autoRun)
+            _state.update { UiState(raw = raw, busy = true, autoRun = it.autoRun) }
             autoRunStore?.let { store ->
-                _state.value = _state.value.copy(autoRun = store.autoRun.first())
+                val stored = store.autoRun.first()
+                _state.update { it.copy(autoRun = stored) }
             }
             recompute()
-            // 自动运行：高置信才自动，低置信必须停在预览（规格 §4.1.3）
+            // 自动运行：高置信且非 Unknown/ApiConfig 形态才自动；低置信必须停在预览（规格 §4.1.3），
+            // ApiConfig 属 M3 转存流程，同样不自动运行
             val s = _state.value
-            if (s.autoRun && !s.aiFallbackSuggested && s.raw.isNotBlank()) {
+            val form = s.form
+            val autoEligible = form != null &&
+                form !is PasteForm.Unknown &&
+                form !is PasteForm.ApiConfig
+            if (s.autoRun && autoEligible && !s.aiFallbackSuggested && s.raw.isNotBlank()) {
                 saveAndRun()
             }
         }
     }
 
     fun setName(name: String) {
-        _state.value = _state.value.copy(name = name)
+        _state.update { it.copy(name = name) }
     }
 
     /** 切换清洗开关并重跑（撤销/恢复清洗）。 */
     fun setCleaning(applied: Boolean) {
         scope.launch(io) {
-            _state.value = _state.value.copy(cleaningApplied = applied)
+            _state.update { it.copy(cleaningApplied = applied) }
             recompute()
         }
     }
@@ -85,57 +100,94 @@ class PastePreviewController(
     fun setAutoRun(value: Boolean) {
         scope.launch(io) {
             autoRunStore?.setAutoRun(value)
-            _state.value = _state.value.copy(autoRun = value)
+            _state.update { it.copy(autoRun = value) }
         }
     }
 
     fun saveAsDraft() {
         scope.launch(io) {
-            val s = _state.value
-            if (s.raw.isBlank() || s.busy) return@launch
-            repo.create(s.name.ifBlank { Assembler.DEFAULT_TITLE }, s.assembledHtml)
-            onToast("已存为草稿「${s.name.ifBlank { Assembler.DEFAULT_TITLE }}」")
+            val s = tryBeginSave() ?: return@launch
+            val name = s.name.ifBlank { Assembler.DEFAULT_TITLE }
+            runCatching { repo.create(name, s.assembledHtml) }
+                .onSuccess {
+                    _state.update { it.copy(error = null, busy = false) }
+                    onToast("已存为草稿「$name」")
+                }
+                .onFailure { failSave(it) }
         }
     }
 
     fun saveAndRun() {
         scope.launch(io) {
-            val s = _state.value
-            if (s.raw.isBlank() || s.busy) return@launch
-            val meta = repo.create(s.name.ifBlank { Assembler.DEFAULT_TITLE }, s.assembledHtml)
+            val s = tryBeginSave() ?: return@launch
+            val name = s.name.ifBlank { Assembler.DEFAULT_TITLE }
+            val meta = runCatching { repo.create(name, s.assembledHtml) }
+                .getOrElse { failSave(it); return@launch }
+            _state.update { it.copy(error = null, busy = false) }
             onRun(meta)
         }
     }
 
     // ---- internals ----
 
+    /** 原子抢占保存闸：raw 为空或已在保存中返回 null（双击/连点防重入）。 */
+    private fun tryBeginSave(): UiState? {
+        var captured: UiState? = null
+        _state.update { s ->
+            captured = null
+            if (s.raw.isBlank() || s.busy) {
+                s
+            } else {
+                captured = s
+                s.copy(busy = true)
+            }
+        }
+        return captured
+    }
+
+    private fun failSave(t: Throwable) {
+        val msg = "保存失败：${t.message ?: t::class.simpleName}"
+        _state.update { it.copy(error = msg, busy = false) }
+        onToast(msg)
+    }
+
     private suspend fun recompute() {
-        val s = _state.value
-        if (s.raw.isBlank()) {
-            _state.value = s.copy(
-                formLabel = label(PasteForm.Unknown("")),
-                confidence = 1f,
-                assembledHtml = "",
-                actions = emptyList(),
-                hints = emptyList(),
-                name = s.name,
-                busy = false,
-            )
+        val snapshot = _state.value
+        if (snapshot.raw.isBlank()) {
+            _state.update { s ->
+                s.copy(
+                    form = null,
+                    formLabel = label(PasteForm.Unknown("")),
+                    confidence = 1f,
+                    assembledHtml = "",
+                    actions = emptyList(),
+                    hints = emptyList(),
+                    aiFallbackSuggested = false,
+                    error = null,
+                    busy = false,
+                )
+            }
             return
         }
-        val classified = PasteClassifier().classify(s.raw)
-        val cleaned = Cleaner.clean(s.raw, enabled = s.cleaningApplied)
+        // 重活只依赖 raw/cleaningApplied 快照；结果合并走 update，保住并发进来的 name 等编辑
+        val classified = PasteClassifier().classify(snapshot.raw)
+        val cleaned = Cleaner.clean(snapshot.raw, enabled = snapshot.cleaningApplied)
         val assembled = Assembler.assemble(classified.form, cleaned)
-        _state.value = s.copy(
-            formLabel = label(classified.form),
-            confidence = classified.confidence,
-            assembledHtml = assembled.html,
-            actions = cleaned.actions,
-            hints = CompatScanner.scan(assembled.html),
-            name = s.name.ifBlank { assembled.title ?: Assembler.DEFAULT_TITLE },
-            aiFallbackSuggested = classified.confidence < PasteConfidence.AI_FALLBACK_THRESHOLD,
-            busy = false,
-        )
+        val hints = CompatScanner.scan(assembled.html)
+        _state.update { s ->
+            s.copy(
+                form = classified.form,
+                formLabel = label(classified.form),
+                confidence = classified.confidence,
+                assembledHtml = assembled.html,
+                actions = cleaned.actions,
+                hints = hints,
+                name = s.name.ifBlank { assembled.title ?: Assembler.DEFAULT_TITLE },
+                aiFallbackSuggested = classified.confidence < PasteConfidence.AI_FALLBACK_THRESHOLD,
+                error = null,
+                busy = false,
+            )
+        }
     }
 
     companion object {
