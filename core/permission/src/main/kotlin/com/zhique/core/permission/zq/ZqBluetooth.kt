@@ -45,7 +45,7 @@ class ZqBluetooth : ZqCapability {
                         android.Manifest.permission.BLUETOOTH_CONNECT,
                     )
                 ) {
-                    throw IllegalStateException("系统蓝牙权限未授予（请到系统设置授权织雀的附近设备）")
+                    throw IllegalStateException("系统蓝牙权限未授予（可重新发起授权，或在系统设置中开启织雀的附近设备）")
                 }
                 val scanner = adapter?.bluetoothLeScanner
                     ?: throw IllegalStateException("蓝牙不可用（未开启或设备不支持 BLE）")

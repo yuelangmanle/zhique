@@ -56,8 +56,16 @@ class ZqDispatcher(private val env: ZqEnv) {
             val args = ZqArgs.firstObject(event.args)
             val state = env.registry.request(env.projectId, cap.required.id, cap.why(fn))
             if (state != PState.GRANTED) {
-                // 拒绝是优雅信号：promise 以 {"code":"denied"} 结算，页面自行降级
+                // 矩阵拒绝是优雅信号：promise 以 {"code":"denied"} 结算，页面自行降级
                 env.evaluateJs(ZqProtocol.resolveJs(id, ok = true, DENIED_JSON))
+                return
+            }
+            // 矩阵授予 → 立即发起系统申请（申请流程内完成）；OS 拒 → 矩阵回 DENIED
+            if (com.zhique.core.permission.OsGate.ensure(
+                    env.registry, env.projectId, cap.required, env.osPermissions,
+                ) == com.zhique.core.permission.OsGateResult.SYSTEM_DENIED
+            ) {
+                env.evaluateJs(ZqProtocol.resolveJs(id, ok = true, SYSTEM_DENIED_JSON))
                 return
             }
             val result = cap.call(fn, args, env)
@@ -72,5 +80,8 @@ class ZqDispatcher(private val env: ZqEnv) {
 
     companion object {
         const val DENIED_JSON = "{\"code\":\"denied\"}"
+
+        /** 矩阵授予但系统权限被拒：页面可提示「去设置开启」。 */
+        const val SYSTEM_DENIED_JSON = "{\"code\":\"denied\",\"reason\":\"system\"}"
     }
 }

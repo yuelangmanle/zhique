@@ -46,4 +46,20 @@
     }) }) });
   window.__zqResolve = (id, ok, value) => { const p = Z.pending && Z.pending[id]; if (p) { delete Z.pending[id]; ok ? p.res(JSON.parse(value)) : p.rej(new Error(value)); } };
   window.__zqEvent = (sub, value) => { const s = Z.subs && Z.subs[sub]; if (s) { try { s(JSON.parse(value)); } catch (e) {} } };
+  // W3C Notification 桥接（审查修复 #2，实现简者）：Android WebView 不暴露 Notification，
+  // 缺失时用 zq.notification.requestPermission/post 兜出 window.Notification——
+  // requestPermission 即 notification 能力矩阵条目（同一张授权卡 + 系统权限门）
+  if (!window.Notification) {
+    const ZqNotification = function (title, options) { zq.notification.post(Object.assign({ title: title }, options || {})); };
+    ZqNotification.permission = 'default';
+    ZqNotification.requestPermission = function (cb) {
+      return zq.notification.requestPermission().then(function (r) {
+        ZqNotification.permission = (r && r.permission) || 'denied';
+        if (typeof cb === 'function') cb(ZqNotification.permission);
+        return ZqNotification.permission;
+      });
+    };
+    ZqNotification.maxActions = 0;
+    window.Notification = ZqNotification;
+  }
 })();

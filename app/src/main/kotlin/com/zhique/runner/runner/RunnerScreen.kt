@@ -295,24 +295,28 @@ fun RunnerScreen(
         TimelineReducer.reduce(buffer.events)
     }
 
-    RunnerContent(
-        projectName = project.name,
-        mode = mode,
-        onModeChange = { m ->
-            mode = m
-            onModePersist(project.id, m)
-        },
-        timeline = timeline,
-        capability = capability,
-        onBack = onBack,
-        onSendToAgent = onSendToAgent,
-        onReload = { host.reload() },
-        modifier = modifier,
-        onOpenEditor = onOpenEditor,
-        webView = { m ->
-            key(recreateKey) {
-                AndroidView(modifier = m, factory = { host.webView })
-            }
-        },
-    )
+    Box(Modifier.fillMaxSize()) {
+        RunnerContent(
+            projectName = project.name,
+            mode = mode,
+            onModeChange = { m ->
+                mode = m
+                onModePersist(project.id, m)
+            },
+            timeline = timeline,
+            capability = capability,
+            onBack = onBack,
+            onSendToAgent = onSendToAgent,
+            onReload = { host.reload() },
+            modifier = modifier,
+            onOpenEditor = onOpenEditor,
+            webView = { m ->
+                key(recreateKey) {
+                    AndroidView(modifier = m, factory = { host.webView })
+                }
+            },
+        )
+        // 审查修复 #4：zq.camera.startPreview 的取景浮层（Compose 层）
+        ZqWiring.ZqCameraPreviewOverlay()
+    }
 }

@@ -62,6 +62,8 @@ class ZqEnv(
     val activity: Activity? = null,
     val saf: SafGateway? = null,
     val projection: ProjectionGateway? = null,
+    /** OS 运行时权限网关（授权卡授予后立即发起系统申请；null=能力自查兜底）。 */
+    val osPermissions: com.zhique.core.permission.OsPermissionGateway? = null,
 ) {
     /** 流式订阅句柄登记表（location/sensor 共用）。 */
     val subs = Subscriptions()

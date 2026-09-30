@@ -26,9 +26,10 @@ class ZqDispatcherTest {
     val tmp = TemporaryFolder()
 
     /** 桩能力：不触碰 Android API，验证调度语义。 */
-    private class FakeCapability : ZqCapability {
+    private class FakeCapability(
+        override val required: Capability = Capability.CLIPBOARD,
+    ) : ZqCapability {
         override val ns = "fake"
-        override val required = Capability.CLIPBOARD
         override val methods = listOf("hello", "boom", "need", "push")
         var executed = 0
         var lastArgs: JsonObject? = null
@@ -58,15 +59,22 @@ class ZqDispatcherTest {
 
     private class Harness {
         val pushed = mutableListOf<String>()
-        val cap = FakeCapability()
+        var cap: FakeCapability = FakeCapability()
         lateinit var dispatcher: ZqDispatcher
         lateinit var registry: PermissionRegistry
         lateinit var pid: String
         var asks = 0
         var answer: Boolean? = null
 
-        fun start(scope: kotlinx.coroutines.CoroutineScope, projectDir: java.io.File, initialAnswer: Boolean? = null) {
+        fun start(
+            scope: kotlinx.coroutines.CoroutineScope,
+            projectDir: java.io.File,
+            initialAnswer: Boolean? = null,
+            osGateway: com.zhique.core.permission.OsPermissionGateway? = null,
+            capability: FakeCapability = FakeCapability(),
+        ) {
             answer = initialAnswer
+            cap = capability
             val repo = com.zhique.core.project.ProjectRepository(projectDir)
             pid = repo.create("调度测试项目", "<p></p>").id
             registry = PermissionRegistry(
@@ -82,6 +90,7 @@ class ZqDispatcherTest {
                 scope = scope,
                 registry = registry,
                 evaluateJs = { pushed += it },
+                osPermissions = osGateway,
             )
             dispatcher = ZqDispatcher(env)
             dispatcher.register(cap)
@@ -272,5 +281,152 @@ class ZqDispatcherTest {
         assertTrue(router.route(zqCall(1, "camera", "capture")))
         assertTrue(router.route(zqCall(2, "file", "read")))
         assertTrue(router.route(zqCall(3, "sensor", "watch")))
+    }
+}
+
+/** 审查修复 #1：OS 运行时权限门（网关假实现的授/拒两路）。 */
+class OsGateDispatcherTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    /** 系统权限假网关：granted 首查结果 + request 应答脚本。 */
+    private class FakeOsGateway(
+        private val alreadyGranted: Boolean = false,
+        private val requestResult: Map<String, Boolean>? = null,
+    ) : com.zhique.core.permission.OsPermissionGateway {
+        var requestCount = 0
+        override fun granted(permissions: List<String>): Boolean = alreadyGranted
+        override suspend fun request(permissions: List<String>): Map<String, Boolean> {
+            requestCount++
+            return requestResult ?: permissions.associateWith { true }
+        }
+    }
+
+    private fun zqCall(id: Long, ns: String, fn: String, args: String = "[]") = DebugEvent(
+        seq = 1, t = 1, type = TimelineReducer.TYPE_ZQ_CALL, id = id, ns = ns, fn = fn, args = args,
+    )
+
+    @Test
+    fun `矩阵授予但OS拒_矩阵回DENIED且native不执行`() = runTest {
+        val dir = tmp.newFolder()
+        val repo = com.zhique.core.project.ProjectRepository(dir)
+        val pid = repo.create("OS拒项目", "<p></p>").id
+        val registry = PermissionRegistry(repo, prompt = { true })
+        val pushed = mutableListOf<String>()
+        val gateway = FakeOsGateway(alreadyGranted = false, requestResult = mapOf("android.permission.CAMERA" to false))
+        val env = ZqEnv(pid, dir, this, registry, { pushed += it }, osPermissions = gateway)
+        val d = ZqDispatcher(env)
+        d.register(FakeCapabilityFor(required = Capability.CAMERA))
+        d.handle(zqCall(1, "fake", "hello"))
+        assertEquals(
+            listOf(ZqProtocol.resolveJs(1, true, ZqDispatcher.SYSTEM_DENIED_JSON)),
+            pushed,
+            "OS 拒绝必须返回 system 原因",
+        )
+        assertEquals(PState.DENIED, registry.state(pid, "camera"), "OS 拒绝后矩阵必须回 DENIED")
+        assertEquals(1, gateway.requestCount, "矩阵授予后必须立即发起系统申请")
+        assertEquals(null, registry.usage(pid)["camera"], "未执行不得计 usage")
+    }
+
+    @Test
+    fun `OS申请全部授予则native执行`() = runTest {
+        val dir = tmp.newFolder()
+        val repo = com.zhique.core.project.ProjectRepository(dir)
+        val pid = repo.create("OS授项目", "<p></p>").id
+        val registry = PermissionRegistry(repo, prompt = { true })
+        val pushed = mutableListOf<String>()
+        val gateway = FakeOsGateway(alreadyGranted = false, requestResult = mapOf("android.permission.CAMERA" to true))
+        val env = ZqEnv(pid, dir, this, registry, { pushed += it }, osPermissions = gateway)
+        val d = ZqDispatcher(env)
+        val cap = FakeCapabilityFor(required = Capability.CAMERA)
+        d.register(cap)
+        d.handle(zqCall(1, "fake", "hello"))
+        assertEquals(listOf(ZqProtocol.resolveJs(1, true, "{\"ok\":true}")), pushed)
+        assertEquals(1, registry.usage(pid)["camera"], "真实执行才计数")
+        assertEquals(PState.GRANTED, registry.state(pid, "camera"))
+    }
+
+    @Test
+    fun `OS已授予不重复申请`() = runTest {
+        val dir = tmp.newFolder()
+        val repo = com.zhique.core.project.ProjectRepository(dir)
+        val pid = repo.create("已授项目", "<p></p>").id
+        val registry = PermissionRegistry(repo)
+        registry.set(pid, "camera", PState.GRANTED)
+        val pushed = mutableListOf<String>()
+        val gateway = FakeOsGateway(alreadyGranted = true)
+        val env = ZqEnv(pid, dir, this, registry, { pushed += it }, osPermissions = gateway)
+        val d = ZqDispatcher(env)
+        d.register(FakeCapabilityFor(required = Capability.CAMERA))
+        d.handle(zqCall(1, "fake", "hello"))
+        assertEquals(0, gateway.requestCount, "已授予不得重复弹系统申请")
+        assertEquals(1, pushed.size)
+    }
+
+    @Test
+    fun `网关未接由能力自查兜底不阻断`() = runTest {
+        val dir = tmp.newFolder()
+        val repo = com.zhique.core.project.ProjectRepository(dir)
+        val pid = repo.create("无网关项目", "<p></p>").id
+        val registry = PermissionRegistry(repo)
+        registry.set(pid, "camera", PState.GRANTED)
+        val pushed = mutableListOf<String>()
+        val env = ZqEnv(pid, dir, this, registry, { pushed += it }, osPermissions = null)
+        val d = ZqDispatcher(env)
+        d.register(FakeCapabilityFor(required = Capability.CAMERA))
+        d.handle(zqCall(1, "fake", "hello"))
+        assertEquals(listOf(ZqProtocol.resolveJs(1, true, "{\"ok\":true}")), pushed, "网关缺失走兜底，不回 denied")
+    }
+
+    @Test
+    fun `无manifest权限能力不过系统门`() = runTest {
+        val dir = tmp.newFolder()
+        val repo = com.zhique.core.project.ProjectRepository(dir)
+        val pid = repo.create("免门项目", "<p></p>").id
+        val registry = PermissionRegistry(repo)
+        registry.set(pid, "clipboard", PState.GRANTED)
+        val pushed = mutableListOf<String>()
+        val gateway = FakeOsGateway(alreadyGranted = false, requestResult = emptyMap())
+        val env = ZqEnv(pid, dir, this, registry, { pushed += it }, osPermissions = gateway)
+        val d = ZqDispatcher(env)
+        d.register(FakeCapabilityFor(required = Capability.CLIPBOARD))
+        d.handle(zqCall(1, "fake", "hello"))
+        assertEquals(0, gateway.requestCount, "无系统权限的能力不得发起申请")
+        assertEquals(1, pushed.size)
+    }
+
+    @Test
+    fun `notification_requestPermission走矩阵返回granted`() = runTest {
+        val dir = tmp.newFolder()
+        val repo = com.zhique.core.project.ProjectRepository(dir)
+        val pid = repo.create("通知项目", "<p></p>").id
+        val registry = PermissionRegistry(repo)
+        registry.set(pid, "notification", PState.GRANTED)
+        val pushed = mutableListOf<String>()
+        val env = ZqEnv(pid, dir, this, registry, { pushed += it })
+        val d = ZqDispatcher(env)
+        d.register(ZqNotify())
+        d.handle(zqCall(9, "notification", "requestPermission"))
+        assertEquals(
+            listOf(ZqProtocol.resolveJs(9, true, "{\"permission\":\"granted\"}")),
+            pushed,
+            "W3C Notification 桥接：GRANTED → \"granted\"",
+        )
+        assertEquals(1, registry.usage(pid)["notification"], "requestPermission 也计真实使用")
+    }
+}
+
+/** required 可配置的桩能力（OsGate 测试用）。 */
+private class FakeCapabilityFor(
+    override val required: Capability,
+) : ZqCapability {
+    override val ns = "fake"
+    override val methods = listOf("hello")
+    var executed = 0
+    override fun why(fn: String) = "测试理由"
+    override suspend fun call(fn: String, args: JsonObject, env: ZqEnv): kotlinx.serialization.json.JsonElement {
+        executed++
+        return buildJsonObject { put("ok", true) }
     }
 }

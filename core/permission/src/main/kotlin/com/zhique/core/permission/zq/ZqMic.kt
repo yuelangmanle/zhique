@@ -31,7 +31,7 @@ class ZqMic : ZqCapability {
         require(fn == "record") { "zq.mic 未知方法: $fn" }
         val context = env.appContext ?: throw IllegalStateException("无宿主环境")
         if (!SystemPerms.granted(context, android.Manifest.permission.RECORD_AUDIO)) {
-            throw IllegalStateException("系统麦克风权限未授予（请到系统设置授权织雀的麦克风）")
+            throw IllegalStateException("系统麦克风权限未授予（可重新发起授权，或在系统设置中开启织雀的麦克风）")
         }
         val seconds = args.zqOptInt("seconds", DEFAULT_SECONDS, MIN_SECONDS, MAX_SECONDS)
         val dir = File(env.projectDir, "audio").apply { mkdirs() }

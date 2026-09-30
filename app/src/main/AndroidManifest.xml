@@ -14,6 +14,9 @@
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 截屏（MediaProjection）前台服务（审查修复 #3：API34+ 硬性要求） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
 
     <application android:label="织雀" android:name=".ZhiqueApplication">
@@ -28,6 +31,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/zq_share_paths" />
         </provider>
+
+        <!-- 截屏期间的前台服务：mediaProjection 类型（API34+ 必需） -->
+        <service
+            android:name=".screen.ZqScreenService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <activity
             android:name=".MainActivity"

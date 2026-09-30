@@ -5,6 +5,24 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.zhique.core.permission.OsPermissionGateway
 import com.zhique.core.permission.PermissionRegistry
 import com.zhique.core.permission.zq.ProjectionGateway
 import com.zhique.core.permission.zq.SafGateway
@@ -22,6 +40,7 @@ import com.zhique.core.permission.zq.ZqSensor
 import com.zhique.core.permission.zq.ZqShare
 import com.zhique.core.permission.zq.ZqW3CRouter
 import com.zhique.core.project.ProjectMeta
+import com.zhique.core.web.GeolocationGateway
 import com.zhique.core.web.PermissionGateway
 import com.zhique.core.web.WebViewHost
 import java.io.File
@@ -36,7 +55,8 @@ import kotlinx.serialization.json.put
 
 /**
  * zq 全能力桥接线（M5）：把 [ZqDispatcher] 与十个能力挂到运行器宿主，
- * 并注入 W3C 权限网关（getUserMedia → 同一注册表矩阵）。
+ * 并注入 W3C 权限网关（getUserMedia + geolocation → 同一注册表矩阵）与
+ * OS 运行时权限网关（授权卡授予后立即发起系统申请）。
  */
 object ZqWiring {
 
@@ -49,6 +69,7 @@ object ZqWiring {
         registry: PermissionRegistry,
     ): ZqDispatcher {
         val activity = context as? ComponentActivity
+        val osGateway = activity?.let { ActivityOsPermissionGateway(it) }
         val env = ZqEnv(
             projectId = project.id,
             projectDir = projectDir,
@@ -59,6 +80,7 @@ object ZqWiring {
             activity = context as? Activity,
             saf = activity?.let { ActivitySafGateway(it) },
             projection = activity?.let { ActivityProjectionGateway(it) },
+            osPermissions = osGateway,
         )
         val dispatcher = ZqDispatcher(env)
         dispatcher.register(ZqCamera())
@@ -72,7 +94,7 @@ object ZqWiring {
         dispatcher.register(ZqShare())
         dispatcher.register(ZqScreen())
         dispatcher.attachTo(host.zqRouter)
-        val w3c = ZqW3CRouter(registry, project.id, scope)
+        val w3c = ZqW3CRouter(registry, project.id, scope, osPermissions = osGateway)
         host.permissionGateway = PermissionGateway { request ->
             val resources = request.resources ?: emptyArray()
             w3c.onRequest(
@@ -81,7 +103,43 @@ object ZqWiring {
                 deny = { request.deny() },
             )
         }
+        // W3C geolocation → 同一矩阵 + 系统门 + 使用计数（审查修复 #2）
+        host.geolocationGateway = com.zhique.core.web.GeolocationGateway { _, allow ->
+            w3c.onGeolocation(allow)
+        }
         return dispatcher
+    }
+
+    /**
+     * 相机取景浮层（审查修复 #4）：zq.camera.startPreview 绑定 Preview 后，
+     * Compose 层据此挂取景视图；stopPreview 清除。
+     */
+    @androidx.compose.runtime.Composable
+    fun ZqCameraPreviewOverlay(modifier: Modifier = Modifier) {
+        val state by com.zhique.core.permission.zq.CameraPreviewBus.state.collectAsState()
+        val preview = state ?: return
+        val view = com.zhique.core.permission.zq.CameraPreviewBus.previewView ?: return
+        Box(modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { view },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+                    .width(110.dp)
+                    .aspectRatio(3f / 4f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .testTag("zq-camera-preview"),
+            )
+            Text(
+                "取景：${preview.facing}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 132.dp, end = 12.dp)
+                    .testTag("zq-camera-preview-label"),
+            )
+        }
     }
 }
 
@@ -158,6 +216,42 @@ class ActivityProjectionGateway(private val activity: ComponentActivity) : Proje
         } ?: return null
         val (code, data) = result
         if (code != android.app.Activity.RESULT_OK || data == null) return null
-        return mpm.getMediaProjection(code, data)
+        // API34+：getMediaProjection/createVirtualDisplay 前必须先起 mediaProjection 前台服务
+        com.zhique.runner.screen.ZqScreenServiceController.start(activity)
+        val projection = mpm.getMediaProjection(code, data)
+        projection?.registerCallback(
+            object : android.media.projection.MediaProjection.Callback() {
+                override fun onStop() {
+                    com.zhique.runner.screen.ZqScreenServiceController.stop(activity)
+                }
+            },
+            android.os.Handler(activity.mainLooper),
+        )
+        return projection
     }
+}
+
+/**
+ * OS 运行时权限网关（审查修复 #1）：RequestMultiplePermissions 经
+ * Activity Result Registry 直挂——授权卡点「授予」后由 OsGate 立即调用，
+ * 系统确认框在授权流程内弹出。
+ */
+class ActivityOsPermissionGateway(private val activity: ComponentActivity) : OsPermissionGateway {
+
+    private val seq = java.util.concurrent.atomic.AtomicInteger()
+
+    override fun granted(permissions: List<String>): Boolean = permissions.all {
+        androidx.core.content.ContextCompat.checkSelfPermission(activity, it) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    override suspend fun request(permissions: List<String>): Map<String, Boolean> =
+        suspendCancellableCoroutine { cont ->
+            val launcher = activity.activityResultRegistry.register(
+                "zq-os-perm-${seq.incrementAndGet()}",
+                ActivityResultContracts.RequestMultiplePermissions(),
+            ) { result -> cont.resume(result) }
+            cont.invokeOnCancellation { launcher.unregister() }
+            launcher.launch(permissions.toTypedArray())
+        }
 }

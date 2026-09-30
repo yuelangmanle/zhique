@@ -93,7 +93,7 @@ class ZqLocation : ZqCapability {
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
             )
         ) {
-            throw IllegalStateException("系统定位权限未授予（请到系统设置授权织雀的位置信息）")
+            throw IllegalStateException("系统定位权限未授予（可重新发起授权，或在系统设置中开启织雀的位置信息）")
         }
     }
 

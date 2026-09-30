@@ -1,6 +1,9 @@
 package com.zhique.core.permission.zq
 
 import com.zhique.core.permission.Capability
+import com.zhique.core.permission.OsGate
+import com.zhique.core.permission.OsGateResult
+import com.zhique.core.permission.OsPermissionGateway
 import com.zhique.core.permission.PermissionRegistry
 import com.zhique.core.permission.PState
 import kotlinx.coroutines.CoroutineScope
@@ -9,14 +12,20 @@ import kotlinx.coroutines.launch
 /**
  * W3C 标准路 → 同一注册表（规格 §4.6「两条接入路，同一个注册表」）。
  *
- * `WebChromeClient.onPermissionRequest`（RESOURCE_VIDEO/AUDIO_CAPTURE 等）
- * 由 :core:web 的网关转进来：资源映射到能力矩阵条目，逐个过授权卡，
- * 全部 GRANTED 才 grant，任一 DENIED 即 deny —— 拒绝对网页是优雅信号。
+ * - getUserMedia：`onPermissionRequest`（RESOURCE_VIDEO/AUDIO_CAPTURE）由
+ *   :core:web 网关转进来，映射能力矩阵逐个过授权卡，全部 GRANTED 才 grant；
+ * - geolocation：`onGeolocationPermissionsShowPrompt` 经 [onGeolocation] 走
+ *   location 条目；
+ * - **两条路都在真实授予时 recordUse()**——运行期真实使用计数驱动导出最小
+ *   权限建议，漏计会让 getUserMedia/geolocation 用量不进 manifest 变体；
+ * - 矩阵授予后同样过 [OsGate]（系统申请在授权流程内完成；OS 拒 → 矩阵回
+ *   DENIED，页面 deny 降级）。
  */
 class ZqW3CRouter(
     private val registry: PermissionRegistry,
     private val projectId: String,
     private val scope: CoroutineScope,
+    private val osPermissions: OsPermissionGateway? = null,
 ) {
 
     /** W3C 资源名 → zq 能力（未知资源 → null；纯映射可 JVM 测试）。 */
@@ -42,9 +51,31 @@ class ZqW3CRouter(
             var allGranted = true
             for (cap in caps) {
                 val state = registry.request(projectId, cap.id, "网页请求${cap.title}（W3C 标准接口 getUserMedia）")
-                if (state != PState.GRANTED) allGranted = false
+                val ok = state == PState.GRANTED &&
+                    OsGate.ensure(registry, projectId, cap, osPermissions) == OsGateResult.PASS
+                if (!ok) allGranted = false
             }
-            if (allGranted) grant() else deny()
+            if (allGranted) {
+                // W3C 路即真实使用：授予即计数（导出建议统计 getUserMedia 用量）
+                caps.forEach { registry.recordUse(projectId, it.id) }
+                grant()
+            } else {
+                deny()
+            }
+        }
+    }
+
+    /**
+     * W3C geolocation（onGeolocationPermissionsShowPrompt）：location 条目过
+     * 同一授权卡 + 系统门；[allow] 封装 `GeolocationPermissions.Callback.invoke`。
+     */
+    fun onGeolocation(allow: (Boolean) -> Unit) {
+        scope.launch {
+            val state = registry.request(projectId, Capability.LOCATION.id, "网页请求定位（W3C geolocation）")
+            val granted = state == PState.GRANTED &&
+                OsGate.ensure(registry, projectId, Capability.LOCATION, osPermissions) == OsGateResult.PASS
+            if (granted) registry.recordUse(projectId, Capability.LOCATION.id)
+            allow(granted)
         }
     }
 }

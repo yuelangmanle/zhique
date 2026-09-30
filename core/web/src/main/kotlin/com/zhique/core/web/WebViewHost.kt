@@ -51,6 +51,14 @@ fun interface PermissionGateway {
 }
 
 /**
+ * W3C 地理位置授权网关（审查修复 #2）：`onGeolocationPermissionsShowPrompt`
+ * 转到同一注册表矩阵；未注入时一律拒绝。
+ */
+fun interface GeolocationGateway {
+    fun onGeolocationPermissionShow(origin: String, allow: (Boolean) -> Unit)
+}
+
+/**
  * WebView 运行时引擎：AssetLoader 域名加载、织雀桥注入、调试采集、
  * 能力检测、渲染进程崩溃恢复（≤3 次）、PixelCopy 截图。
  *
@@ -89,6 +97,9 @@ class WebViewHost(context: Context, projectDir: File) {
 
     /** W3C 权限请求网关（:app 侧注入 ZqW3CRouter 适配；null=一律 deny）。 */
     var permissionGateway: PermissionGateway? = null
+
+    /** W3C geolocation 网关（:app 侧注入；null=一律拒绝）。 */
+    var geolocationGateway: GeolocationGateway? = null
 
     var webView: WebView = buildWebView()
         private set
@@ -163,6 +174,8 @@ class WebViewHost(context: Context, projectDir: File) {
             allowContentAccess = false
             mediaPlaybackRequiresUserGesture = false
             javaScriptCanOpenWindowsAutomatically = true
+            // W3C geolocation 提示要到达 onGeolocationPermissionsShowPrompt 必须开启（审查修复 #2）
+            setGeolocationEnabled(true)
         }
         // 渲染进程优先级：前台重要、不随后台回收（规格 §4.2 Renderer Priority）
         wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
@@ -219,6 +232,21 @@ class WebViewHost(context: Context, projectDir: File) {
                     return
                 }
                 gateway.onRequest(request)
+            }
+
+            // W3C geolocation → 同一注册表（审查修复 #2）
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String,
+                callback: android.webkit.GeolocationPermissions.Callback,
+            ) {
+                val gateway = geolocationGateway
+                if (gateway == null) {
+                    callback.invoke(origin, false, false)
+                    return
+                }
+                gateway.onGeolocationPermissionShow(origin) { granted ->
+                    callback.invoke(origin, granted, granted)
+                }
             }
         }
         wv.addJavascriptInterface(bridge, "ZhiqueNative")

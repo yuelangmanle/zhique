@@ -1,5 +1,6 @@
 package com.zhique.runner.permission
 
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -49,11 +50,27 @@ class PermissionPromptHostTest {
         compose.waitForIdle()
         compose.onNodeWithText("「星空示例」想使用相机").assertExists()
         compose.onNodeWithTag("perm-card-title").assertExists()
+        // 审查修复 #6：系统权限申请在授权流程内完成，不以「去系统设置」为唯一路径
+        compose.onNodeWithTag("perm-card-system-hint")
+            .assertTextContains("立即弹出系统权限确认", substring = true)
+            .assertTextContains("权限中心", substring = true)
         compose.onNodeWithTag("perm-grant").performClick()
         job.join()
         advanceUntilIdle()
         compose.waitForIdle()
         assertEquals(null, prompt.current.value, "结算后卡片关闭")
+    }
+
+    @Test
+    fun `无系统权限的能力不显示系统弹窗提示`() = runTest {
+        val prompt = AppPermissionPrompt()
+        setContent(prompt)
+        val job = launch { prompt.ask(PermissionAsk("pid-1", "剪贴板项目", "clipboard", "读取剪贴板文本")) }
+        advanceUntilIdle()
+        compose.waitForIdle()
+        compose.onNodeWithTag("perm-card-system-hint").assertDoesNotExist()
+        compose.onNodeWithTag("perm-grant").performClick()
+        job.join()
     }
 
     @Test

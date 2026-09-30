@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>相机能力验收（M10 真机用）</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 16px; background: #12131a; color: #f2f3f7; }
+  button { font-size: 16px; padding: 10px 16px; margin: 4px 8px 4px 0; border-radius: 10px; border: none; }
+  #shot { background: #46509f; color: #fff; }
+  #deny { background: #8a3b3b; color: #fff; }
+  #previewBtn { background: #3e6b4f; color: #fff; }
+  img { max-width: 100%; border-radius: 12px; margin-top: 12px; display: none; }
+  #log { white-space: pre-wrap; background: #1c1e27; border-radius: 10px; padding: 10px; margin-top: 12px; min-height: 48px; }
+</style>
+</head>
+<body>
+<h3>zq.camera 验收页</h3>
+<div>
+  <button id="shot" onclick="shot()">拍照（存文件 + 显示）</button>
+  <button id="previewBtn" onclick="togglePreview()">开关取景浮层</button>
+  <button id="deny" onclick="denyPath()">拒绝路径演示</button>
+</div>
+<img id="photo" alt="拍到的照片">
+<div id="log">等待操作…</div>
+<script>
+const log = (t) => { document.getElementById('log').textContent = t; };
+
+async function shot() {
+  try {
+    const r = await zq.camera.capture({ dataUrl: true });
+    if (r && r.code === 'denied') {
+      log('已拒绝（reason=' + (r.reason || 'matrix') + '）→ 优雅降级：显示占位文案，不崩溃');
+      return;
+    }
+    log('已保存: ' + r.path + (r.dataUrl ? '（含 dataURL）' : ''));
+    const img = document.getElementById('photo');
+    img.src = r.dataUrl || '';
+    img.style.display = r.dataUrl ? 'block' : 'none';
+  } catch (e) {
+    log('失败: ' + e.message);
+  }
+}
+
+async function togglePreview() {
+  try {
+    const r = await zq.camera.startPreview({ facing: 'back' });
+    if (r && r.code === 'denied') { log('取景被拒（优雅降级）'); return; }
+    log('取景已开启: ' + r.facing + '（Compose 浮层应出现）');
+    setTimeout(async () => { await zq.camera.stopPreview(); log('取景已关闭'); }, 4000);
+  } catch (e) { log('取景失败: ' + e.message); }
+}
+
+async function denyPath() {
+  // 拒绝路径：先在授权卡点「拒绝」或系统权限拒——页面必须拿到优雅信号而非悬挂
+  const r = await zq.camera.capture({ dataUrl: false });
+  if (r && r.code === 'denied') {
+    log('拒绝路径 OK：code=denied, reason=' + (r.reason || 'matrix') + '（页面降级不崩溃）');
+  } else {
+    log('本机已授权，返回: ' + r.path + '（拒绝路径请先在权限中心清除 camera）');
+  }
+}
+</script>
+</body>
+</html>
