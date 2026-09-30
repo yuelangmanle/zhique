@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 class ProjectRepository(private val root: File) {
 
     private val projectsDir = File(root, "projects")
+    private val history = HistoryStore(root)
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
@@ -110,12 +111,9 @@ class ProjectRepository(private val root: File) {
         return meta
     }
 
-    /** 追加一条项目快照（history 非空即删除需显式 confirm；完整能力见 Task 0.4 HistoryStore）。 */
+    /** 追加一条项目快照（history 非空即删除需显式 confirm）。 */
     fun appendHistory(id: String, label: String, content: String) {
-        val historyDir = File(dir(id), HISTORY_DIR)
-        historyDir.mkdirs()
-        val n = (historyDir.listFiles()?.count { it.name.startsWith("snap-") } ?: 0) + 1
-        File(historyDir, "snap-$n-$label.html").writeText(content)
+        history.append(id, label, content)
     }
 
     fun hasHistory(id: String): Boolean {
