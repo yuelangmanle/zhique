@@ -27,7 +27,7 @@ private class CenterSoftwareKey : com.zhique.core.common.crypto.KeyProvider {
     override fun masterKey(): javax.crypto.SecretKey = key
 }
 
-/** 导出中心（规格 §5.3 屏 8）：备份状态置顶、导出物清单、M7 推送占位。 */
+/** 导出中心（规格 §5.3 屏 8）：备份状态置顶、导出物清单、推送更新入口（M7 接线）。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -42,8 +42,9 @@ class ExportCenterScreenTest {
     private data class Scene(val repo: ProjectRepository, val exportedId: String, val freshId: String)
 
     private var exportedTo: String? = null
+    private var pushedTo: String? = null
 
-    private fun setup(): Scene {
+    private fun setup(bound: Boolean = false): Scene {
         val root = tmp.newFolder()
         val repo = ProjectRepository(root)
         val a = repo.create("便签", "<p></p>")
@@ -52,6 +53,9 @@ class ExportCenterScreenTest {
             a.id,
             ExportRecord("com.zhique.export.bianqian", 2, "1.0.2", 111L, "min", "b".repeat(64)),
         )
+        if (bound) {
+            repo.bindRepo(a.id, com.zhique.core.project.RepoBinding("alice", "bianqian", lastPushedSha = "abc1234def"))
+        }
         val keystore = KeystoreManager(root, com.zhique.core.common.crypto.CryptoStore(CenterSoftwareKey()))
         compose.setContent {
             ZqTheme {
@@ -59,6 +63,7 @@ class ExportCenterScreenTest {
                     repo = repo,
                     keystore = keystore,
                     onExport = { exportedTo = it.id },
+                    onPush = { pushedTo = it.id },
                     onToast = {},
                     ioDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
                 )
@@ -113,10 +118,21 @@ class ExportCenterScreenTest {
     }
 
     @Test
-    fun `推送更新为M7占位`() {
-        setup()
-        scroll("center-push-placeholder")
-        compose.onNodeWithTag("center-push-placeholder").assertExists()
-        compose.onNodeWithText("M7", substring = true).assertExists()
+    fun `未绑定仓库时推送区给引导文案`() {
+        setup(bound = false)
+        scroll("center-push-card")
+        compose.onNodeWithTag("center-push-card").assertExists()
+        compose.onNodeWithTag("center-push-empty").assertExists()
+    }
+
+    @Test
+    fun `绑定仓库显示远端与上次推送并可一键发起`() {
+        val scene = setup(bound = true)
+        scroll("center-push-card")
+        compose.onNodeWithText("alice/bianqian").assertExists()
+        compose.onNodeWithText("上次推送 abc1234", substring = true).assertExists()
+        val tag = "center-push-${scene.exportedId}"
+        compose.onNodeWithTag(tag).performClick()
+        assertEquals(scene.exportedId, pushedTo)
     }
 }

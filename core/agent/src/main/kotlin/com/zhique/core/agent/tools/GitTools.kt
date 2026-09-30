@@ -2,6 +2,7 @@ package com.zhique.core.agent.tools
 
 import com.zhique.core.agent.Tool
 import com.zhique.core.agent.ToolContext
+import com.zhique.core.agent.ToolRegistry
 import com.zhique.core.ai.ToolSchema
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -9,9 +10,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * git 类工具（规格 §4.5：外发动作默认逐项确认）。M4 阶段为 NotReady 占位——
- * 真实实现（JGit + GitHub API）在 M7 接线；requiresConfirm=true，
- * 编排器在非全自动模式下发 AwaitConfirm 事件并跳过执行。
+ * git 类工具（规格 §4.5/§4.8，M7 接线真实实现）：
+ * - requiresConfirm=true 保持不变——外发动作默认逐项确认，编排器在非全自动模式下
+ *   发 AwaitConfirm 事件并挂起（M4 ConfirmGate）；
+ * - 真实逻辑在 `:core:publish` + `:app` 侧经 [Gateway] 注入（[bind]，进程级单点）；
+ * - 未绑定（早期测试/未装配容器）保持 NotReady 占位语义。
  */
 object GitTools {
     const val CREATE_REPO = "create_repo"
@@ -20,38 +23,108 @@ object GitTools {
 
     internal const val NOT_READY = "M7 接线后可用"
 
+    /**
+     * 发布底座缝：`:app` 容器绑定真实实现（GitHubApi/GitRepo/ReleaseJobEngine）。
+     * 返回 JSON 结果；失败返回 `{"status":"error","detail":...}` 供模型理解重试，
+     * 凭据类细节由底层保证不入文本。
+     */
+    interface Gateway {
+        suspend fun createRepo(projectId: String, name: String, isPrivate: Boolean): JsonObject
+        suspend fun push(projectId: String, message: String?): JsonObject
+        suspend fun readReleases(projectId: String): JsonObject
+    }
+
+    @Volatile private var gateway: Gateway? = null
+
+    /** 容器装配时绑定（null=解绑，回到 NotReady）。 */
+    fun bind(g: Gateway?) {
+        gateway = g
+    }
+
     fun all(): List<Tool> = listOf(CreateRepoTool, PushTool, ReadReleasesTool)
+
+    /** 未绑定时的占位返回。 */
+    internal suspend fun notReady(): JsonObject = buildJsonObject {
+        put("status", "NotReady")
+        put("detail", NOT_READY)
+    }
+
+    internal fun current(): Gateway? = gateway
 }
 
-/** git 占位工具公共基类：NotReady 返回值 + requiresConfirm=true（外发动作语义）。 */
-internal abstract class GitPlaceholder(
+/** git 工具公共基类：未绑定→NotReady；绑定→经 [Gateway] 执行。requiresConfirm=true。 */
+internal abstract class GitToolBase(
     override val name: String,
-    description: String,
+    private val desc: String,
 ) : Tool {
-    override val schema = ToolSchema(
-        name = name,
-        description = "$description（外发动作：执行前需用户批准）",
-        parametersJson = """{"type":"object","properties":{},"additionalProperties":true}""",
-    )
+    /** lazy：parametersJson 由子类提供，不能在基类初始化期取（open 属性陷阱）。 */
+    override val schema: ToolSchema by lazy {
+        ToolSchema(
+            name = name,
+            description = "$desc（外发动作：执行前需用户批准）",
+            parametersJson = parametersJson,
+        )
+    }
     override val requiresConfirm = true
 
-    override suspend fun invoke(ctx: ToolContext, args: JsonElement): JsonObject = buildJsonObject {
-        put("status", "NotReady")
-        put("detail", GitTools.NOT_READY)
+    protected abstract val parametersJson: String
+
+    final override suspend fun invoke(ctx: ToolContext, args: JsonElement): JsonObject {
+        val g = GitTools.current() ?: return GitTools.notReady()
+        return runCatching { execute(g, ctx, args) }
+            .getOrElse { e ->
+                buildJsonObject {
+                    put("status", "error")
+                    put("detail", e.message ?: e.javaClass.simpleName)
+                }
+            }
+    }
+
+    protected abstract suspend fun execute(g: GitTools.Gateway, ctx: ToolContext, args: JsonElement): JsonObject
+}
+
+internal object CreateRepoTool : GitToolBase(
+    GitTools.CREATE_REPO,
+    "在 GitHub 创建远端仓库并绑定到当前项目（需用户批准）",
+) {
+    override val parametersJson =
+        """{"type":"object","properties":{"name":{"type":"string","description":"仓库名，默认项目名"},"private":{"type":"boolean","description":"默认私有"}},"required":[]}"""
+
+    override suspend fun execute(
+        g: GitTools.Gateway,
+        ctx: ToolContext,
+        args: JsonElement,
+    ): JsonObject {
+        val name = ToolRegistry.str(args, "name") ?: ctx.repo.meta(ctx.projectId).name
+        val isPrivate = ToolRegistry.str(args, "private")?.toBooleanStrictOrNull() ?: true
+        return g.createRepo(ctx.projectId, name, isPrivate)
     }
 }
 
-internal object CreateRepoTool : GitPlaceholder(
-    GitTools.CREATE_REPO,
-    "在 GitHub 创建远端仓库（需用户批准）",
-)
-
-internal object PushTool : GitPlaceholder(
+internal object PushTool : GitToolBase(
     GitTools.PUSH,
-    "推送项目到绑定的 GitHub 仓库（需用户批准）",
-)
+    "提交并推送项目到绑定的 GitHub 仓库（状态机驱动，可断点续跑；需用户批准）",
+) {
+    override val parametersJson =
+        """{"type":"object","properties":{"message":{"type":"string","description":"commit message，留空自动生成"}},"required":[]}"""
 
-internal object ReadReleasesTool : GitPlaceholder(
+    override suspend fun execute(
+        g: GitTools.Gateway,
+        ctx: ToolContext,
+        args: JsonElement,
+    ): JsonObject = g.push(ctx.projectId, ToolRegistry.str(args, "message"))
+}
+
+internal object ReadReleasesTool : GitToolBase(
     GitTools.READ_RELEASES,
-    "读取远端仓库 Release 列表（需用户批准）",
-)
+    "读取绑定仓库的 GitHub Release 列表（需用户批准）",
+) {
+    override val parametersJson =
+        """{"type":"object","properties":{},"additionalProperties":true}"""
+
+    override suspend fun execute(
+        g: GitTools.Gateway,
+        ctx: ToolContext,
+        args: JsonElement,
+    ): JsonObject = g.readReleases(ctx.projectId)
+}

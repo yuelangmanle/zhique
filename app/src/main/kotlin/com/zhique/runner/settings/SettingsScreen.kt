@@ -31,6 +31,7 @@ fun SettingsScreen(
     onOpenRoleRouter: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenPermissionCenter: () -> Unit = {},
+    onOpenPublishSync: () -> Unit = {},
 ) {
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(top = 20.dp).testTag("settings-screen")) {
@@ -43,6 +44,7 @@ fun SettingsScreen(
             SettingRow("AI 服务商", "多协议接入 · 密钥加密存储", "settings-providers", onOpenProviders)
             SettingRow("角色路由", "五槽模型分工 · 省钱/均衡/质量", "settings-router", onOpenRoleRouter)
             SettingRow("权限中心", "项目×能力矩阵 · 运行中提醒 · 导出权限建议", "settings-permissions", onOpenPermissionCenter)
+            SettingRow("发布与同步", "GitHub PAT · 自更新通道", "settings-publish", onOpenPublishSync)
         }
     }
 }

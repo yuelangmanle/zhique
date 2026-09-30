@@ -44,13 +44,14 @@ private val centerTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDe
 
 /**
  * 导出中心（规格 §5.3 屏 8，底部 Tab 落地）：密钥库备份状态置顶（决策29-3）、
- * 全部导出物（版本/包名/时间）、「推送更新」占位（M7）。
+ * 全部导出物（版本/包名/时间）、「推送更新」（M7 发布状态机接线：绑定了仓库的项目一键推送）。
  */
 @Composable
 fun ExportCenterScreen(
     repo: ProjectRepository,
     keystore: KeystoreManager,
     onExport: (ProjectMeta) -> Unit,
+    onPush: (ProjectMeta) -> Unit,
     onToast: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
@@ -167,7 +168,7 @@ fun ExportCenterScreen(
                 }
             }
 
-            // 推送更新占位（M7 发布状态机接线）
+            // 推送更新（M7：绑定仓库的项目一键发起状态机推送；未绑定的给引导入口）
             item {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -175,15 +176,39 @@ fun ExportCenterScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
-                        .testTag("center-push-placeholder"),
+                        .testTag("center-push-card"),
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        Text("推送更新（GitHub Release）", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "M7 接线：绑定仓库后一键推送新版本",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text("推送更新（GitHub）", style = MaterialTheme.typography.titleSmall)
+                        val bound = projects.filter { it.repo != null }
+                        if (bound.isEmpty()) {
+                            Text(
+                                "还没有绑定仓库——在项目发布向导首次发布后，这里可一键推送更新",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp).testTag("center-push-empty"),
+                            )
+                        }
+                        bound.forEach { p ->
+                            val binding = p.repo!!
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${binding.owner}/${binding.repo}", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        binding.lastPushedSha?.let { "上次推送 ${it.take(7)}" } ?: "尚未推送",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Button(
+                                    onClick = { onPush(p) },
+                                    modifier = Modifier.testTag("center-push-${p.id}"),
+                                ) { Text("推送更新") }
+                            }
+                        }
                     }
                 }
             }

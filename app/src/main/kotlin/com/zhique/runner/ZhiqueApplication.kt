@@ -81,6 +81,44 @@ class AppContainer(
         )
     }
 
+    // ---- M7 发布（GitHub 底座 + 状态机 + 自更新） ----
+
+    /** fine-grained PAT 加密存储（CryptoStore，进程级单点）。 */
+    val patStore: com.zhique.core.publish.PatStore by lazy {
+        com.zhique.core.publish.PatStore(File(root, "publish/pat.enc"), CryptoStore(keyProvider))
+    }
+
+    /** 发布偏好（更新通道 stable/beta，与设置域共用 DataStore）。 */
+    val publishPreferences: com.zhique.runner.settings.PublishPreferences by lazy {
+        com.zhique.runner.settings.PublishPreferences(settingsDataStore)
+    }
+
+    /** Git 底座（JGit）与 GitHub REST（OkHttp，PAT 零日志）。 */
+    val gitRepo: com.zhique.core.publish.GitRepo by lazy { com.zhique.core.publish.GitRepo() }
+    val githubApi: com.zhique.core.publish.GitHubApi by lazy { com.zhique.core.publish.GitHubApi() }
+
+    /** 发布状态机引擎（跨模式唯一：手动向导/Agent 工具/导出中心一键共用）。 */
+    val releaseJobEngine: com.zhique.core.publish.ReleaseJobEngine by lazy {
+        com.zhique.core.publish.ReleaseJobEngine(repo, gitRepo, githubApi, pats = patStore)
+    }
+
+    /** Agent git 工具真实实现（GitTools.bind 进程级单点，仍走 ConfirmGate 批准）。 */
+    val publishToolGateway: com.zhique.runner.publish.PublishToolGateway by lazy {
+        com.zhique.runner.publish.PublishToolGateway(
+            repo = repo,
+            git = { gitRepo },
+            api = { githubApi },
+            pats = { patStore },
+            engine = { releaseJobEngine },
+        )
+    }
+
+    init {
+        // M7：装配即绑定——git 工具从 NotReady 占位切到真实实现
+        // （gateway 本体惰性创建，绑定引用不触发 JGit/OkHttp 初始化）
+        com.zhique.core.agent.tools.GitTools.bind(publishToolGateway)
+    }
+
     fun projectDir(projectId: String): File = File(root, "projects/$projectId")
 }
 

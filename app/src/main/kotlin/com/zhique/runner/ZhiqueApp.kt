@@ -75,6 +75,7 @@ fun ZhiqueApp(
     var editorProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var chatAsk by remember { mutableStateOf<EditorAskContext?>(null) }
     var wizardProject by remember { mutableStateOf<ProjectMeta?>(null) }
+    var publishProject by remember { mutableStateOf<ProjectMeta?>(null) }
     // Agent 会话运行真值（编辑器只读横幅的依据；不靠全屏互斥兜底）
     var agentRunning by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(TAB_PROJECTS) }
@@ -117,8 +118,10 @@ fun ZhiqueApp(
     val agentMeta0 = agentProject
     val editorMeta0 = editorProject
     val wizardMeta0 = wizardProject
+    val publishMeta0 = publishProject
     val fullScreen = onboardingNeeded == true || runnerProject != null ||
-        agentMeta0 != null || editorMeta0 != null || pasteDraft != null || wizardMeta0 != null
+        agentMeta0 != null || editorMeta0 != null || pasteDraft != null || wizardMeta0 != null ||
+        publishMeta0 != null
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
@@ -288,10 +291,65 @@ fun ZhiqueApp(
                             onToast = toast,
                         )
                     }
+                    publishMeta0 != null -> {
+                        val pMeta = publishMeta0
+                        // AI commit message 生成器（快循环角色；失败回落启发式，规格 F11「可改」）
+                        var aiGen by remember(pMeta.id) {
+                            mutableStateOf<(suspend (String) -> String?)?>(null)
+                        }
+                        LaunchedEffect(pMeta.id) {
+                            val wired = runCatching {
+                                AiWiring(container).wire(AgentRole.FAST_LOOP)
+                            }.getOrNull()
+                            if (wired != null) {
+                                aiGen = { summary ->
+                                    val req = wired.fastTemplate.copy(
+                                        messages = listOf(
+                                            com.zhique.core.ai.ChatMessage(
+                                                role = "user",
+                                                content = "根据以下项目变更摘要写一条简洁的中文 commit message：" +
+                                                    "一行、不带引号、不加句号。\n$summary",
+                                            ),
+                                        ),
+                                    )
+                                    val sb = StringBuilder()
+                                    wired.fastChat(req).collect { ev ->
+                                        if (ev is com.zhique.core.ai.StreamEvent.ContentDelta) sb.append(ev.text)
+                                    }
+                                    sb.toString().trim().lines().firstOrNull { it.isNotBlank() }
+                                        ?.take(120)?.takeIf { it.isNotBlank() }
+                                }
+                            }
+                        }
+                        val controller = remember(pMeta.id) {
+                            com.zhique.runner.publish.PublishController(
+                                projectId = pMeta.id,
+                                repo = container.repo,
+                                git = container.gitRepo,
+                                api = container.githubApi,
+                                pats = container.patStore,
+                                engine = container.releaseJobEngine,
+                                aiCommitMessage = { summary -> aiGen?.invoke(summary) },
+                                scope = scope,
+                                onToast = toast,
+                            )
+                        }
+                        com.zhique.runner.publish.PublishWizardScreen(
+                            controller = controller,
+                            onDone = { publishProject = null },
+                            onToast = toast,
+                            onOpenPatGuide = {
+                                publishProject = null
+                                tab = TAB_SETTINGS
+                                settingsPage = "publish"
+                            },
+                        )
+                    }
                     tab == TAB_EXPORT -> com.zhique.runner.export.ExportCenterScreen(
                         repo = container.repo,
                         keystore = container.keystoreManager,
                         onExport = { wizardProject = it },
+                        onPush = { publishProject = it },
                         onToast = toast,
                     )
                     tab == TAB_SETTINGS -> when (settingsPage) {
@@ -316,11 +374,20 @@ fun ZhiqueApp(
                             onOpenKeystore = { settingsPage = null; tab = TAB_EXPORT },
                             keystore = container.keystoreManager,
                         )
+                        "publish" -> Box(Modifier.fillMaxSize()) {
+                            com.zhique.runner.publish.PublishSyncScreen(
+                                patStore = container.patStore,
+                                prefs = container.publishPreferences,
+                                onBack = { settingsPage = null },
+                                onToast = toast,
+                            )
+                        }
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },
                             onOpenProviders = { settingsPage = "providers" },
                             onOpenRoleRouter = { settingsPage = "router" },
                             onOpenPermissionCenter = { settingsPage = "permissions" },
+                            onOpenPublishSync = { settingsPage = "publish" },
                         )
                     }
                     else -> HomeScreen(
