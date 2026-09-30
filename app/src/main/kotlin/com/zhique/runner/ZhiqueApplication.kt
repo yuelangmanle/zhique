@@ -54,6 +54,33 @@ class AppContainer(
         com.zhique.core.permission.PermissionRegistry(repo, prompt = permissionPrompt)
     }
 
+    // ---- M6 导出与签名 ----
+
+    /** 统一签名密钥库（决策29：一次生成永久复用；口令随机密文存安全区）。 */
+    val keystoreManager: com.zhique.core.export.KeystoreManager by lazy {
+        com.zhique.core.export.KeystoreManager(File(context.filesDir, "export"), CryptoStore(keyProvider))
+    }
+
+    /** 模板底版（assets/templates 解包缓存）。 */
+    private val templateProvider: com.zhique.core.export.TemplateProvider by lazy {
+        com.zhique.core.export.AssetTemplateProvider(context, File(context.cacheDir, "templates"))
+    }
+
+    /** 导出编排（校验 → 包名/版本 → 注入 → 签名 → 记录）。 */
+    val exportService: com.zhique.core.export.ExportService by lazy {
+        com.zhique.core.export.ExportService(
+            repo = repo,
+            version = com.zhique.core.export.VersionManager(repo),
+            pipeline = com.zhique.core.export.ExportPipeline(
+                templates = templateProvider,
+                signer = com.zhique.core.export.Signer(),
+                workDir = File(context.cacheDir, "exports"),
+            ),
+            keystore = keystoreManager,
+            guard = com.zhique.core.export.SignatureGuard(context, keystoreManager, repo),
+        )
+    }
+
     fun projectDir(projectId: String): File = File(root, "projects/$projectId")
 }
 

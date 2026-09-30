@@ -79,6 +79,7 @@ fun PermissionCenterScreen(
     focusProjectId: String? = null,
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onOpenKeystore: () -> Unit = {},
 ) {
     var projects by remember { mutableStateOf<List<com.zhique.core.project.ProjectMeta>>(emptyList()) }
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -265,7 +266,7 @@ fun PermissionCenterScreen(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { /* M6：导出与签名（密钥库状态）接入点 */ }
+                            .clickable { onOpenKeystore() }
                             .padding(horizontal = 16.dp, vertical = 10.dp)
                             .testTag("keystore-entry"),
                         verticalAlignment = Alignment.CenterVertically,

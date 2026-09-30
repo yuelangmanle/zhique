@@ -38,7 +38,6 @@ import com.zhique.runner.editor.EditorController
 import com.zhique.runner.editor.EditorScreen
 import com.zhique.runner.chat.ChatController
 import com.zhique.runner.chat.ChatScreen
-import com.zhique.runner.export.ExportCenterPlaceholder
 import com.zhique.runner.home.HomeController
 import com.zhique.runner.home.HomeScreen
 import com.zhique.runner.onboarding.OnboardingController
@@ -75,6 +74,7 @@ fun ZhiqueApp(
     val agentBridge = remember { AgentBridge() }
     var editorProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var chatAsk by remember { mutableStateOf<EditorAskContext?>(null) }
+    var wizardProject by remember { mutableStateOf<ProjectMeta?>(null) }
     // Agent 会话运行真值（编辑器只读横幅的依据；不靠全屏互斥兜底）
     var agentRunning by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(TAB_PROJECTS) }
@@ -116,8 +116,9 @@ fun ZhiqueApp(
 
     val agentMeta0 = agentProject
     val editorMeta0 = editorProject
+    val wizardMeta0 = wizardProject
     val fullScreen = onboardingNeeded == true || runnerProject != null ||
-        agentMeta0 != null || editorMeta0 != null || pasteDraft != null
+        agentMeta0 != null || editorMeta0 != null || pasteDraft != null || wizardMeta0 != null
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
@@ -264,7 +265,35 @@ fun ZhiqueApp(
                             onBack = { pasteDraft = null },
                         )
                     }
-                    tab == TAB_EXPORT -> ExportCenterPlaceholder()
+                    wizardMeta0 != null -> {
+                        val wMeta = wizardMeta0
+                        val controller = remember(wMeta.id) {
+                            com.zhique.runner.export.ExportController(
+                                projectId = wMeta.id,
+                                repo = container.repo,
+                                registry = container.permissionRegistry,
+                                keystore = container.keystoreManager,
+                                executor = { projectId, appName, variant ->
+                                    withContext(Dispatchers.IO) {
+                                        container.exportService.export(projectId, appName, variant)
+                                    }
+                                },
+                                scope = scope,
+                                onToast = toast,
+                            )
+                        }
+                        com.zhique.runner.export.ExportWizardScreen(
+                            controller = controller,
+                            onDone = { wizardProject = null },
+                            onToast = toast,
+                        )
+                    }
+                    tab == TAB_EXPORT -> com.zhique.runner.export.ExportCenterScreen(
+                        repo = container.repo,
+                        keystore = container.keystoreManager,
+                        onExport = { wizardProject = it },
+                        onToast = toast,
+                    )
                     tab == TAB_SETTINGS -> when (settingsPage) {
                         "chat" -> ChatPage(
                             container = container,
@@ -284,6 +313,7 @@ fun ZhiqueApp(
                             container = container,
                             focusProjectId = permFocus,
                             onBack = { settingsPage = null; permFocus = null },
+                            onOpenKeystore = { settingsPage = null; tab = TAB_EXPORT },
                         )
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },
@@ -430,17 +460,19 @@ private fun RoleRouterPage(
     }
 }
 
-/** 权限中心页（M5）：注册表 + 项目焦点。 */
+/** 权限中心页（M5）：注册表 + 项目焦点；「导出与签名」入口切到导出中心（M6 接线）。 */
 @Composable
 private fun PermissionCenterPage(
     container: AppContainer,
     focusProjectId: String?,
     onBack: () -> Unit,
+    onOpenKeystore: () -> Unit = {},
 ) {
     com.zhique.runner.permission.PermissionCenterScreen(
         repo = container.repo,
         registry = container.permissionRegistry,
         focusProjectId = focusProjectId,
         onBack = onBack,
+        onOpenKeystore = onOpenKeystore,
     )
 }

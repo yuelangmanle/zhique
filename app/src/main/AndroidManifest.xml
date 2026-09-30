@@ -17,6 +17,8 @@
     <!-- 截屏（MediaProjection）前台服务（审查修复 #3：API34+ 硬性要求） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- M6 导出：PackageInstaller 会话安装导出应用（「未知来源」授权一次，规格 §4.7 交付） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
 
     <application android:label="织雀" android:name=".ZhiqueApplication">
@@ -37,6 +39,15 @@
             android:name=".screen.ZqScreenService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <!-- M6 导出安装会话的回执（PackageInstaller 经 IntentSender 回调） -->
+        <receiver
+            android:name=".export.ExportDelivery$InstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.zhique.runner.action.INSTALL_COMMIT" />
+            </intent-filter>
+        </receiver>
 
         <activity
             android:name=".MainActivity"
