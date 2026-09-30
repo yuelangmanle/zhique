@@ -164,7 +164,7 @@ class CryptoStore(private val kp: KeyProvider) {
 @Serializable
 data class PermissionRecord(val capability: String, val state: String, val lastAsked: Long = 0)
 @Serializable
-data class ExportRecord(val packageName: String, val versionCode: Int, val versionName: String, val at: Long, val variant: String)
+data class ExportRecord(val packageName: String, val versionCode: Int, val versionName: String, val at: Long, val variant: String, val certSha256: String = "")
 @Serializable
 data class RepoBinding(val owner: String, val repo: String, val branch: String = "main", val lastPushedSha: String? = null)
 @Serializable
@@ -624,10 +624,10 @@ class PermissionRegistry(private val repo: ProjectRepository) {
 
 **Files:** Create `:core:export/.../KeystoreManager.kt`、`Signer.kt`、`AssetInjector.kt`、`VersionManager.kt`；Test `VersionManagerTest.kt`、`ExportPipelineTest.kt`（Robolectric 或 androidTest）
 
-- [ ] **KeystoreManager**：首启生成 RSA-2048 密钥对 → `KeyStore.getInstance("JKS")` 持久 `keystore/zhique-release.jks`（口令随机生成并密文存 CryptoStore）；`export()` 拷 .jks 到 Downloads + 分享；`import(path, pass)` 恢复（**一等公民**，导出页常置顶备份状态）
+- [ ] **KeystoreManager**：首启生成 RSA-2048 密钥对 → `KeyStore.getInstance("JKS")` 持久 `keystore/zhique-release.jks`（**口令运行时随机生成**并密文存 CryptoStore；源码/配置/测试零口令字面量）；**签名持久化保证（决策29）**：①`export()` 拷 .jks 到 Downloads + 分享面板/SAF 保存到电脑（首次导出 APK 成功后引导完成一次电脑备份，记录 `lastBackupAt`，导出中心/权限中心常装备份状态与超期提醒）②`import(path, pass)` 恢复——**导入后计算证书 SHA-256 与既有 ExportRecord.certSha256 比对，不一致拒绝生效**；③`SignatureGuard.verifyBeforeExport(projectId)`：PackageManager 读取手机已装 `com.zhique.export.<slug>` 的签名证书与当前密钥库证书比对，**不一致抛 SignatureMismatchException（UI 阻断导出并说明：先卸载旧包或恢复正确密钥库）**——机制上保证每次更新可覆盖安装
 - [ ] **AssetInjector**（zipflinger）：打开模板 apk → 删旧 `assets/project/*` → 写入项目文件 → 关闭；**Signer**（apksig）：`ApkSigner.Builder` v2+v3，输出临时 apk → `zipflinger` 对齐（`ZipArchive` alignment 4/16 页规则）→ `apksigner verify` 断言（`ApkVerifier` 编程校验）
-- [ ] **VersionManager**：`next(projectId) = (meta.export?.versionCode ?: 0) + 1`；包名 `com.zhique.export.<slug(name)>`（slug 规则 + 冲突检测）；导出前三元组校验（同包名旧装签名=本密钥库 → 允许覆盖；否则警告不可覆盖升级）
-- [ ] 测试：版本自增、slug、签名产物 verify 通过（用测试 keystore）。PASS → Commit `feat(export): 注入签名版本管线`
+- [ ] **VersionManager**：`next(projectId) = (meta.export?.versionCode ?: 0) + 1`；包名 `com.zhique.export.<slug(name)>`（slug 规则 + 冲突检测）；导出前三元组校验（同包名旧装签名=本密钥库 → 允许覆盖；否则 SignatureGuard 已在上一步阻断）
+- [ ] 测试：版本自增、slug、签名产物 verify 通过（用测试 keystore）、**证书 SHA-256 写入 ExportRecord、SignatureGuard 不匹配阻断、import 指纹不一致拒绝、备份状态流转（lastBackupAt 记录/超期判定）**（口令一律运行时随机，测试不写真实口令字面量）。PASS → Commit `feat(export): 注入签名版本管线与签名持久化保证`
 
 ### Task 6.3 导出向导 + 导出中心 + 快捷方式
 
