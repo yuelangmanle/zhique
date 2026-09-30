@@ -80,6 +80,7 @@ fun PermissionCenterScreen(
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     onOpenKeystore: () -> Unit = {},
+    keystore: com.zhique.core.export.KeystoreManager? = null,
 ) {
     var projects by remember { mutableStateOf<List<com.zhique.core.project.ProjectMeta>>(emptyList()) }
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -263,22 +264,41 @@ fun PermissionCenterScreen(
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
                     )
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { onOpenKeystore() }
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                            .testTag("keystore-entry"),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("导出与签名", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "密钥库状态 · 备份 · 恢复（M6 接入）",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (keystore == null) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenKeystore() }
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                                .testTag("keystore-entry"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("导出与签名", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "密钥库状态 · 备份 · 恢复（M6 接入）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else {
+                        // 决策29-3：备份状态在权限中心常驻（与导出中心同款组件真值）
+                        val backupController = remember(keystore) {
+                            com.zhique.runner.export.KeystoreBackupController(
+                                keystore = keystore,
+                                existingFingerprints = {
+                                    runCatching { repo.list() }.getOrDefault(emptyList())
+                                        .mapNotNull { it.export?.certSha256 }.filter { it.isNotBlank() }
+                                },
+                                scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO),
                             )
                         }
+                        com.zhique.runner.export.KeystoreBackupCard(
+                            controller = backupController,
+                            testPrefix = "perm-keystore",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
                     }
                     Spacer(Modifier.size(24.dp))
                 }

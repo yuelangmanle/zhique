@@ -314,6 +314,7 @@ fun ZhiqueApp(
                             focusProjectId = permFocus,
                             onBack = { settingsPage = null; permFocus = null },
                             onOpenKeystore = { settingsPage = null; tab = TAB_EXPORT },
+                            keystore = container.keystoreManager,
                         )
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },
@@ -467,6 +468,7 @@ private fun PermissionCenterPage(
     focusProjectId: String?,
     onBack: () -> Unit,
     onOpenKeystore: () -> Unit = {},
+    keystore: com.zhique.core.export.KeystoreManager? = null,
 ) {
     com.zhique.runner.permission.PermissionCenterScreen(
         repo = container.repo,
@@ -474,5 +476,6 @@ private fun PermissionCenterPage(
         focusProjectId = focusProjectId,
         onBack = onBack,
         onOpenKeystore = onOpenKeystore,
+        keystore = keystore,
     )
 }

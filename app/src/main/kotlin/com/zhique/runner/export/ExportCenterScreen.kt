@@ -31,11 +31,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.zhique.core.export.BackupStatus
 import com.zhique.core.export.KeystoreManager
 import com.zhique.core.project.ProjectMeta
 import com.zhique.core.project.ProjectRepository
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,77 +53,39 @@ fun ExportCenterScreen(
     onExport: (ProjectMeta) -> Unit,
     onToast: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) {
     var projects by remember { mutableStateOf<List<ProjectMeta>>(emptyList()) }
-    var backup by remember { mutableStateOf<BackupStatus?>(null) }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val backupController = remember(ioDispatcher) {
+        KeystoreBackupController(
+            keystore = keystore,
+            existingFingerprints = {
+                runCatching { repo.list() }.getOrDefault(emptyList())
+                    .mapNotNull { it.export?.certSha256 }.filter { it.isNotBlank() }
+            },
+            scope = kotlinx.coroutines.CoroutineScope(ioDispatcher),
+            ioDispatcher = ioDispatcher,
+            onToast = onToast,
+        )
+    }
 
     LaunchedEffect(Unit) {
-        val loaded = withContext(Dispatchers.IO) {
+        val loaded = withContext(ioDispatcher) {
             runCatching { repo.list() }.getOrDefault(emptyList())
         }
-        val status = withContext(Dispatchers.IO) {
-            runCatching { keystore.backupStatus() }.getOrNull()
-        }
         projects = loaded
-        backup = status
+        backupController.refresh()
     }
 
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         LazyColumn(Modifier.fillMaxSize().testTag("export-center-root")) {
-            // 密钥库备份状态置顶（决策29-3）
+            // 密钥库备份状态置顶（决策29-3，与权限中心同款常驻组件）
             item {
-                val status = backup
-                val due = status?.backupDue == true
-                Surface(
-                    color = if (due) Color(0xFFFFF3CD) else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .testTag("center-backup"),
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(
-                            when {
-                                status == null -> "密钥库状态未知"
-                                !status.keystoreExists -> "签名密钥库：首次导出时自动生成"
-                                due -> "签名密钥超期未备份到电脑——手机丢失将无法更新已装应用"
-                                else -> "签名密钥已备份：${centerTimeFormat.format(Date(status.lastBackupAt))}"
-                            },
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.testTag("center-backup-status"),
-                        )
-                        status?.certSha256?.let {
-                            Text(
-                                "证书指纹 $it",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row {
-                            OutlinedButton(
-                                onClick = {
-                                    runCatching {
-                                        val copy = File(File(context.cacheDir, "exports").apply { mkdirs() }, "zhique-release.jks")
-                                        keystore.exportTo(copy)
-                                        ExportDelivery.shareKeystore(context, copy)
-                                        keystore.markBackedUp()
-                                    }.onSuccess { backup = keystore.backupStatus() }
-                                        .onFailure { onToast("备份分享失败：${it.message}") }
-                                },
-                                modifier = Modifier.testTag("center-backup-btn"),
-                            ) { Text("备份到电脑") }
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedButton(
-                                onClick = { onToast("恢复入口：选择 .jks + 口令，指纹校验通过后生效（M9 设置页接入）") },
-                                modifier = Modifier.testTag("center-restore-btn"),
-                            ) { Text("恢复密钥库") }
-                        }
-                    }
-                }
+                KeystoreBackupCard(
+                    controller = backupController,
+                    testPrefix = "center",
+                    modifier = Modifier.padding(16.dp),
+                )
             }
 
             // 导出物清单

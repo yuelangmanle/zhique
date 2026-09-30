@@ -60,6 +60,7 @@ class ExportCenterScreenTest {
                     keystore = keystore,
                     onExport = { exportedTo = it.id },
                     onToast = {},
+                    ioDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
                 )
             }
         }
@@ -67,15 +68,16 @@ class ExportCenterScreenTest {
         return Scene(repo, a.id, b.id)
     }
 
-    private fun waitNode(tag: String) {
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
+    /** LazyColumn 离屏条目不参与组合：滚动到目标才算数；数据未就绪则随轮询重试。 */
     private fun scroll(tag: String) {
-        waitNode(tag)
-        compose.onNodeWithTag("export-center-root").performScrollToNode(hasTestTag(tag))
+        compose.waitUntil(10_000) {
+            try {
+                compose.onNodeWithTag("export-center-root").performScrollToNode(hasTestTag(tag))
+                compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            } catch (_: Throwable) {
+                false
+            }
+        }
     }
 
     @Test
