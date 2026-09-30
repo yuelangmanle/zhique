@@ -3,6 +3,7 @@ package com.zhique.runner.export
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -66,7 +67,14 @@ class ExportCenterScreenTest {
         return Scene(repo, a.id, b.id)
     }
 
+    private fun waitNode(tag: String) {
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
     private fun scroll(tag: String) {
+        waitNode(tag)
         compose.onNodeWithTag("export-center-root").performScrollToNode(hasTestTag(tag))
     }
 
