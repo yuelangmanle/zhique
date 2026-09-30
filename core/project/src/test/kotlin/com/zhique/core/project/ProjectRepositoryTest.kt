@@ -42,6 +42,13 @@ class ProjectRepositoryTest {
     }
 
     @Test
+    fun `运行器模式写回持久化`() {
+        val a = repo.create("R", "<html/>")
+        repo.setRunnerMode(a.id, "split")
+        assertEquals("split", ProjectRepository(root).meta(a.id).runnerMode)
+    }
+
+    @Test
     fun `复制项目生成新id并深拷文件`() {
         val a = repo.create("A", "<html><body>hi</body></html>")
         repo.writeFile(a.id, "style.css", "body{}")

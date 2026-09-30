@@ -1,7 +1,7 @@
 [versions]
 agp = "8.13.0"
 kotlin = "2.2.20"
-compose-bom = "2026.09.00"
+compose-bom = "2026.06.01"
 coroutines = "1.10.2"
 serialization = "1.9.0"
 okhttp = "5.1.0"
@@ -47,6 +47,13 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -21,6 +21,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
@@ -30,6 +35,12 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.core)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.foundation)
+    implementation(libs.kotlinx.coroutines.core)
 
     implementation(project(":core:common"))
     implementation(project(":core:project"))
@@ -41,4 +52,12 @@ dependencies {
     implementation(project(":core:export"))
     implementation(project(":core:publish"))
     implementation(project(":core:apilot"))
+
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

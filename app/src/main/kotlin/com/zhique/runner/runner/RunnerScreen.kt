@@ -1,0 +1,277 @@
+package com.zhique.runner.runner
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.zhique.core.project.ProjectMeta
+import com.zhique.core.web.CapabilityReport
+import com.zhique.core.web.WebViewHost
+import com.zhique.core.web.debug.DebugEvent
+import com.zhique.core.web.debug.Timeline
+import com.zhique.core.web.debug.TimelineReducer
+import com.zhique.runner.ui.theme.ZqSpring
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+
+/** 分屏分界吸附档：30 / 50 / 70%。 */
+object SplitSnap {
+    val levels = listOf(0.3f, 0.5f, 0.7f)
+    fun target(fraction: Float): Float = levels.minBy { abs(it - fraction) }
+}
+
+/**
+ * 运行器内容（可测核心）：顶栏（返回/项目名/三态切换器）+ 三模式内容。
+ * [webView] 由调用方注入（真实 [com.zhique.core.web.WebViewHost] 或测试桩）。
+ */
+@Composable
+fun RunnerContent(
+    projectName: String,
+    mode: RunnerMode,
+    onModeChange: (RunnerMode) -> Unit,
+    timeline: Timeline,
+    capability: CapabilityReport?,
+    onBack: () -> Unit,
+    onSendToAgent: () -> Unit,
+    onReload: () -> Unit,
+    modifier: Modifier = Modifier,
+    webView: @Composable (Modifier) -> Unit,
+) {
+    Column(modifier.fillMaxSize()) {
+        // 顶栏
+        Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack, modifier = Modifier.testTag("runner-back")) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+                Text(
+                    projectName,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                RunnerModeSwitcher(mode, onModeChange, Modifier.padding(end = 8.dp))
+            }
+        }
+        when (mode) {
+            RunnerMode.DRAWER -> Box(Modifier.fillMaxSize()) {
+                webView(Modifier.fillMaxSize().testTag("web-host"))
+                val drawerState = remember { DebugDrawerState() }
+                DebugDrawer(
+                    state = drawerState,
+                    mode = mode,
+                    onModeChange = onModeChange,
+                    timeline = timeline,
+                    capability = capability,
+                    onSendToAgent = onSendToAgent,
+                    onReload = onReload,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+
+            RunnerMode.SPLIT -> SplitLayout(
+                timeline = timeline,
+                capability = capability,
+                onSendToAgent = onSendToAgent,
+                onModeChange = onModeChange,
+                mode = mode,
+                webView = webView,
+            )
+
+            RunnerMode.BUBBLE -> Box(Modifier.fillMaxSize()) {
+                webView(Modifier.fillMaxSize().testTag("web-host"))
+                val bubbleState = remember { FloatingBubbleState() }
+                FloatingBubble(
+                    state = bubbleState,
+                    summary = (timeline.problems + timeline.console)
+                        .takeLast(3)
+                        .joinToString("\n") { entryLabel(it) },
+                    onOpenAgent = onSendToAgent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SplitLayout(
+    timeline: Timeline,
+    capability: CapabilityReport?,
+    onSendToAgent: () -> Unit,
+    onModeChange: (RunnerMode) -> Unit,
+    mode: RunnerMode,
+    webView: @Composable (Modifier) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val split = remember { Animatable(0.5f) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val h = constraints.maxHeight.toFloat()
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(split.value.coerceIn(0.15f, 0.85f))) {
+                webView(Modifier.fillMaxSize().testTag("web-host"))
+            }
+            // 可拖分界线，释放 spring 吸附 30/50/70%
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(16.dp)
+                    .testTag("split-divider")
+                    .pointerInput(h) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, dy ->
+                                change.consume()
+                                scope.launch { split.snapTo(split.value + dy / h) }
+                            },
+                            onDragEnd = {
+                                scope.launch { split.animateTo(SplitSnap.target(split.value), ZqSpring) }
+                            },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(MaterialTheme.colorScheme.outlineVariant),
+                )
+            }
+            // AI 面板占位（M4 接线）
+            Box(
+                Modifier
+                    .weight(1f - split.value.coerceIn(0.15f, 0.85f))
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                Text(
+                    "AI 面板（M4 接线）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .testTag("ai-panel"),
+                )
+            }
+        }
+    }
+}
+
+private const val MAX_EVENTS = 500
+
+/**
+ * 运行器屏（真实 WebView）：持有 [WebViewHost]，采集事件折算时间线，
+ * 模式切换写回 projectMeta.runnerMode。
+ */
+@Composable
+fun RunnerScreen(
+    project: ProjectMeta,
+    projectDir: java.io.File,
+    onBack: () -> Unit,
+    onToast: (String) -> Unit,
+    onModePersist: (String, RunnerMode) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val host = remember(project.id) { WebViewHost(context, projectDir) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var recreateKey by remember { mutableIntStateOf(0) }
+    var capability by remember { mutableStateOf<CapabilityReport?>(null) }
+    val events = remember(project.id) { mutableStateListOf<DebugEvent>() }
+    var mode by remember(project.id) {
+        mutableStateOf(
+            runCatching { RunnerMode.valueOf(project.runnerMode.uppercase()) }
+                .getOrDefault(RunnerMode.DRAWER),
+        )
+    }
+
+    LaunchedEffect(host) {
+        launch { host.capability.collect { capability = it } }
+        host.events.collect { e ->
+            if (events.size >= MAX_EVENTS) events.removeAt(0)
+            events.add(e)
+        }
+    }
+    DisposableEffect(host) {
+        host.onWebViewRecreated = { recreateKey++ }
+        host.onCapabilityDetected = { report ->
+            if (report.degraded) onToast("WebGPU 不可用，已降级 WebGL")
+        }
+        host.onCrashGiveUp = { onToast("页面多次崩溃，已停止自动恢复") }
+        onDispose { host.destroy() }
+    }
+    DisposableEffect(host) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> host.resume()
+                Lifecycle.Event.ON_PAUSE -> host.pause()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+
+    val timeline = remember(events.size) {
+        TimelineReducer.reduce(events.toList(), host.zqRouter)
+    }
+
+    RunnerContent(
+        projectName = project.name,
+        mode = mode,
+        onModeChange = { m ->
+            mode = m
+            onModePersist(project.id, m)
+        },
+        timeline = timeline,
+        capability = capability,
+        onBack = onBack,
+        onSendToAgent = { onToast("Agent 编排在 M4 接线") },
+        onReload = { host.reload() },
+        modifier = modifier,
+        webView = { m ->
+            key(recreateKey) {
+                AndroidView(modifier = m, factory = { host.webView })
+            }
+        },
+    )
+}

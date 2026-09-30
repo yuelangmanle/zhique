@@ -59,6 +59,9 @@ class ProjectRepository(private val root: File) {
 
     fun moveGroup(id: String, group: String): ProjectMeta = mutate(id) { it.group = group }
 
+    /** 运行器模式写回（drawer | split | bubble），选中即持久化。 */
+    fun setRunnerMode(id: String, mode: String): ProjectMeta = mutate(id) { it.runnerMode = mode }
+
     fun writeFile(id: String, path: String, content: String) {
         val f = resolveIn(dir(id), path)
         f.parentFile?.mkdirs()
