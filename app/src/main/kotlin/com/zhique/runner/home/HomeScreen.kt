@@ -1,35 +1,325 @@
 package com.zhique.runner.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zhique.core.project.ProjectMeta
 import com.zhique.core.project.ProjectRepository
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-/** 占位首页（Task 1.5 换成项目列表全量实现）。 */
+private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+
+/** 把 #RRGGBB 字符串安全解析为颜色，失败回退语义靛蓝。 */
+internal fun parseIconColor(hex: String): Color =
+    runCatching {
+        Color(android.graphics.Color.parseColor(hex))
+    }.getOrDefault(Color(0xFF46509F))
+
+/**
+ * 首页项目列表（规格 §5.3 屏 2 的 M1 版）：名称/时间/▶ 运行，
+ * 长按菜单：重命名/移动分组/复制/zip 导出/删除确认（决策 28）。
+ * FAB 新建空项目；空态提供「运行示例：星空」。
+ */
 @Composable
 fun HomeScreen(
     repo: ProjectRepository,
-    onRun: (com.zhique.core.project.ProjectMeta) -> Unit,
+    onRun: (ProjectMeta) -> Unit,
     onToast: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("织雀首页", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { onToast("首页在 Task 1.5 落地") }) { Text("项目列表 · 占位") }
+    val context = LocalContext.current
+    var projects by remember { mutableStateOf(repo.list()) }
+    var menuFor by remember { mutableStateOf<ProjectMeta?>(null) }
+    var renameFor by remember { mutableStateOf<ProjectMeta?>(null) }
+    var regroupFor by remember { mutableStateOf<ProjectMeta?>(null) }
+    var deleteFor by remember { mutableStateOf<ProjectMeta?>(null) }
+
+    val refresh = { projects = repo.list() }
+
+    fun createEmpty() {
+        val meta = repo.create(
+            "未命名项目",
+            "<!DOCTYPE html>\n<html>\n<body>\n  <h1>新项目</h1>\n</body>\n</html>\n",
+        )
+        refresh()
+        onToast("已创建「${meta.name}」")
     }
+
+    fun createSample() {
+        val html = runCatching {
+            context.assets.open("samples/stars.html").bufferedReader().use { it.readText() }
+        }.getOrNull()
+        if (html == null) {
+            onToast("示例资源缺失")
+            return
+        }
+        val meta = repo.create("星空示例", html)
+        refresh()
+        onRun(meta)
+    }
+
+    Scaffold(
+        modifier = modifier.testTag("home-screen"),
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { createEmpty() },
+                modifier = Modifier.testTag("fab-new"),
+            ) { Text("+", style = MaterialTheme.typography.headlineSmall) }
+        },
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            Text(
+                "织雀",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(20.dp),
+            )
+            if (projects.isEmpty()) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("还没有项目", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        "粘贴代码即建项目（M2），或先玩示例",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.size(20.dp))
+                    Button(
+                        onClick = { createSample() },
+                        modifier = Modifier.testTag("sample-button"),
+                    ) { Text("运行示例：星空") }
+                }
+            } else {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(projects, key = { it.id }) { project ->
+                        ProjectCard(
+                            project = project,
+                            onRun = { onRun(project) },
+                            onLongPress = { menuFor = project },
+                            menuExpanded = menuFor?.id == project.id,
+                            onDismissMenu = { if (menuFor?.id == project.id) menuFor = null },
+                            onRename = { menuFor = null; renameFor = project },
+                            onMoveGroup = { menuFor = null; regroupFor = project },
+                            onCopy = {
+                                menuFor = null
+                                val copy = repo.copy(project.id)
+                                refresh()
+                                onToast("已复制为「${copy.name}」")
+                            },
+                            onExportZip = {
+                                menuFor = null
+                                val f = repo.exportZip(project.id)
+                                onToast("已导出 ${f.absolutePath}")
+                            },
+                            onDelete = { menuFor = null; deleteFor = project },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 对话框 ----
+    val renameTarget = renameFor
+    if (renameTarget != null) {
+        TextInputDialog(
+            title = "重命名项目",
+            initial = renameTarget.name,
+            onDismiss = { renameFor = null },
+            onConfirm = { name ->
+                if (name.isNotBlank()) repo.rename(renameTarget.id, name)
+                renameFor = null
+                refresh()
+            },
+        )
+    }
+    val regroupTarget = regroupFor
+    if (regroupTarget != null) {
+        TextInputDialog(
+            title = "移动到分组",
+            initial = regroupTarget.group,
+            hint = "留空表示取消分组",
+            onDismiss = { regroupFor = null },
+            onConfirm = { group ->
+                repo.moveGroup(regroupTarget.id, group.trim())
+                regroupFor = null
+                refresh()
+                onToast("已移动到「${group.trim().ifBlank { "未分组" }}」")
+            },
+        )
+    }
+    val deleteTarget = deleteFor
+    if (deleteTarget != null) {
+        val hasHistory = repo.hasHistory(deleteTarget.id)
+        AlertDialog(
+            onDismissRequest = { deleteFor = null },
+            title = { Text("删除「${deleteTarget.name}」？") },
+            text = {
+                Text(
+                    if (hasHistory) "该项目含历史快照，删除后不可恢复。"
+                    else "删除后不可恢复。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching { repo.delete(deleteTarget.id, confirm = true) }
+                        .onFailure { onToast("删除失败：${it.message}") }
+                    deleteFor = null
+                    refresh()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteFor = null }) { Text("取消") }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ProjectCard(
+    project: ProjectMeta,
+    onRun: () -> Unit,
+    onLongPress: () -> Unit,
+    menuExpanded: Boolean,
+    onDismissMenu: () -> Unit,
+    onRename: () -> Unit,
+    onMoveGroup: () -> Unit,
+    onCopy: () -> Unit,
+    onExportZip: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("project-card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = {}, onLongClick = onLongPress)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 图标容器：项目 iconColor（规格 §3.5）
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(parseIconColor(project.iconColor)),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    project.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    buildString {
+                        append(timeFormat.format(Date(project.updatedAt)))
+                        if (project.group.isNotBlank()) append(" · ${project.group}")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                TextButton(onClick = onRun, modifier = Modifier.testTag("run-${project.id}")) {
+                    Text("▶", color = MaterialTheme.colorScheme.primary)
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+                    DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
+                    DropdownMenuItem(text = { Text("移动分组") }, onClick = onMoveGroup)
+                    DropdownMenuItem(text = { Text("复制项目") }, onClick = onCopy)
+                    DropdownMenuItem(text = { Text("zip 导出") }, onClick = onExportZip)
+                    DropdownMenuItem(text = { Text("删除") }, onClick = onDelete)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextInputDialog(
+    title: String,
+    initial: String,
+    hint: String = "",
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text(if (hint.isBlank()) "名称" else hint) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text) }) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }

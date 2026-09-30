@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>星空示例</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d1a; overflow: hidden;
+               font-family: system-ui, sans-serif; }
+  #sky { display: block; width: 100%; height: 100%; }
+  #panel { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+           display: flex; gap: 12px; }
+  button { padding: 10px 18px; border-radius: 999px; border: none;
+           background: #46509F; color: #fff; font-size: 14px; }
+  button.ghost { background: rgba(255,255,255,.14); }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div id="panel">
+  <button class="ghost" id="add-stars">更多星星</button>
+  <!-- 验收调试链路：点击触发一次除零断言错误，织雀桥应采集为 js_error -->
+  <button id="boom">触发测试错误</button>
+</div>
+<script>
+(function () {
+  var canvas = document.getElementById('sky');
+  var gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+  if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:24px">此设备不支持 WebGL</p>'; return; }
+
+  var STAR_VS = [
+    'attribute vec3 aPos;',
+    'attribute float aSize;',
+    'uniform float uTime;',
+    'varying float vTwinkle;',
+    'void main() {',
+    '  vTwinkle = 0.6 + 0.4 * sin(uTime * (1.5 + aPos.z * 3.0) + aPos.z * 40.0);',
+    '  gl_Position = vec4(aPos.xy, 0.0, 1.0);',
+    '  gl_PointSize = aSize * vTwinkle;',
+    '}'
+  ].join('\n');
+
+  var STAR_FS = [
+    'precision mediump float;',
+    'varying float vTwinkle;',
+    'void main() {',
+    '  vec2 d = gl_PointCoord - vec2(0.5);',
+    '  float a = smoothstep(0.5, 0.0, length(d));',
+    '  gl_FragColor = vec4(0.92, 0.94, 1.0, a * vTwinkle);',
+    '}'
+  ].join('\n');
+
+  function compile(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error('shader 编译失败: ' + gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+
+  var prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, STAR_VS));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, STAR_FS));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  var stars = [];
+  function addStars(n) {
+    for (var i = 0; i < n; i++) {
+      stars.push(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random(), 1.5 + Math.random() * 3.5);
+    }
+  }
+  addStars(400);
+
+  var buf = gl.createBuffer();
+  var posLoc = gl.getAttribLocation(prog, 'aPos');
+  var sizeLoc = gl.getAttribLocation(prog, 'aSize');
+  var timeLoc = gl.getUniformLocation(prog, 'uTime');
+
+  function upload() {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(stars), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 16, 0);
+    gl.enableVertexAttribArray(sizeLoc);
+    gl.vertexAttribPointer(sizeLoc, 1, gl.FLOAT, false, 16, 12);
+  }
+  upload();
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+
+  var count = stars.length / 4;
+  console.log('星空示例已启动，共 ' + count + ' 颗星');
+
+  function frame(t) {
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0.043, 0.051, 0.102, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform1f(timeLoc, t / 1000);
+    gl.drawArrays(gl.POINTS, 0, count);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  document.getElementById('add-stars').addEventListener('click', function () {
+    addStars(400);
+    upload();
+    count = stars.length / 4;
+    console.log('已增加到 ' + count + ' 颗星');
+  });
+
+  document.getElementById('boom').addEventListener('click', function () {
+    var zero = 1 / 0; // Infinity —— JS 除零不抛错，这里显式断言成一个必然失败的条件
+    if (zero !== 42) {
+      throw new Error('星空示例故意触发的验收错误（除零结果 ' + zero + '）');
+    }
+  });
+
+  console.log('WebGL 就绪：' + (gl instanceof (window.WebGL2RenderingContext || Object) ? 'WebGL2' : 'WebGL 降级'));
+})();
+</script>
+</body>
+</html>
