@@ -1,0 +1,9 @@
+.superpowers/
+.mimosa/
+.v2c/
+.video_agent/
+*.iml
+.gradle/
+build/
+local.properties
+.DS_Store
