@@ -38,6 +38,8 @@ data class UpdateInfo(
     val htmlUrl: String?,
     val assetName: String?,
     val assetUrl: String?,
+    /** Release 资产的 sha256 摘要（`sha256:…`）；缺省 null 时下载侧跳过校验。 */
+    val assetDigest: String? = null,
 )
 
 /**
@@ -67,6 +69,7 @@ open class UpdateChecker(
             htmlUrl = latest.htmlUrl,
             assetName = apk?.name,
             assetUrl = apk?.downloadUrl,
+            assetDigest = apk?.digest,
         )
     }
 
@@ -74,9 +77,11 @@ open class UpdateChecker(
      * 下载更新 APK 到 [targetDir]（Downloads 域由调用方传入），进度回调 0..1。
      * 返回落盘文件；流式写盘，不整包驻留内存。
      *
-     * 安全口径（Minor-7，明确不声明为已校验）：APK 经 api.github.com / github.com
-     * HTTPS 获取，完整性目前仅依赖 TLS 信任链，**暂无内容 hash/签名校验**；
-     * 安装侧由 PackageInstaller 同签名约束兜底（决策29）。
+     * 安全口径（M7 遗留注释项收口）：GitHub API 对 Release 资产返回 `digest`
+     * （`sha256:…`，v1.24 时代可用）——**有则必校**，落盘后重算比对，不一致抛
+     * [PublishException] 且残骸不装；API 未给 digest（老代理/缓存响应）则跳过
+     * 校验（此时完整性依赖 TLS 信任链），安装侧由 PackageInstaller 同签名约束
+     * 兜底（决策29）。
      */
     open fun downloadApk(
         info: UpdateInfo,
@@ -106,7 +111,22 @@ open class UpdateChecker(
         }
         val part = File(target.absolutePath + ".part")
         check(part.renameTo(target)) { "下载落盘失败" }
+        verifyDigest(target, info.assetDigest)
         return target
+    }
+
+    /** `sha256:…` 形态的 digest 必校；其他形态/缺省跳过（注释见 [downloadApk] 安全口径）。 */
+    private fun verifyDigest(file: File, digest: String?) {
+        if (digest.isNullOrBlank() || !digest.startsWith("sha256:")) return
+        val expected = digest.removePrefix("sha256:").trim()
+        val actual = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(file.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        if (!actual.equals(expected, ignoreCase = true)) {
+            // 校验失败即弃：半截/被篡改的 APK 不得留给安装侧
+            file.delete()
+            throw PublishException("更新包校验失败（sha256 不匹配，已丢弃下载）")
+        }
     }
 
     companion object {

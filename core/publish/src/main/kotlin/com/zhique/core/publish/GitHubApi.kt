@@ -38,6 +38,8 @@ data class AssetInfo(
     val name: String,
     val size: Long = 0,
     @SerialName("browser_download_url") val downloadUrl: String? = null,
+    /** GitHub API 资产内容摘要（`sha256:abcdef…`）；老代理/缓存响应可能缺省为 null。 */
+    val digest: String? = null,
 )
 
 @Serializable
