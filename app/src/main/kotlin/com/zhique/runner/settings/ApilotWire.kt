@@ -180,17 +180,17 @@ class ApilotController(
 
     private suspend fun applyMapped(mapped: ProfileMapper.MappedProvider) {
         val config = ProviderConfig(
-                id = UUID.randomUUID().toString(),
-                name = mapped.name,
-                protocol = mapped.protocol,
-                baseUrl = mapped.baseUrl.trim().trimEnd('/'),
-                keyCipher = store.encryptKey(mapped.apiKey ?: ""),
-                model = mapped.model ?: "",
-            )
-            store.upsert(config)
-            audit.record("read", mapped.name, hasKey = mapped.hasKey)
-            sync.setLastImport(now())
-            _state.value = _state.value.copy(
+            id = UUID.randomUUID().toString(),
+            name = mapped.name,
+            protocol = mapped.protocol,
+            baseUrl = mapped.baseUrl.trim().trimEnd('/'),
+            keyCipher = store.encryptKey(mapped.apiKey ?: ""),
+            model = mapped.model ?: "",
+        )
+        store.upsert(config)
+        audit.record("read", mapped.name, hasKey = mapped.hasKey)
+        sync.setLastImport(now())
+        _state.value = _state.value.copy(
                 installed = checkInstalled(),
                 lastImportAt = sync.lastImportAt(),
                 providerCount = store.list().size,

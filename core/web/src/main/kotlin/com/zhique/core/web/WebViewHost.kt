@@ -111,6 +111,20 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
     /** W3C geolocation 网关（:app 侧注入；null=一律拒绝）。 */
     var geolocationGateway: GeolocationGateway? = null
 
+    // 桥 JS 与 eruda 源必须在 webView 属性初始化（buildWebView→registerDocumentStartScript）
+    // 之前声明——Kotlin 属性按声明序初始化，lazy 委托声明晚于使用点会在构造期 NPE
+    // （真机质量修复 B1：首启进运行器 NoSuchMethodError 后紧跟的第二次崩溃）
+    private val bridgeJs: String by lazy {
+        appContext.assets.open(BRIDGE_ASSET).bufferedReader().use { it.readText() }
+    }
+
+    /** 内置 eruda 源（页尾注入用；缺失返回空串 → pageEndScript 返回 null 不注入）。 */
+    private val erudaSource: String by lazy {
+        runCatching {
+            appContext.assets.open(ErudaInjector.ERUDA_ASSET).bufferedReader().use { it.readText() }
+        }.getOrDefault("")
+    }
+
     var webView: WebView = buildWebView()
         private set
 
@@ -340,17 +354,6 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
             bridgeJs + caps,
             setOf("https://$ASSET_DOMAIN"),
         )
-    }
-
-    private val bridgeJs: String by lazy {
-        appContext.assets.open(BRIDGE_ASSET).bufferedReader().use { it.readText() }
-    }
-
-    /** 内置 eruda 源（页尾注入用；缺失返回空串 → pageEndScript 返回 null 不注入）。 */
-    private val erudaSource: String by lazy {
-        runCatching {
-            appContext.assets.open(ErudaInjector.ERUDA_ASSET).bufferedReader().use { it.readText() }
-        }.getOrDefault("")
     }
 
     private companion object {

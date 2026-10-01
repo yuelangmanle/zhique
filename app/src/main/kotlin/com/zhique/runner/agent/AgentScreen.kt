@@ -288,7 +288,8 @@ fun AgentContent(
                                 Column(Modifier.weight(1f)) {
                                     Text(snap.label, style = MaterialTheme.typography.bodySmall)
                                     Text(
-                                        java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                                        // 时间戳为纯数字格式，固定 ROOT locale（Compose lint：组合期不读环境 Locale）
+                                        java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.ROOT)
                                             .format(java.util.Date(snap.at)),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.secondary,
