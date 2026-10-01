@@ -1,3 +1,4 @@
+import java.io.File
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -17,11 +18,34 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+    // 织雀本体的发布签名：密钥库在开发者本机（默认 ~/zhique-keystore/，密码同目录
+    // password.txt），仓库零凭据字面量。CI/他人构建用环境变量覆盖路径与口令。
+    // 一旦用某把密钥发布过 v0.1.0，请永远用同一把（覆盖安装语义，决策 29 同源）。
+    val releaseStorePath = System.getenv("ZHIQUE_RELEASE_STORE")
+        ?: "${System.getProperty("user.home")}/zhique-keystore/zhique-release.jks"
+    val releaseStoreFile = File(releaseStorePath)
+    val releasePassFile = File(releaseStoreFile.parentFile, "password.txt")
+    signingConfigs {
+        if (releaseStoreFile.exists()) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = System.getenv("ZHIQUE_RELEASE_STORE_PASSWORD")
+                    ?: releasePassFile.readText().trim()
+                keyAlias = System.getenv("ZHIQUE_RELEASE_KEY_ALIAS") ?: "zhique"
+                keyPassword = System.getenv("ZHIQUE_RELEASE_KEY_PASSWORD")
+                    ?: storePassword
+            }
+        }
     }
-    buildFeatures { compose = true }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (releaseStoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
