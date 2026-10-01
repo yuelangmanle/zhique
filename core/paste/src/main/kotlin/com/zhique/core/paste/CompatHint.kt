@@ -27,6 +27,7 @@ object CompatScanner {
     private const val GEOLOCATION = "navigator.geolocation"
     private val GET_USER_MEDIA = Regex("""\bgetUserMedia\b""")
     private val NOTIFICATION = Regex("""\bNotification\s*\.""")
+    private val NOTIFICATION_CTOR = Regex("""\bnew\s+Notification\s*\(""")
     private val ZQ_CALL = Regex("""\bzq\s*\.\s*[A-Za-z_]\w*\s*\.\s*[A-Za-z_]\w*""")
     private val WS = Regex("\\s+")
 
@@ -38,7 +39,10 @@ object CompatScanner {
         if (!hasMediaDevices && GET_USER_MEDIA.containsMatchIn(html)) {
             out += CompatHint("getUserMedia", CompatKind.STANDARD_PERMISSION_API)
         }
-        if (NOTIFICATION.containsMatchIn(html)) out += CompatHint("Notification.", CompatKind.STANDARD_PERMISSION_API)
+        // 成员访问与构造调用归并为同一条提示（new Notification("hi") 无成员访问也要上报——M2 债务收敛）
+        if (NOTIFICATION.containsMatchIn(html) || NOTIFICATION_CTOR.containsMatchIn(html)) {
+            out += CompatHint("Notification.", CompatKind.STANDARD_PERMISSION_API)
+        }
         ZQ_CALL.findAll(html)
             .map { WS.replace(it.value, "") }
             .distinct()

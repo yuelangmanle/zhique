@@ -119,8 +119,10 @@ class PastePreviewController(
     }
 
     fun saveAsDraft() {
+        // 同步抢占闸（M2 债务收敛）：闸判定留在调用线程，主线程连点在协程派发前即被挡下
+        // （闸放协程里时，两次点击的 launch 可都在 IO 排队后才判定 → 双建项目）
+        val s = tryBeginSave() ?: return
         scope.launch(io) {
-            val s = tryBeginSave() ?: return@launch
             val name = s.name.ifBlank { Assembler.DEFAULT_TITLE }
             runCatching { repo.create(name, s.assembledHtml) }
                 .onSuccess {
@@ -132,8 +134,8 @@ class PastePreviewController(
     }
 
     fun saveAndRun() {
+        val s = tryBeginSave() ?: return
         scope.launch(io) {
-            val s = tryBeginSave() ?: return@launch
             val name = s.name.ifBlank { Assembler.DEFAULT_TITLE }
             val meta = runCatching { repo.create(name, s.assembledHtml) }
                 .getOrElse { failSave(it); return@launch }

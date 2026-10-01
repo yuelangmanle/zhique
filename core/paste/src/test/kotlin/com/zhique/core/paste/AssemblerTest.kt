@@ -165,6 +165,22 @@ class CompatHintTest {
     }
 
     @Test
+    fun `Notification纯构造调用上报`() {
+        // M2 债务收敛：new Notification("hi") 无成员访问，同样命中权限桥提示且不双报
+        val hints = CompatScanner.scan("new Notification(\"hi\");")
+        assertEquals(
+            listOf("Notification."),
+            hints.filter { it.kind == CompatKind.STANDARD_PERMISSION_API }.map { it.api },
+        )
+        val both = CompatScanner.scan("new Notification(\"a\"); Notification.requestPermission();")
+        assertEquals(
+            listOf("Notification."),
+            both.filter { it.kind == CompatKind.STANDARD_PERMISSION_API }.map { it.api },
+            "构造调用与成员访问归并为同一条，不双报",
+        )
+    }
+
+    @Test
     fun `zq调用检出并规范化`() {
         val hints = CompatScanner.scan("const r = zq.fs.read('a.txt');")
         val zq = hints.filter { it.kind == CompatKind.ZQ_CALL }

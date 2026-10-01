@@ -148,6 +148,29 @@ class PastePreviewControllerTest {
     }
 
     @Test
+    fun `双击防重入闸_派发前连点只落库一次`() = kotlinx.coroutines.test.runTest {
+        // M2 债务收敛回归：闸是同步抢占——第一次点击置 busy（协程尚未派发），
+        // 随后的连点必须在闸处挡下；受控调度器里 runCurrent 前的调用即「派发前连点」
+        val d = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)
+        repo = ProjectRepository(tmp.root)
+        val c = PastePreviewController(
+            repo = repo,
+            scope = CoroutineScope(d),
+            io = d,
+            onToast = {},
+            onRun = {},
+        )
+        c.start("<!DOCTYPE html>\n<html><body>ok</body></html>")
+        testScheduler.runCurrent() // recompute 完成，busy 复位
+        assertEquals(0, repo.list().size)
+        c.saveAndRun() // 同步过闸并置 busy；落盘协程排队中
+        c.saveAndRun() // busy=true → 被闸挡下
+        c.saveAndRun()
+        testScheduler.runCurrent()
+        assertEquals(1, repo.list().size, "派发前连点三次只允许创建一个项目")
+    }
+
+    @Test
     fun `兼容提示产出数据`() {
         val c = newController()
         c.start(
