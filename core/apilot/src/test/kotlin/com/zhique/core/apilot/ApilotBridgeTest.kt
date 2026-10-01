@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import org.robolectric.RuntimeEnvironment
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -108,11 +109,12 @@ class ApilotBridgeTest {
     }
 
     @Test
-    fun 大负载无uriProvider时回落extra() {
+    fun 大负载无uriProvider时显式抛错不回落extra() {
         val payload = "x".repeat(ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES + 1)
-        val plan = bridge().buildImportIntent(payload)
-        assertFalse(plan.viaUri)
-        assertEquals(payload, plan.intent.getStringExtra(ApilotProtocol.EXTRA_CONFIGS_JSON))
+        val e = assertFailsWith<IllegalArgumentException> {
+            bridge().buildImportIntent(payload)
+        }
+        assertTrue(e.message!!.contains("负载过大且未配置 URI 通道"))
     }
 
     @Test

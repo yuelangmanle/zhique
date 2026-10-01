@@ -128,8 +128,11 @@ class ApilotBridge(
 
     /**
      * 导入 Intent：负载 ≤ [ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES] 走 JSON extra；
-     * 超限且提供了 [uriProvider]（把 JSON 落成一次性 content URI）则走 URI + 读授权 flag；
-     * 超限但无 uriProvider 时回落 extra（协议仍合法，调用方应尽量提供 URI）。
+     * 超限必须提供 [uriProvider]（把 JSON 落成一次性 content URI + 读授权 flag）。
+     * 超限且无 URI 通道时显式抛错——Binder 事务缓冲约 1MB，把大负载塞 extra
+     * 会撞 TransactionTooLargeException，绝不静默回落。
+     *
+     * @throws IllegalArgumentException 负载超限且未配置 URI 通道
      */
     fun buildImportIntent(
         payloadJson: String,
@@ -138,14 +141,20 @@ class ApilotBridge(
     ): ImportPlan {
         val bytes = payloadJson.toByteArray(Charsets.UTF_8).size
         val provider = uriProvider
-        val useUri = bytes > ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES && provider != null
+        if (bytes > ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES && provider == null) {
+            throw IllegalArgumentException(
+                "负载过大且未配置 URI 通道：$bytes 字节 > ${ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES}，" +
+                    "请提供 uriProvider（FileProvider 一次性 content URI），不回落 extra（TransactionTooLarge 风险）",
+            )
+        }
+        val useUri = bytes > ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES
         val intent = Intent(ApilotProtocol.ACTION_IMPORT).apply {
             setPackage(apilotPackage)
             putExtra(ApilotProtocol.EXTRA_SOURCE_NAME, sourceName)
             putExtra(ApilotProtocol.EXTRA_REQUEST_ID, newRequestId())
             signatureSha256?.let { putExtra(ApilotProtocol.EXTRA_SOURCE_SIGNATURE_SHA256, it) }
-            if (useUri && provider != null) {
-                setDataAndType(provider(payloadJson), ApilotProtocol.MIME_IMPORT)
+            if (useUri) {
+                setDataAndType(provider!!.invoke(payloadJson), ApilotProtocol.MIME_IMPORT)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } else {
                 putExtra(ApilotProtocol.EXTRA_CONFIGS_JSON, payloadJson)

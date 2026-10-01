@@ -88,12 +88,6 @@ data class V1ApiConfig(
     val selectedModel: String? = null,
 )
 
-@Serializable
-data class V1Payload(
-    val schemaVersion: Int = ApilotProtocol.SCHEMA_V1,
-    val apiConfigs: List<V1ApiConfig>,
-)
-
 /** V1 选择结果：`apiConfig.models` 与第一个 `selectedModel`（doc「V1 兼容」）。 */
 @Serializable
 data class V1PickResult(
