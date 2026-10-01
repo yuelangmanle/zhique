@@ -98,6 +98,13 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
     /** zq_call 分发器（M5 注册真实能力实现，机制先行）。 */
     val zqRouter = TimelineReducer.ZqCallRouter()
 
+    /**
+     * eruda 高级面板开关（M9）：true 时项目页加载完成后注入内置 eruda.js 并 init
+     * （页尾注入，与自研采集共存互不影响）。运行器在进入前从设置读取。
+     */
+    @Volatile
+    var erudaEnabled: Boolean = false
+
     /** W3C 权限请求网关（:app 侧注入 ZqW3CRouter 适配；null=一律 deny）。 */
     var permissionGateway: PermissionGateway? = null
 
@@ -200,6 +207,12 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                 } else if (url != "about:blank") {
                     // 项目页成功加载完成 → 连续崩溃计数归零（「连续崩溃≤3」语义）
                     crashCount = 0
+                    // M9：eruda 开关打开 → 页尾注入内置资产（与自研采集共存）
+                    if (erudaEnabled) {
+                        ErudaInjector.pageEndScript(erudaSource)?.let { js ->
+                            view.evaluateJavascript(js, null)
+                        }
+                    }
                 }
             }
 
@@ -331,6 +344,13 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
 
     private val bridgeJs: String by lazy {
         appContext.assets.open(BRIDGE_ASSET).bufferedReader().use { it.readText() }
+    }
+
+    /** 内置 eruda 源（页尾注入用；缺失返回空串 → pageEndScript 返回 null 不注入）。 */
+    private val erudaSource: String by lazy {
+        runCatching {
+            appContext.assets.open(ErudaInjector.ERUDA_ASSET).bufferedReader().use { it.readText() }
+        }.getOrDefault("")
     }
 
     private companion object {
