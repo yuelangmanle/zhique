@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -115,13 +116,23 @@ fun HomeScreen(
     var regroupFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var deleteFor by remember { mutableStateOf<ProjectMeta?>(null) }
 
-    Scaffold(
+    // Aurora Glass（M9）：管理域晨光底，双光斑低饱和漂移
+    com.zhique.runner.ui.components.AuroraBackground(
+        modifier = Modifier.fillMaxSize(),
+        domain = com.zhique.runner.ui.components.AuroraDomain.LIGHT,
+    ) {
+        Scaffold(
         modifier = modifier.testTag("home-screen"),
+        containerColor = Color.Transparent,
         floatingActionButton = {
-            FloatingActionButton(
+            // Aurora Glass：FAB 换 GlowButton（靛蓝外发光 + 按压光晕收拢，§5.1 发光交互）
+            com.zhique.runner.ui.components.GlowButton(
                 onClick = { controller.createEmpty() },
-                modifier = Modifier.testTag("fab-new"),
-            ) { Text("+", style = MaterialTheme.typography.headlineSmall) }
+                fab = true,
+                icon = Icons.Filled.Add,
+                iconContentDescription = "新建项目",
+                testTag = "fab-new",
+            )
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -200,6 +211,7 @@ fun HomeScreen(
                     }
                 }
             }
+        }
         }
     }
 

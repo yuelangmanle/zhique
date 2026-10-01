@@ -2,7 +2,6 @@ package com.zhique.runner.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
@@ -22,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.zhique.runner.ui.theme.ZqMotion
 import java.util.Locale
 
 /**
@@ -50,10 +50,8 @@ fun ThinkingBlock(
         if (expanded) {
             val target = thinking.length.toFloat()
             if (reveal.value < target) {
-                reveal.animateTo(
-                    target,
-                    tween((thinking.length * 30L).coerceIn(240, 900).toInt()),
-                )
+                // M9：思考流回放改非线性 spring（规格 §5.2 禁线性节奏）
+                reveal.animateTo(target, ZqMotion.Reveal)
             }
         }
     }

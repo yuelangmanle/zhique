@@ -243,10 +243,12 @@ fun DebugDrawer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RunnerModeSwitcher(mode, onModeChange, Modifier.weight(1f))
-                    Button(
+                    // Aurora Glass：主进程按钮换 GlowButton（靛蓝外发光，§5.1 发光交互）
+                    com.zhique.runner.ui.components.GlowButton(
                         onClick = onSendToAgent,
-                        modifier = Modifier.testTag("agent-button"),
-                    ) { Text("交给 Agent") }
+                        label = "交给 Agent",
+                        testTag = "agent-button",
+                    )
                 }
             }
         }

@@ -1,7 +1,6 @@
 package com.zhique.runner.agent
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +45,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.zhique.runner.ui.theme.ZqMotion
 import com.zhique.runner.chat.ThinkingBlock
 import com.zhique.runner.chat.UsageRing
 import kotlin.math.roundToInt
@@ -101,7 +101,12 @@ fun AgentContent(
     modifier: Modifier = Modifier,
 ) {
     var showSnapshots by remember { mutableStateOf(false) }
-    Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    // Aurora Glass（M9）：运行域深空底 + 双光斑漂移
+    com.zhique.runner.ui.components.AuroraBackground(
+        modifier = modifier.fillMaxSize(),
+        domain = com.zhique.runner.ui.components.AuroraDomain.DARK,
+    ) {
+    Surface(modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Transparent) {
         Column {
             // 顶栏：返回 / 项目名 / 能力徽章 / 上下文环真值
             Row(
@@ -316,6 +321,7 @@ fun AgentContent(
             onDismiss = onDismissCompression,
         )
     }
+    }
 }
 
 /** 一步工具卡 + diff 卡。 */
@@ -446,7 +452,8 @@ fun CompressionCard(
     val progress = remember { Animatable(0f) }
     LaunchedEffect(before, after) {
         progress.snapTo(0f)
-        progress.animateTo(1f, tween(700))
+        // M9：进度填充改弹性 spring（规格 §5.2 ④）
+        progress.animateTo(1f, ZqMotion.Progress)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
