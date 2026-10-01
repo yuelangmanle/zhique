@@ -25,6 +25,23 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all { test ->
+                // 债务收敛（M2 探明 → M9 修复）：release 变体合并清单不含 ui-test-manifest 的
+                // ComponentActivity（该 AAR 只随 debugImplementation 进 debug 变体），Robolectric
+                // 解析 activity 失败 → Compose UI 测试在 testReleaseUnitTest 全量挂 81 例。
+                // 命名约定守卫：Compose UI 测试按 *UiTest/*ScreenTest/… 命名，仅 debug 变体执行，
+                // 纯 JVM/Robolectric 逻辑测试两个变体照常跑。
+                if (test.name.contains("Release", ignoreCase = true)) {
+                    test.exclude(
+                        "**/*UiTest.class",
+                        "**/*ScreenTest.class",
+                        "**/*ScreenApilotTest.class",
+                        "**/*CardTest.class",
+                        "**/*EntryTest.class",
+                        "**/*HostTest.class",
+                    )
+                }
+            }
         }
     }
 }
