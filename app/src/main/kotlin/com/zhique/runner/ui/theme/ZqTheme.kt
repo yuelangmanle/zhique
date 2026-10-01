@@ -160,9 +160,20 @@ fun ZqTheme(
     }
 }
 
-/** 当前域的 Aurora 光斑低饱和色（AuroraBackground 消费）。 */
+/**
+ * 当前域的 Aurora 光斑低饱和色（AuroraBackground 消费）。
+ * [domain] 决定取哪组光斑色（质量审查 Important-2：光斑跟屏域不跟系统深色——
+ * 浅色系统进运行域也要漂深空光斑）。
+ */
 @Composable
-fun auroraPalette(): AuroraPalette = if (isSystemInDarkTheme()) DarkAurora else LightAurora
+fun auroraPalette(domain: AuroraDomainSpec = AuroraDomainSpec.FollowSystem): AuroraPalette = when (domain) {
+    AuroraDomainSpec.LIGHT -> LightAurora
+    AuroraDomainSpec.DARK -> DarkAurora
+    AuroraDomainSpec.FollowSystem -> if (isSystemInDarkTheme()) DarkAurora else LightAurora
+}
+
+/** 光斑域（AuroraBackground 的 domain 到主题色板的桥；FollowSystem=旧行为）。 */
+enum class AuroraDomainSpec { LIGHT, DARK, FollowSystem }
 
 /** 当前域语义色（GlassCard/GlowButton/状态标注消费）。 */
 @Composable

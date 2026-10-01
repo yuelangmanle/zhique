@@ -307,6 +307,13 @@ fun RunnerScreen(
         TimelineReducer.reduce(buffer.events)
     }
 
+    // Aurora Glass（质量审查 Important-2）：运行域强制深空主题——浅色系统进运行器
+    // 也是深空底 + 深空光斑，双域随屏不随系统
+    com.zhique.runner.ui.theme.ZqTheme(darkTheme = true) {
+        com.zhique.runner.ui.components.AuroraBackground(
+            Modifier.fillMaxSize(),
+            domain = com.zhique.runner.ui.components.AuroraDomain.DARK,
+        ) {
     Box(Modifier.fillMaxSize()) {
         RunnerContent(
             projectName = project.name,
@@ -330,5 +337,7 @@ fun RunnerScreen(
         )
         // 审查修复 #4：zq.camera.startPreview 的取景浮层（Compose 层）
         ZqWiring.ZqCameraPreviewOverlay()
+    }
+        }
     }
 }

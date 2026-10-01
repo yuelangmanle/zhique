@@ -32,6 +32,7 @@ class AppLockControllerTest {
             scope = CoroutineScope(UnconfinedTestDispatcher()),
             produceFile = { File(tmp.newFolder(), "lock-${System.nanoTime()}.preferences_pb") },
         ),
+        hashDispatcher = UnconfinedTestDispatcher(),
     )
 
     @Test
@@ -47,7 +48,8 @@ class AppLockControllerTest {
     fun `冷启动与前台恢复即锁_PIN解锁`() = runTest {
         val prefs = newPrivacy()
         prefs.setPin("246810")
-        val c = AppLockController(prefs, CoroutineScope(UnconfinedTestDispatcher()))
+        var clock = 10_000_000L
+        val c = AppLockController(prefs, CoroutineScope(UnconfinedTestDispatcher()), nowMs = { clock })
         advanceUntilIdle()
         assertTrue(c.state.value.locked, "锁开启 → 冷启动处于锁定态")
         assertTrue(c.state.value.pinConfigured)
@@ -57,9 +59,11 @@ class AppLockControllerTest {
         assertTrue(c.state.value.locked, "错误 PIN 不放行")
         assertEquals(1, c.state.value.failCount)
 
+        // 防爆破冷却（Critical-1）：重试须等过冷却截止
+        clock += AppLockController.cooldownFor(1) + 1_000
         c.verifyPin("246810")
         advanceUntilIdle()
-        assertFalse(c.state.value.locked, "正确 PIN 放行")
+        assertFalse(c.state.value.locked, "冷却过后正确 PIN 放行")
         assertEquals(0, c.state.value.failCount)
 
         // 后台 → 回前台：本会话已验证不重锁；onBackground 后需重验

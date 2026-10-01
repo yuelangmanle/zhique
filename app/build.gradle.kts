@@ -41,6 +41,9 @@ android {
                         "**/*HostTest.class",
                     )
                 }
+                // 全仓源码扫描守护（AuroraGlassUiTest）用：Gradle 注入仓库根绝对路径，
+                // 测试内零路径攀爬（Mimosa 路径穿越规则友好）
+                test.systemProperty("zhique.repoRoot", rootDir.absolutePath)
             }
         }
     }

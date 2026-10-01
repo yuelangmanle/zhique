@@ -98,7 +98,9 @@ fun ZhiqueApp(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> appLock.onForeground()
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> appLock.onBackground()
+                // 质量审查 Important-4：ON_PAUSE 即重锁（选 ON_PAUSE 而非 FLAG_SECURE——
+                // 分屏/画中画下 ON_STOP 不触发但内容并排可见；FLAG_SECURE 会连带禁用户自己的截屏分享）
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> appLock.onBackground()
                 else -> Unit
             }
         }

@@ -21,7 +21,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
 
-    <application android:label="织雀" android:name=".ZhiqueApplication">
+    <!-- allowBackup=false（质量审查 Important-3）：应用锁盐+哈希、密钥密文不随
+     云备份/设备迁移导出——防离线爆破与密文搬运 -->
+    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false">
 
         <!-- zq.share.file 的只读 URI 授权 -->
         <provider

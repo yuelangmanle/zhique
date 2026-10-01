@@ -101,7 +101,8 @@ fun AgentContent(
     modifier: Modifier = Modifier,
 ) {
     var showSnapshots by remember { mutableStateOf(false) }
-    // Aurora Glass（M9）：运行域深空底 + 双光斑漂移
+    // Aurora Glass（M9，质量审查 Important-2）：运行域强制深空主题 + 深空光斑
+    com.zhique.runner.ui.theme.ZqTheme(darkTheme = true) {
     com.zhique.runner.ui.components.AuroraBackground(
         modifier = modifier.fillMaxSize(),
         domain = com.zhique.runner.ui.components.AuroraDomain.DARK,
@@ -320,6 +321,7 @@ fun AgentContent(
             after = report.after,
             onDismiss = onDismissCompression,
         )
+    }
     }
     }
 }

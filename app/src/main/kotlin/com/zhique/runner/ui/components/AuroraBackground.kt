@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.zhique.runner.ui.theme.AuroraDomainSpec
 import com.zhique.runner.ui.theme.auroraPalette
 import kotlin.math.cos
 import kotlin.math.sin
@@ -40,7 +41,10 @@ fun AuroraBackground(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val lowRam = remember { isLowRamDevice(context) }
-    val palette = auroraPalette()
+    // 质量审查 Important-2：光斑色按屏域映射，不随系统深色开关
+    val palette = auroraPalette(
+        if (domain == AuroraDomain.LIGHT) AuroraDomainSpec.LIGHT else AuroraDomainSpec.DARK,
+    )
     val blobA = palette.blobA
     val blobB = palette.blobB
 

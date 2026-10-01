@@ -208,6 +208,8 @@ fun EditorScreen(
 ) {
     androidx.compose.runtime.LaunchedEffect(Unit) { controller.open() }
     val state by controller.state.collectAsState()
+    // Aurora Glass（质量审查 Important-2）：编辑器属运行域 → 强制深空主题
+    com.zhique.runner.ui.theme.ZqTheme(darkTheme = true) {
     EditorContent(
         state = state,
         onBack = onBack,
@@ -221,6 +223,7 @@ fun EditorScreen(
             RealEditorSlot(m, path, content, readOnly, onContent, onSel, fontFamily = fontFamily)
         },
     )
+    }
 }
 
 /** 纯渲染形态（测试注入编辑器桩）。 */

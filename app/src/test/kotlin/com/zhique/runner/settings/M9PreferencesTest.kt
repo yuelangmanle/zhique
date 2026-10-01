@@ -34,7 +34,7 @@ class M9PreferencesTest {
     private fun newAi() = AiPreferences(newDataStore())
     private fun newWeb() = WebPreferences(newDataStore())
     private fun newGeneral() = GeneralPreferences(newDataStore())
-    private fun newPrivacy() = PrivacyPreferences(newDataStore())
+    private fun newPrivacy() = PrivacyPreferences(newDataStore(), hashDispatcher = UnconfinedTestDispatcher())
     private fun newPublish() = PublishPreferences(newDataStore())
 
     private fun newDataStore() = PreferenceDataStoreFactory.create(
@@ -136,8 +136,8 @@ class M9PreferencesTest {
         val s1 = PrivacyPreferences.newSalt()
         val s2 = PrivacyPreferences.newSalt()
         assertNotEquals(s1, s2)
-        assertEquals(PrivacyPreferences.hashPin(s1, "1234"), PrivacyPreferences.hashPin(s1, "1234"))
-        assertNotEquals(PrivacyPreferences.hashPin(s1, "1234"), PrivacyPreferences.hashPin(s2, "1234"))
+        assertEquals(PrivacyPreferences.legacyHash(s1, "1234"), PrivacyPreferences.legacyHash(s1, "1234"))
+        assertNotEquals(PrivacyPreferences.legacyHash(s1, "1234"), PrivacyPreferences.legacyHash(s2, "1234"))
     }
 
     @Test

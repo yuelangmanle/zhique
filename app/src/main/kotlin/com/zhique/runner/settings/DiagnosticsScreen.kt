@@ -35,6 +35,8 @@ import com.zhique.core.ai.ChatRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,9 +85,11 @@ class DiagnosticsController(
         scope.launch(io) { runProbe(providerId) }
     }
 
+    /** 全部测试：async 并行探测（质量审查次要-7），互不阻塞；结果各自落行。 */
     fun testAll() {
         scope.launch(io) {
-            _rows.value.filter { !it.busy }.forEach { runProbe(it.providerId) }
+            val targets = _rows.value.filter { !it.busy }.map { it.providerId }
+            targets.map { id -> async { runProbe(id) } }.awaitAll()
         }
     }
 
@@ -112,10 +116,26 @@ class DiagnosticsController(
                         busy = false,
                         ok = false,
                         latencyMs = latency,
-                        detail = "失败：${(e as? AiError)?.message ?: e.message ?: e::class.simpleName}",
+                        // 文案白名单（质量审查次要-7）：不回显 e.message（可能含 URL/内部细节），
+                        // 只给固定分类：认证失败 / 超时 / 连接失败 / 服务错误
+                        detail = "失败：${classifyFailure(e)}",
                     )
                 },
             )
+        }
+    }
+
+    companion object {
+        /** 失败分类白名单：异常细节不进 UI（Key/URL/堆栈零泄漏）。 */
+        fun classifyFailure(e: Throwable): String = when {
+            e is com.zhique.core.ai.AiError.Auth -> "认证失败（检查 Key）"
+            e is com.zhique.core.ai.AiError.RateLimit -> "限流（稍后再试）"
+            e is java.net.SocketTimeoutException -> "超时"
+            e is com.zhique.core.ai.AiError.Network -> "连接失败（网络不可达或超时）"
+            e is com.zhique.core.ai.AiError.Server -> "服务错误（服务商 5xx）"
+            e is java.io.IOException -> "连接失败（网络不可达）"
+            e is AiError -> "连接失败"
+            else -> "服务错误"
         }
     }
 

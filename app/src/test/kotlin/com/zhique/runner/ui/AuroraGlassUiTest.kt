@@ -60,25 +60,41 @@ class AuroraGlassUiTest {
 
     @Test
     fun `全仓禁线性easing_交互转场全spring`() {
-        val root = File("src/main/kotlin")
-        assertTrue(root.isDirectory, "测试工作目录须为 :app 模块根（cwd=${
-            File(".").absolutePath
-        }）")
+        // 质量审查次要-6：扫描全仓 main 源码（:app + 全部 :core:* 模块），
+        // 注释剥离按行处理（/*…*/ 块注释中间行与行尾 // 都剥）。
+        // 仓库根由 Gradle 注入（zhique.repoRoot 系统属性），NIO 遍历零路径攀爬。
+        val nioRoot = java.nio.file.Path.of(
+            requireNotNull(System.getProperty("zhique.repoRoot")) { "缺少 zhique.repoRoot 系统属性" },
+        )
         data class Hit(val file: String, val line: Int, val text: String)
         val offenders = mutableListOf<Hit>()
-        root.walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .forEach { f ->
-                // 唯一豁免：AuroraBackground 光斑漂移的循环相位（线性相位保证循环无缝，
-                // 属环境光非交互转场；见该文件注释）
-                if (f.name == "AuroraBackground.kt") return@forEach
-                f.readLines().forEachIndexed { i, line ->
-                    val t = line.trim().takeIf { it.startsWith("*") || it.startsWith("//") } ?: line
-                    if ("LinearEasing" in t || "tween(" in t) {
-                        offenders += Hit(f.name, i + 1, line.trim())
-                    }
-                }
+        val blockComment = Regex("""/\*.*?\*/|//.*$""")
+        val scanRoots = buildList {
+            add(nioRoot.resolve("app").resolve("src").resolve("main"))
+            java.nio.file.Files.list(nioRoot.resolve("core")).use { stream ->
+                stream.filter { java.nio.file.Files.isDirectory(it) }
+                    .sorted()
+                    .forEach { add(it.resolve("src").resolve("main")) }
             }
+        }
+        scanRoots.forEach { root ->
+            if (!java.nio.file.Files.isDirectory(root)) return@forEach
+            java.nio.file.Files.walk(root).use { walk ->
+                walk.filter { java.nio.file.Files.isRegularFile(it) && it.toString().endsWith(".kt") }
+                    .forEach { path ->
+                        // 唯一豁免：AuroraBackground 光斑漂移的循环相位（线性相位保证循环无缝，
+                        // 属环境光非交互转场；见该文件注释）
+                        if (path.fileName.toString() == "AuroraBackground.kt") return@forEach
+                        val lines = java.nio.file.Files.readAllLines(path)
+                        val stripped = lines.joinToString("\n") { line -> blockComment.replace(line, "") }
+                        stripped.lines().forEachIndexed { i, line ->
+                            if ("LinearEasing" in line || "tween(" in line) {
+                                offenders += Hit(nioRoot.relativize(path).toString(), i + 1, line.trim())
+                            }
+                        }
+                    }
+            }
+        }
         assertTrue(offenders.isEmpty(), "发现线性/时长型动效（§5.2 全 spring）：$offenders")
     }
 
