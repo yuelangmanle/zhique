@@ -18,11 +18,17 @@ class ConfirmGate {
     /** 编排器侧：挂起等待用户裁决。 */
     suspend fun await(call: ToolCall): Boolean {
         val deferred = CompletableDeferred<Boolean>()
-        pending.set(call to deferred)
+        val entry = call to deferred
+        // 理论窗口收敛（M4）：置入新 entry 时原子逐出上一笔未消费的 pending 并按拒绝完成，
+        // 防止重入覆盖旧 entry 后其 awaiter 永久挂起（单编排器正常流不触发，属并发护栏）
+        synchronized(this) {
+            val prev = pending.getAndSet(entry)
+            prev?.second?.complete(false)
+        }
         try {
             return deferred.await()
         } finally {
-            pending.compareAndSet(call to deferred, null)
+            synchronized(this) { pending.compareAndSet(entry, null) }
         }
     }
 
@@ -33,7 +39,7 @@ class ConfirmGate {
     fun denyCurrent(): Boolean = resume(false)
 
     private fun resume(approved: Boolean): Boolean {
-        val entry = pending.getAndSet(null) ?: return false
+        val entry = synchronized(this) { pending.getAndSet(null) } ?: return false
         entry.second.complete(approved)
         return true
     }

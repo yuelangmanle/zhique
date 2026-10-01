@@ -129,7 +129,12 @@ class AgentController(
     fun stop() {
         job?.cancel()
         job = null
-        _state.update { it.copy(running = false, error = "已暂停（上下文保留，可续 5 轮）") }
+        // M4 债务收敛：暂停时清掉挂起中的批准闸与残留批准卡——
+        // 取消的编排协程不会再消费批准结果，卡片留着点不出任何效果还误导用户
+        confirmGate.denyCurrent()
+        _state.update {
+            it.copy(running = false, error = "已暂停（上下文保留，可续 5 轮）", awaitConfirm = null)
+        }
     }
 
     /** 续 5 轮：放宽预算闸后重入同一会话（记忆/报错时间线保留）。 */

@@ -13,7 +13,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -290,5 +292,20 @@ class OrchestratorReviewFixTest {
         val obj = Json.parseToJsonElement(merged).jsonObject
         assertEquals("a.js", obj["path"]!!.jsonPrimitive.content)
         assertEquals("新", obj["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `ConfirmGate重入逐出旧挂起不泄漏`() = runTest {
+        // M4 债务收敛：await 重入时旧 pending 被原子逐出并按拒绝完成，其 awaiter 不悬挂
+        val gate = ConfirmGate()
+        val c1 = com.zhique.core.ai.ToolCall("1", "push", "{}")
+        val c2 = com.zhique.core.ai.ToolCall("2", "push", "{}")
+        val first = async(start = CoroutineStart.UNDISPATCHED) { gate.await(c1) }
+        val second = async(start = CoroutineStart.UNDISPATCHED) { gate.await(c2) }
+        runCurrent()
+        assertEquals(c2, gate.pendingCall, "后入者占住闸")
+        assertEquals(false, first.await(), "被逐出的旧挂起按拒绝恢复，不永久挂起")
+        assertTrue(gate.approveCurrent())
+        assertEquals(true, second.await())
     }
 }

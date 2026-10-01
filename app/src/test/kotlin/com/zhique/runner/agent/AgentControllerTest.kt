@@ -211,6 +211,25 @@ class AgentControllerTest {
     }
 
     @Test
+    fun `stop清残留批准卡`() = runTest {
+        // M4 债务收敛：暂停时挂起中的批准卡一并清掉（被取消的编排协程不会再来消费批准结果）
+        val repo = ProjectRepository(tmp.root)
+        val meta = repo.create("星空", "<html></html>")
+        val scripts = Scripts(
+            toolText("push", """{"remote":"origin"}"""),
+            plainText("结束"),
+        )
+        val c = controller(CoroutineScope(UnconfinedTestDispatcher()), scripts, repo, meta.id)
+        c.setGoal("推送")
+        c.start()
+        advanceUntilIdle()
+        assertNotNull(c.state.value.awaitConfirm, "批准卡先在场")
+        c.stop()
+        assertNull(c.state.value.awaitConfirm, "暂停须清掉批准卡")
+        assertFalse(c.state.value.running)
+    }
+
+    @Test
     fun `stop暂停可续5轮`() = runTest {
         val repo = ProjectRepository(tmp.root)
         val meta = repo.create("星空", "<html></html>")
