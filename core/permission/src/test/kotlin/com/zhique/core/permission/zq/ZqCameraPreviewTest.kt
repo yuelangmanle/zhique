@@ -32,6 +32,9 @@ class ZqCameraPreviewTest {
         assertEquals("front", CameraPreviewBus.state.value?.facing)
         CameraPreviewBus.show("back", null)
         assertEquals("back", CameraPreviewBus.state.value?.facing)
+        val before = CameraPreviewBus.state.value
+        CameraPreviewBus.show("back", null) // capture 后重绑同 facing
+        assertTrue(CameraPreviewBus.state.value != before, "generation 递增：同 facing 重绑也必须重新发射（M5 债务收敛）")
         CameraPreviewBus.hide()
         assertNull(CameraPreviewBus.state.value, "stopPreview 后浮层状态必须清除")
         assertEquals(null, CameraPreviewBus.previewView)

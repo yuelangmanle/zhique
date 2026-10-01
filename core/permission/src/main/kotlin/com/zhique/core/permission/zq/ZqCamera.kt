@@ -37,7 +37,12 @@ import kotlinx.serialization.json.put
  */
 object CameraPreviewBus {
 
-    data class PreviewState(val facing: String)
+    /**
+     * [generation] 单调递增（M5 债务收敛）：capture 后重绑预览时 facing 可能与之前相同，
+     * data class 等值会让 StateFlow 去重不发射，Compose 浮层拿不到替换后的新 PreviewView
+     * → 残黑帧。generation 保证每次 show 都是不等的新状态，浮层必然重组换视图。
+     */
+    data class PreviewState(val facing: String, val generation: Int)
 
     private val _state = MutableStateFlow<PreviewState?>(null)
     val state: StateFlow<PreviewState?> = _state
@@ -46,9 +51,12 @@ object CameraPreviewBus {
     var previewView: android.view.View? = null
         private set
 
+    private var generation = 0
+
     internal fun show(facing: String, view: android.view.View?) {
         previewView = view
-        _state.value = PreviewState(facing)
+        generation++
+        _state.value = PreviewState(facing, generation)
     }
 
     internal fun hide() {
