@@ -151,6 +151,8 @@ fun ZhiqueApp(
 
     // 系统返回键按「当前最深层界面」逐级回退（质量修复：此前无 BackHandler，
     // 二级页按返回直接 finish Activity 退出应用）。回退语义与 when 分支优先级一致。
+    // 引导页吞掉返回（防误触退出）；首页根允许系统默认行为（退出应用）。
+    androidx.activity.compose.BackHandler(enabled = onboardingNeeded == true) { /* 留在引导 */ }
     androidx.activity.compose.BackHandler(enabled = onboardingNeeded == false) {
         when {
             runnerProject != null -> { runnerProject = null; pendingProjectId = null }
