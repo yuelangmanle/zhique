@@ -217,7 +217,9 @@ object AxmlPatcher {
                         body.write(0)
                     } else {
                         val chars = s.toCharArray()
-                        writeU16(body, chars.size)
+                        // M6 债务收敛：UTF-16 len≥0x8000 走高位标记转义（与 decodeString 对称），
+                        // 否则长串（如超长 label）会被当短长度解析，重编码池静默损坏
+                        writeU16Len(body, chars.size)
                         for (c in chars) writeU16(body, c.code)
                         body.write(0)
                         body.write(0)
@@ -243,6 +245,16 @@ object AxmlPatcher {
             private fun writeU16(out: ByteArrayOutputStream, v: Int) {
                 out.write(v and 0xFF)
                 out.write((v shr 8) and 0xFF)
+            }
+
+            /** UTF-16 字符串长度：≥0x8000 时写高位标记 + u32 实长（aapt 转义约定）。 */
+            private fun writeU16Len(out: ByteArrayOutputStream, len: Int) {
+                if (len >= 0x8000) {
+                    writeU16(out, 0x8000)
+                    writeInt(out, len)
+                } else {
+                    writeU16(out, len)
+                }
             }
 
             private fun writeInt(out: ByteArrayOutputStream, v: Int) {

@@ -105,19 +105,38 @@ class AxmlPatcherTest {
         assertTrue(utf8 || !utf8) // 两种编码都支持；此处仅断言可解码
     }
 
+    @Test
+    fun `UTF-16长串len超过0x8000经转义回写可读回`() {
+        // M6 债务收敛：label ≥0x8000 字符时 UTF-16 长度须走高位标记 + u32 转义
+        val longLabel = "雀".repeat(0x8100)
+        val p = AxmlPatcher.ManifestPatch("com.zhique.export.long", 1, "1.0", longLabel)
+        val synthetic = syntheticManifest(
+            attrs = listOf(
+                Triple("package", "com.zhique.export.base", false),
+                Triple("versionCode", 1, true),
+                Triple("versionName", "1.0", false),
+            ),
+            appAttrs = listOf(Triple("label", longLabel, false)),
+        )
+        val patched = AxmlPatcher.patch(synthetic, p)
+        val info = AxmlReader.readManifest(patched)
+        assertEquals(longLabel, info.label, "超长 label 经转义重编码后须原样读回")
+    }
+
     private fun shortAt(data: ByteArray, at: Int): Int =
         (data[at].toInt() and 0xFF) or ((data[at + 1].toInt() and 0xFF) shl 8)
 
     // ---- 合成 AXML（覆盖异常路径：style 池 / 属性缺失） ----
 
-    /** 极小 AXML 组装器：字符串池 + START_NS + START_ELEMENT(manifest, attrs) + END。 */
+    /** 极小 AXML 组装器：字符串池 + START_NS + START_ELEMENT(manifest, attrs) + [application] + END。 */
     private fun syntheticManifest(
         styleCount: Int = 0,
         attrs: List<Triple<String, Any, Boolean>>, // (name, value, isInt)
+        appAttrs: List<Triple<String, Any, Boolean>> = emptyList(),
     ): ByteArray {
-        val strings = linkedSetOf("manifest")
-        attrs.forEach { strings.add(it.first) }
-        attrs.forEach { if (!it.third) strings.add(it.second.toString()) }
+        val strings = linkedSetOf("manifest", "application")
+        (attrs + appAttrs).forEach { strings.add(it.first) }
+        (attrs + appAttrs).forEach { if (!it.third) strings.add(it.second.toString()) }
         val pool = SyntheticPool(strings.toList(), styleCount)
         val out = java.io.ByteArrayOutputStream()
         // 文件头
@@ -129,32 +148,34 @@ class AxmlPatcherTest {
         val nsChunk = ByteArray(24)
         putShort(nsChunk, 0, 0x0100); putShort(nsChunk, 2, 24); putInt(nsChunk, 4, 24)
         out.write(nsChunk)
-        // START_ELEMENT
-        val attrCount = attrs.size
-        val elementSize = 36 + 20 * attrCount
-        val el = ByteArray(elementSize)
-        putShort(el, 0, 0x0102); putShort(el, 2, 36); putInt(el, 4, elementSize)
-        putInt(el, 20, pool.index("manifest"))
-        putShort(el, 24, 20); putShort(el, 26, 20); putShort(el, 28, attrCount)
-        attrs.forEachIndexed { i, (name, value, isInt) ->
-            val at = 36 + i * 20
-            putInt(el, at + 4, pool.index(name))
-            if (isInt) {
-                putInt(el, at + 8, pool.indexOfOrAppend(value.toString()))
-                el[at + 15] = 0x10
-                putInt(el, at + 16, value as Int)
-            } else {
-                val idx = pool.index(value.toString())
-                putInt(el, at + 8, idx)
-                el[at + 15] = 0x03
-                putInt(el, at + 16, idx)
+        fun writeElement(name: String, elementAttrs: List<Triple<String, Any, Boolean>>) {
+            val attrCount = elementAttrs.size
+            val elementSize = 36 + 20 * attrCount
+            val el = ByteArray(elementSize)
+            putShort(el, 0, 0x0102); putShort(el, 2, 36); putInt(el, 4, elementSize)
+            putInt(el, 20, pool.index(name))
+            putShort(el, 24, 20); putShort(el, 26, 20); putShort(el, 28, attrCount)
+            elementAttrs.forEachIndexed { i, (attrName, value, isInt) ->
+                val at = 36 + i * 20
+                putInt(el, at + 4, pool.index(attrName))
+                if (isInt) {
+                    putInt(el, at + 8, pool.indexOfOrAppend(value.toString()))
+                    el[at + 15] = 0x10
+                    putInt(el, at + 16, value as Int)
+                } else {
+                    val idx = pool.index(value.toString())
+                    putInt(el, at + 8, idx)
+                    el[at + 15] = 0x03
+                    putInt(el, at + 16, idx)
+                }
             }
+            out.write(el)
+            val end = ByteArray(24)
+            putShort(end, 0, 0x0103); putShort(end, 2, 24); putInt(end, 4, 24)
+            out.write(end)
         }
-        out.write(el)
-        // END_ELEMENT
-        val end = ByteArray(24)
-        putShort(end, 0, 0x0103); putShort(end, 2, 24); putInt(end, 4, 24)
-        out.write(end)
+        writeElement("manifest", attrs)
+        writeElement("application", appAttrs)
         out.write(nsChunk) // END_NAMESPACE（结构占位）
         val bytes = out.toByteArray()
         putInt(bytes, 4, bytes.size)
@@ -172,7 +193,13 @@ class AxmlPatcherTest {
                 for ((i, str) in strings.withIndex()) {
                     offsets[i] = body.size()
                     val chars = str.toCharArray()
-                    body.write(chars.size and 0xFF); body.write((chars.size shr 8) and 0xFF)
+                    // 与 aapt/decodeString 对称：len≥0x8000 写高位标记 + u32 实长
+                    if (chars.size >= 0x8000) {
+                        body.write(0x00); body.write(0x80)
+                        writeInt(body, chars.size)
+                    } else {
+                        body.write(chars.size and 0xFF); body.write((chars.size shr 8) and 0xFF)
+                    }
                     for (c in chars) { body.write(c.code and 0xFF); body.write((c.code shr 8) and 0xFF) }
                     body.write(0); body.write(0)
                 }
