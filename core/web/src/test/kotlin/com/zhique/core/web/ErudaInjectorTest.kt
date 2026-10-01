@@ -39,10 +39,12 @@ class ErudaInjectorTest {
     }
 
     @Test
-    fun `内置资产在module assets且语法可校验`() {
-        // 资产随 :core:web 打包进 APK assets/；测试直接从文件系统核对存在与非空
-        val f = java.io.File("src/main/assets/${ErudaInjector.ERUDA_ASSET}")
-        assertTrue(f.isFile, "缺内置资产 ${f.path}（eruda 应与源码同仓维护）")
+    fun `内置资产在构建产物assets且语法可校验`() {
+        // f2677ea 起 eruda 不入源码树：构建期 fetchEruda 从 npm registry 拉取并校验
+        // SHA-256 落到 generated/eruda-assets（该目录已挂进 assets srcDir，随包分发）。
+        // 测试任务依赖 preBuild → fetchEruda，产物必已就位；此处核对存在与形态。
+        val f = java.io.File("build/generated/eruda-assets/${ErudaInjector.ERUDA_ASSET}")
+        assertTrue(f.isFile, "缺构建期拉取的资产 ${f.path}（fetchEruda 应已在 preBuild 就位）")
         val src = f.readText()
         assertTrue(src.contains("eruda"), "eruda 源非空（${src.length} chars）")
         assertFalse(src.isBlank())
