@@ -68,18 +68,40 @@ class ApilotBridge(
 
     /**
      * 解析 Activity Result。[resultCode]/[intent] 原样来自 ActivityResult；
-     * content URI 经 [resolver] 立即读取（调用即用完，不保存）。
+     * content URI 经 [resolver] 立即读取（调用即用完，不保存，1MiB 上限）。
      * [uriReader] 为 URI 读取通道的注入点（测试假实现；生产留空走 [defaultReadUri]）。
+     *
+     * 防串话：[expectedRequestId] 传 launch 时发出的 REQUEST_ID——回传 requestId
+     * 不匹配按 [PickOutcome.Invalid] 处理；V2 回传缺 `connection` scope 时整条拒收
+     * （[PickOutcome.Invalid]）。
+     *
+     * 调用纪律：读 URI/解析可能涉及磁盘 IO，请勿在主线程调用（控制器侧已移 IO 调度器）。
      */
     fun parsePickResult(
         resultCode: Int,
         intent: Intent?,
         resolver: android.content.ContentResolver,
+        expectedRequestId: String? = null,
         uriReader: ((android.net.Uri, android.content.ContentResolver) -> String?)? = null,
     ): PickOutcome {
         if (resultCode != android.app.Activity.RESULT_OK) return PickOutcome.Canceled
         val text = readResultText(intent, resolver, uriReader) ?: return PickOutcome.Invalid
-        return parseResultJson(text)
+        // 回传大小上限：超限判无效（防 OOM；默认读取器在流式读取时已拦一层，此处兜住注入通道）
+        if (text.toByteArray(Charsets.UTF_8).size > ApilotProtocol.RESULT_MAX_BYTES) return PickOutcome.Invalid
+        val outcome = parseResultJson(text)
+        if (outcome is PickOutcome.V2 && ApilotProtocol.SCOPE_CONNECTION !in outcome.result.grantedScopes) {
+            return PickOutcome.Invalid // 无 connection scope → 无法建立连接语义，整条拒收
+        }
+        if (expectedRequestId != null && requestIdOf(outcome) != expectedRequestId) {
+            return PickOutcome.Invalid // 防串话：不是本次请求的回传
+        }
+        return outcome
+    }
+
+    private fun requestIdOf(outcome: PickOutcome): String? = when (outcome) {
+        is PickOutcome.V2 -> outcome.result.requestId
+        is PickOutcome.V1 -> outcome.result.requestId
+        else -> null
     }
 
     /** extra 优先、content URI 兜底（文档示例同序）；都没有 → null（无效结果）。 */
@@ -97,14 +119,17 @@ class ApilotBridge(
     private fun parseResultJson(text: String): PickOutcome = runCatching {
         val bare = json.parseToJsonElement(text)
         val obj = bare as? kotlinx.serialization.json.JsonObject
-            ?: return PickOutcome.Malformed("顶层不是 JSON 对象")
+            ?: return PickOutcome.Malformed(MALFORMED_TOP_LEVEL)
         val schema = (obj["schemaVersion"] as? JsonPrimitive)?.intOrNull
         when (schema) {
             ApilotProtocol.SCHEMA_V2 -> PickOutcome.V2(json.decodeFromString(PickResult.serializer(), text))
             ApilotProtocol.SCHEMA_V1 -> PickOutcome.V1(json.decodeFromString(V1PickResult.serializer(), text))
-            else -> PickOutcome.Malformed("schemaVersion 非 1/2")
+            else -> PickOutcome.Malformed(MALFORMED_SCHEMA)
         }
-    }.getOrElse { PickOutcome.Malformed("回传解析失败：${it.message}") }
+    }.getOrElse {
+        // 固定文案：序列化异常原文可能引用输入片段（含 Key 时有进 UI/日志的风险），绝不外带
+        PickOutcome.Malformed(MALFORMED_PARSE)
+    }
 
     // ---- 写：IMPORT_API_CONFIGS ----
 
@@ -168,9 +193,29 @@ class ApilotBridge(
 
     companion object {
 
-        /** 默认 URI 读取：收到结果立即读入内存，不持久保存 URI 或内容副本。 */
-        internal fun defaultReadUri(uri: android.net.Uri, resolver: android.content.ContentResolver): String? =
-            resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+        /** Malformed 固定文案（不带异常原文，防 payload/Key 片段进 UI/日志）。 */
+        const val MALFORMED_TOP_LEVEL = "回传顶层不是 JSON 对象"
+        const val MALFORMED_SCHEMA = "回传 schemaVersion 非 1/2"
+        const val MALFORMED_PARSE = "回传解析失败（内容不支持）"
+
+        /** 默认 URI 读取：收到结果立即读入内存，不持久保存 URI 或内容副本；1MiB 封顶。 */
+        internal fun defaultReadUri(uri: android.net.Uri, resolver: android.content.ContentResolver): String? {
+            val cap = ApilotProtocol.RESULT_MAX_BYTES
+            resolver.openInputStream(uri)?.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(64 * 1024)
+                var total = 0
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > cap) return null // 超限：判无效结果
+                    out.write(buf, 0, n)
+                }
+                return out.toString("UTF-8")
+            }
+            return null
+        }
 
         /**
          * 声明签名 SHA-256（文档「声明签名 SHA-256」extra 值格式 `AA:BB:CC`）：

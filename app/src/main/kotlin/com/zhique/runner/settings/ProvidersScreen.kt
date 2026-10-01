@@ -150,12 +150,12 @@ private fun ApilotSection(
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            val intent = controller.buildSyncIntent()
-                            if (intent == null) {
+                            val plan = controller.buildSync()
+                            if (plan == null) {
                                 controller.setNotice("还没有可推送的服务商，先添加一个")
                             } else {
-                                controller.markSyncLaunched()
-                                syncLauncher?.launch(intent)
+                                controller.markSyncLaunched(plan.hasKey, plan.providerCount)
+                                syncLauncher?.launch(plan.intent)
                             }
                         }
                     },

@@ -62,7 +62,8 @@ class AppContainer(
 
     /**
      * Apilot 双向流转控制器（进程级单点）。
-     * 大负载 URI 通道走 zqfile FileProvider 的 apilot/ 缓存目录（一次性 content URI）。
+     * 大负载 URI 通道走 zqfile FileProvider 的 apilot/ 缓存目录（一次性 content URI，
+     * 同步结束后由 tempFileCleanup 兜底删除）。
      */
     val apilotController: com.zhique.runner.settings.ApilotController by lazy {
         val appContext = context
@@ -77,14 +78,17 @@ class AppContainer(
                 com.zhique.core.apilot.ApilotBridge().ownSignatureSha256(appContext)
             },
             uriProvider = { json -> apilotPayloadUri(appContext, json) },
+            tempFileCleanup = { apilotCacheDir(appContext).deleteRecursively() },
             selfPackageName = context.packageName,
             scope = appScope,
         )
     }
 
-    /** 把导入 payload 落成一次性只读 content URI（Apilot 10 分钟后删缓存，本方即用即弃）。 */
+    private fun apilotCacheDir(appContext: android.content.Context): File = File(appContext.cacheDir, "apilot")
+
+    /** 把导入 payload 落成一次性只读 content URI（Apilot 10 分钟后删缓存，本方同步结束后亦清理）。 */
     private fun apilotPayloadUri(appContext: android.content.Context, json: String): android.net.Uri {
-        val dir = File(appContext.cacheDir, "apilot").apply { mkdirs() }
+        val dir = apilotCacheDir(appContext).apply { mkdirs() }
         // 清掉上一轮残留（上次授权的临时文件）
         dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, "payload-${System.currentTimeMillis()}.json").apply { writeText(json) }

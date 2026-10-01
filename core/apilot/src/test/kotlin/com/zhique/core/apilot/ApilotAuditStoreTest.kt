@@ -64,4 +64,14 @@ class ApilotAuditStoreTest {
         assertEquals(1, all.size)
         assertEquals("ok", all[0].summary)
     }
+
+    @Test
+    fun 超200条滚动裁剪最旧() {
+        val store = newStore()
+        repeat(205) { i -> store.record("read", "conn-$i", hasKey = false) }
+        val all = store.list()
+        assertEquals(ApilotAuditStore.MAX_RECORDS, all.size)
+        assertEquals("conn-5", all.first().summary) // 最旧 5 条被裁
+        assertEquals("conn-204", all.last().summary)
+    }
 }

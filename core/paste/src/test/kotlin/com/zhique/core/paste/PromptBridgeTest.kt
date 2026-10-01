@@ -106,4 +106,15 @@ class PromptBridgeTest {
     fun 默认加载器对未知id安全返回null() {
         assertEquals(null, PromptBridge.DEFAULT_DOC_LOADER("not-exist"))
     }
+
+    @Test
+    fun 用户句含美元符与反引号不破坏结构() {
+        val idea = "做一个价格 \$100 的 `code` 计算器"
+        val out = bridge.generate(idea, listOf("camera"))
+        assertTrue(out.startsWith(PromptBridge.HEADER))
+        assertTrue(idea in out) // 原样保留
+        assertTrue("## 运行环境" in out)
+        assertTrue("### zq.camera" in out)
+        assertTrue("## 输出要求" in out)
+    }
 }

@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.zhique.core.apilot.ApilotAuditStore
 import com.zhique.core.apilot.ApilotBridge
+import com.zhique.core.apilot.ApilotProtocol
 import com.zhique.core.apilot.ApiProfile
 import com.zhique.core.apilot.ApiProfilesPayload
 import com.zhique.core.apilot.PickOutcome
@@ -75,8 +76,10 @@ class ApilotController(
     private val checkInstalled: () -> Boolean = { false },
     /** 本包签名 SHA-256（导入声明用；测试可注入）。 */
     private val signatureProvider: () -> String? = { null },
-    /** 大负载 URI 通道（生产为 FileProvider；null 时桥回落 JSON extra）。 */
+    /** 大负载 URI 通道（生产为 FileProvider；null 时 buildSync 直接拒绝大负载）。 */
     private val uriProvider: ((String) -> Uri)? = null,
+    /** 同步流程结束后的临时负载清理（finally 语义：OK/取消/异常都执行）。 */
+    private val tempFileCleanup: (() -> Unit)? = null,
     private val selfPackageName: String = "com.zhique.runner",
     private val now: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope,
@@ -94,6 +97,9 @@ class ApilotController(
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** launch 前记住的 PICK REQUEST_ID（内存即可）：回传不匹配按无效结果处理，防串话。 */
+    private var pendingPickRequestId: String? = null
 
     init {
         refresh()
@@ -115,14 +121,22 @@ class ApilotController(
         _state.value = _state.value.copy(notice = text)
     }
 
-    /** PICK 请求 Intent（四档 scope，Key 是否给由用户在 Apilot 授权页勾选）。 */
-    fun pickIntent(): Intent = bridge.buildPickIntent()
+    /** PICK 请求 Intent（四档 scope，Key 是否给由用户在 Apilot 授权页勾选）；同时钉住 REQUEST_ID。 */
+    fun pickIntent(): Intent = bridge.buildPickIntent().also { intent ->
+        pendingPickRequestId = intent.getStringExtra(ApilotProtocol.EXTRA_REQUEST_ID)
+    }
 
     /**
-     * 同步 Intent：把已接入服务商转成 V2 apiProfiles（connection/provider/protocol/
-     * models/secrets/origin）。无服务商 → null（UI 提示先接入）。
+     * 同步到 Apilot 的完整计划：intent + 真实是否含 Key（审计用）+ 服务商数。
+     * 无服务商 → null（UI 提示先接入）。
      */
-    suspend fun buildSyncIntent(): Intent? {
+    data class SyncPlan(val intent: Intent, val hasKey: Boolean, val providerCount: Int)
+
+    /**
+     * 构建同步计划：把已接入服务商转成 V2 apiProfiles（connection/provider/protocol/
+     * models/secrets/origin）。含 Key 或大负载由 [uriProvider] 落一次性 content URI。
+     */
+    suspend fun buildSync(): SyncPlan? {
         val providers = store.list()
         if (providers.isEmpty()) return null
         val profiles = providers.map { p ->
@@ -135,32 +149,37 @@ class ApilotController(
                 origin = ProfileOrigin(appName = bridge.sourceName),
             )
         }
+        val hasKey = providers.any { store.decryptKey(it).isNotBlank() }
         val payload = bridge.buildImportPayload(
             profiles = profiles,
             selfPackageName = selfPackageName,
             signatureSha256 = signatureProvider(),
         )
-        return bridge.buildImportIntent(payload, signatureSha256 = signatureProvider(), uriProvider = uriProvider).intent
+        val plan = bridge.buildImportIntent(payload, signatureSha256 = signatureProvider(), uriProvider = uriProvider)
+        return SyncPlan(intent = plan.intent, hasKey = hasKey, providerCount = providers.size)
     }
 
     /**
-     * 处理 PICK 的 Activity Result：解析 → 同构落库 → 审计 → 刷新。
-     * 返回面向用户的提示（取消=中性提示，绝不重试）。
+     * 处理 PICK 的 Activity Result：解析（IO 线程，URI 读取有 1MiB 上限）→
+     * REQUEST_ID 防串话校验 → 同构落库 → 审计 → 刷新。
+     * 取消=中性提示绝不重试；requestId 不匹配或缺 connection scope=无效结果。
      */
     fun handleActivityResult(resultCode: Int, data: Intent?, resolver: ContentResolver) {
-        val outcome = bridge.parsePickResult(resultCode, data, resolver)
-        when (outcome) {
-            is PickOutcome.Canceled -> _state.value = _state.value.copy(notice = "已取消：未做任何更改")
-            is PickOutcome.Invalid -> _state.value = _state.value.copy(notice = "结果无效：请在 Apilot 中重新授权")
-            is PickOutcome.Malformed -> _state.value = _state.value.copy(notice = "无法解析 Apilot 返回（${outcome.reason}）")
-            is PickOutcome.V2 -> applyMapped(ProfileMapper.mapV2(outcome.result))
-            is PickOutcome.V1 -> applyMapped(ProfileMapper.mapV1(outcome.result))
+        scope.launch(io) {
+            val expected = pendingPickRequestId
+            pendingPickRequestId = null
+            when (val outcome = bridge.parsePickResult(resultCode, data, resolver, expectedRequestId = expected)) {
+                is PickOutcome.Canceled -> _state.value = _state.value.copy(notice = "已取消：未做任何更改")
+                is PickOutcome.Invalid -> _state.value = _state.value.copy(notice = "结果无效：请在 Apilot 中重新授权")
+                is PickOutcome.Malformed -> _state.value = _state.value.copy(notice = "无法解析 Apilot 返回（${outcome.reason}）")
+                is PickOutcome.V2 -> applyMapped(ProfileMapper.mapV2(outcome.result))
+                is PickOutcome.V1 -> applyMapped(ProfileMapper.mapV1(outcome.result))
+            }
         }
     }
 
-    private fun applyMapped(mapped: ProfileMapper.MappedProvider) {
-        scope.launch(io) {
-            val config = ProviderConfig(
+    private suspend fun applyMapped(mapped: ProfileMapper.MappedProvider) {
+        val config = ProviderConfig(
                 id = UUID.randomUUID().toString(),
                 name = mapped.name,
                 protocol = mapped.protocol,
@@ -177,25 +196,28 @@ class ApilotController(
                 providerCount = store.list().size,
                 notice = "已从 Apilot 导入「${mapped.name}」" + if (mapped.hasKey) "（含 Key）" else "（无 Key）",
             )
-        }
     }
 
-    /** 同步已发起（Intent 已交给系统）：立即记审计（只记方向/数量，不含 payload）。 */
-    fun markSyncLaunched() {
+    /** 同步已发起（Intent 已交给系统）：立即记审计（方向/数量/真实是否含 Key，不含 payload）。 */
+    fun markSyncLaunched(hasKey: Boolean, providerCount: Int) {
         scope.launch(io) {
-            audit.record("write", "推送 ${store.list().size} 个服务商", hasKey = true)
+            audit.record("write", "推送 $providerCount 个服务商", hasKey = hasKey)
         }
     }
 
-    /** 同步返回：RESULT_OK 记上次导出时间；取消=中性提示。 */
+    /** 同步返回：RESULT_OK 记上次导出时间；取消=中性提示；无论结果都清掉负载缓存（finally）。 */
     fun handleSyncResult(resultCode: Int) {
-        if (resultCode == android.app.Activity.RESULT_OK) {
-            scope.launch(io) {
-                sync.setLastExport(now())
-                _state.value = _state.value.copy(lastExportAt = now(), notice = "已交给 Apilot 处理同步")
+        scope.launch(io) {
+            try {
+                if (resultCode == android.app.Activity.RESULT_OK) {
+                    sync.setLastExport(now())
+                    _state.value = _state.value.copy(lastExportAt = now(), notice = "已交给 Apilot 处理同步")
+                } else {
+                    _state.value = _state.value.copy(notice = "同步已取消：未做任何更改")
+                }
+            } finally {
+                runCatching { tempFileCleanup?.invoke() }
             }
-        } else {
-            _state.value = _state.value.copy(notice = "同步已取消：未做任何更改")
         }
     }
 

@@ -42,11 +42,24 @@ class ApilotAuditStore(private val file: File) {
                 AuditRecord(time = System.currentTimeMillis(), direction = direction, summary = summary, hasKey = hasKey),
             )
             file.appendText(line + "\n")
+            trimToCap()
         }
+    }
+
+    /** 滚动裁剪：超过 [MAX_RECORDS] 条时丢弃最旧的（防审计文件无限增长）。 */
+    private fun trimToCap() {
+        val lines = file.readLines().filter { it.isNotBlank() }
+        if (lines.size <= MAX_RECORDS) return
+        file.writeText(lines.takeLast(MAX_RECORDS).joinToString(separator = "\n", postfix = "\n"))
     }
 
     /** 清除全部审计记录（删文件；幂等）。 */
     fun clear() {
         synchronized(lock) { file.delete() }
+    }
+
+    companion object {
+        /** 审计上限：超出滚动丢弃最旧。 */
+        const val MAX_RECORDS = 200
     }
 }

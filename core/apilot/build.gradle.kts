@@ -11,8 +11,8 @@ android {
     compileSdk = 36
     defaultConfig {
         minSdk = 31
-        // Apilot 当前包名（官方文档 docs/android-third-party-import.md，对应 v1.24.0）。
-        // Apilot 将来改包名只动这一处（决策表：可配置常量）。
+        // Apilot 文档当前包名（docs/android-third-party-import.md，对应 v1.24.0）——
+        // 变更只改此处（BuildConfig.APILOT_PACKAGE 单点）
         buildConfigField("String", "APILOT_PACKAGE", "\"com.example.api_manager\"")
     }
     buildFeatures { buildConfig = true }

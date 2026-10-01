@@ -55,17 +55,24 @@ class ApilotControllerTest {
         val sync = ApilotSyncStore(dataStore)
         val audit = ApilotAuditStore(File(root, "apilot/audit.jsonl"))
 
+        /** 负载缓存目录（uriProvider 落文件、tempFileCleanup 清理的真实目录）。 */
+        val cacheDir = File(root, "cache/apilot")
+
         fun controller(
             checkInstalled: () -> Boolean = { true },
             signature: () -> String? = { "AA:BB:CC" },
+            requestId: () -> String = { "r1" },
             uriProvider: ((String) -> android.net.Uri)? = null,
+            tempFileCleanup: (() -> Unit)? = null,
         ): ApilotController = ApilotController(
             store = store,
             audit = audit,
             sync = sync,
+            bridge = com.zhique.core.apilot.ApilotBridge(requestId = requestId),
             checkInstalled = checkInstalled,
             signatureProvider = signature,
             uriProvider = uriProvider,
+            tempFileCleanup = tempFileCleanup,
             selfPackageName = "com.zhique.runner",
             now = { 1_700_000_000_000L },
             scope = CoroutineScope(dispatcher),
@@ -75,11 +82,14 @@ class ApilotControllerTest {
 
     private fun resolver() = RuntimeEnvironment.getApplication().contentResolver
 
-    private fun v2Intent(grantedScopes: String = "\"connection\",\"models.default\",\"models.all\",\"secret.api_key\"") =
+    private fun v2Intent(
+        grantedScopes: String = "\"connection\",\"models.default\",\"models.all\",\"secret.api_key\"",
+        requestId: String = "r1",
+    ) =
         Intent().putExtra(
             ApilotProtocol.EXTRA_CONFIG_JSON,
             """
-            {"schemaVersion":2,"requestId":"r1","grantedScopes":[$grantedScopes],
+            {"schemaVersion":2,"requestId":"$requestId","grantedScopes":[$grantedScopes],
              "apiProfile":{"connection":{"name":"DeepSeek Production","baseUrl":"https://api.deepseek.com/v1"},
              "provider":{"id":"deepseek"},"protocol":{"id":"openai_compatible"},
              "models":{"selectedModel":"deepseek-chat"},
@@ -185,11 +195,13 @@ class ApilotControllerTest {
                 model = "deepseek-chat",
             ),
         )
-        val intent = p.controller().buildSyncIntent()
-        assertNotNull(intent)
-        assertEquals(ApilotProtocol.ACTION_IMPORT, intent.action)
-        assertEquals("com.example.api_manager", intent.`package`)
-        val payload = intent.getStringExtra(ApilotProtocol.EXTRA_CONFIGS_JSON)!!
+        val plan = p.controller().buildSync()
+        assertNotNull(plan)
+        assertTrue(plan.hasKey) // 真实是否含 Key（审计用）
+        assertEquals(1, plan.providerCount)
+        assertEquals(ApilotProtocol.ACTION_IMPORT, plan.intent.action)
+        assertEquals("com.example.api_manager", plan.intent.`package`)
+        val payload = plan.intent.getStringExtra(ApilotProtocol.EXTRA_CONFIGS_JSON)!!
         assertTrue(payload.contains("\"provider\":{\"id\":\"deepseek\"}"))
         assertTrue(payload.contains("sk-sync"))
         assertTrue(payload.contains("\"packageName\":\"com.zhique.runner\""))
@@ -200,7 +212,17 @@ class ApilotControllerTest {
     @Test
     fun 无服务商时同步返回null() = runTest {
         val p = Parts(tmp.root)
-        assertNull(p.controller().buildSyncIntent())
+        assertNull(p.controller().buildSync())
+    }
+
+    @Test
+    fun markSyncLaunched审计按真实hasKey() = runTest {
+        val p = Parts(tmp.root)
+        p.controller().markSyncLaunched(hasKey = false, providerCount = 2)
+        p.controller().markSyncLaunched(hasKey = true, providerCount = 1)
+        val records = p.audit.list()
+        assertEquals(false to true, records[0].hasKey to records[1].hasKey)
+        assertEquals("推送 2 个服务商", records[0].summary)
     }
 
     @Test
@@ -212,6 +234,54 @@ class ApilotControllerTest {
         assertNotNull(p.sync.lastExportAt())
         controller.handleSyncResult(android.app.Activity.RESULT_CANCELED)
         assertEquals("同步已取消：未做任何更改", controller.state.value.notice)
+    }
+
+    @Test
+    fun 同步完成后负载缓存被清除() = runTest {
+        val p = Parts(tmp.root)
+        // 名称填充到 >64KiB：强制走 URI 通道（真实触发 uriProvider 落文件）
+        p.store.upsert(
+            ProviderConfig(
+                id = "p1",
+                name = "D".repeat(ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES),
+                protocol = "openai_compatible",
+                baseUrl = "https://api.deepseek.com/v1",
+                keyCipher = p.store.encryptKey("sk-1"),
+                model = "m",
+            ),
+        )
+        // 假 URI 通道：把 payload 落进真实缓存目录（模拟 FileProvider 写文件）
+        val controller = p.controller(
+            uriProvider = { json ->
+                p.cacheDir.apply { mkdirs() }
+                    .resolve("payload.json").writeText(json)
+                android.net.Uri.parse("content://x/payload.json")
+            },
+            tempFileCleanup = { p.cacheDir.deleteRecursively() },
+        )
+        val plan = assertNotNull(controller.buildSync())
+        controller.markSyncLaunched(plan.hasKey, plan.providerCount)
+        assertTrue(p.cacheDir.resolve("payload.json").isFile) // 同步期间文件在
+
+        controller.handleSyncResult(android.app.Activity.RESULT_OK)
+        assertFalse(p.cacheDir.exists()) // finally 清理：同步完成后缓存不存在
+    }
+
+    // ---- 防串话：REQUEST_ID 校验 ----
+
+    @Test
+    fun requestId匹配落库_不匹配判无效() = runTest {
+        val p = Parts(tmp.root) // bridge requestId 固定 "r1"，v2Intent 的 requestId 也是 "r1"
+        val controller = p.controller()
+        controller.pickIntent() // launch：钉住 "r1"
+        controller.handleActivityResult(android.app.Activity.RESULT_OK, v2Intent(), resolver())
+        assertEquals(1, p.store.list().size)
+
+        // 下一轮 launch 后回传了别的 requestId → Invalid，不落库
+        controller.pickIntent()
+        controller.handleActivityResult(android.app.Activity.RESULT_OK, v2Intent(requestId = "r2"), resolver())
+        assertEquals(1, p.store.list().size)
+        assertEquals("结果无效：请在 Apilot 中重新授权", controller.state.value.notice)
     }
 
     // ---- 安装检测 / 审计清除 ----

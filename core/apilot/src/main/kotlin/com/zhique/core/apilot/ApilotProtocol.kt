@@ -62,6 +62,9 @@ object ApilotProtocol {
     /** 负载阈值：超过走一次性 content:// URI（与 RETURN_TRANSPORT=auto 的 64KiB 同阈值）。 */
     const val PAYLOAD_URI_THRESHOLD_BYTES = 64 * 1024
 
+    /** 回传读取上限：1MiB——超限判无效结果（防 OOM/主线程长时间同步读）。 */
+    const val RESULT_MAX_BYTES = 1024 * 1024
+
     /** Apilot 侧临时 URI 生命周期（分钟）：收到结果立即读，不持久保存。 */
     const val RESULT_URI_TTL_MINUTES = 10
 

@@ -181,6 +181,48 @@ class ApilotBridgeTest {
     }
 
     @Test
+    fun requestId匹配则通过_不匹配判无效() {
+        val intent = Intent().putExtra(ApilotProtocol.EXTRA_CONFIG_JSON, v2Json)
+        val match = bridge().parsePickResult(Activity.RESULT_OK, intent, resolver, expectedRequestId = "request-42")
+        assertIs<PickOutcome.V2>(match)
+
+        val mismatch = bridge().parsePickResult(Activity.RESULT_OK, intent, resolver, expectedRequestId = "other-request")
+        assertIs<PickOutcome.Invalid>(mismatch) // 防串话：不是本次请求的回传
+    }
+
+    @Test
+    fun 无connection_scope整条拒收() {
+        val noConnection = """
+            {"schemaVersion":2,"requestId":"request-42","grantedScopes":["models.default","secret.api_key"],
+             "apiProfile":{"connection":{"name":"X","baseUrl":"https://api.deepseek.com/v1"},
+             "provider":{"id":"deepseek"},"protocol":{"id":"openai_compatible"},"secrets":{}}}
+        """.trimIndent()
+        val intent = Intent().putExtra(ApilotProtocol.EXTRA_CONFIG_JSON, noConnection)
+        val outcome = bridge().parsePickResult(Activity.RESULT_OK, intent, resolver)
+        assertIs<PickOutcome.Invalid>(outcome)
+    }
+
+    @Test
+    fun 回传超1MiB判无效() {
+        val oversized = " ".repeat(ApilotProtocol.RESULT_MAX_BYTES + 1)
+        val intent = Intent().putExtra(ApilotProtocol.EXTRA_CONFIG_JSON, oversized)
+        val outcome = bridge().parsePickResult(Activity.RESULT_OK, intent, resolver)
+        assertIs<PickOutcome.Invalid>(outcome)
+    }
+
+    @Test
+    fun 默认URI读取器1MiB封顶() {
+        val uri = android.net.Uri.parse("content://mock.apilot/big.json")
+        val shadow = org.robolectric.Shadows.shadowOf(resolver)
+        // 正常大小：读出全文
+        shadow.registerInputStream(uri, v2Json.byteInputStream(Charsets.UTF_8))
+        assertEquals(v2Json, ApilotBridge.defaultReadUri(uri, resolver))
+        // 超限：返回 null（判无效）
+        shadow.registerInputStream(uri, "x".repeat(ApilotProtocol.RESULT_MAX_BYTES + 1).byteInputStream())
+        assertNull(ApilotBridge.defaultReadUri(uri, resolver))
+    }
+
+    @Test
     fun v2contentURI立即读取且不持久化() {
         // 模拟 Apilot 的临时只读 URI：读入即返回；桥不保存 URI 引用、不落盘
         val uri = android.net.Uri.parse("content://mock.apilot/payload.json")
@@ -229,11 +271,14 @@ class ApilotBridgeTest {
     }
 
     @Test
-    fun 损坏JSON为malformed() {
-        val intent = Intent().putExtra(ApilotProtocol.EXTRA_CONFIG_JSON, "{not-json")
+    fun 损坏JSON为malformed且文案固定不带输入片段() {
+        val broken = """{"schemaVersion":1,"apiConfig":{"name":"密 sk-abcfrag"}}{not-json"""
+        val intent = Intent().putExtra(ApilotProtocol.EXTRA_CONFIG_JSON, broken)
         val outcome = bridge().parsePickResult(Activity.RESULT_OK, intent, resolver)
         val m = assertIs<PickOutcome.Malformed>(outcome)
-        assertTrue(m.reason.isNotBlank())
+        // 固定文案：不回显序列化异常原文（防 payload/Key 片段进 UI/日志）
+        assertEquals(ApilotBridge.MALFORMED_PARSE, m.reason)
+        assertFalse(m.reason.contains("sk-abcfrag"))
     }
 
     // ---- 签名 ----
