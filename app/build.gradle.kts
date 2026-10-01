@@ -23,8 +23,11 @@ android {
     // 一旦用某把密钥发布过 v0.1.0，请永远用同一把（覆盖安装语义，决策 29 同源）。
     val releaseStorePath = System.getenv("ZHIQUE_RELEASE_STORE")
         ?: "${System.getProperty("user.home")}/zhique-keystore/zhique-release.jks"
-    val releaseStoreFile = File(releaseStorePath)
-    val releasePassFile = File(releaseStoreFile.parentFile, "password.txt")
+    require(!releaseStorePath.contains("..")) { "签名库路径不允许包含 ..（防路径穿越）" }
+    // canonicalFile 解析符号链接与相对段，把实际路径限制在声明目录内
+    val releaseStoreFile = File(releaseStorePath).canonicalFile
+    require(releaseStoreFile.path.endsWith("zhique-release.jks")) { "签名库文件名须为 zhique-release.jks" }
+    val releasePassFile = File(releaseStoreFile.parentFile, "password.txt").canonicalFile
     signingConfigs {
         if (releaseStoreFile.exists()) {
             create("release") {
