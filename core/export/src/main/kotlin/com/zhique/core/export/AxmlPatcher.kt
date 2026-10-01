@@ -7,7 +7,8 @@ import java.io.ByteArrayOutputStream
  *
  * 模板壳 manifest 是 aapt 编译的二进制；端上导出须按项目改写
  * `manifest@package` / `manifest@versionCode` / `manifest@versionName` /
- * `application@label` 四个属性。策略：
+ * `application@label` 与 `application@icon`（M6 偏差③，引用改写指向预置图标资源）。
+ * 策略：
  *
  * 1. 解码字符串池 → 追加新串（既有索引不动 → 属性名/资源映射不失效）→
  *    重编码整池；
@@ -22,12 +23,21 @@ class UnsupportedPoolException(message: String) : IllegalStateException(message)
 
 object AxmlPatcher {
 
-    /** 需要写入的四个身份字段。 */
+    /**
+     * 需要写入的身份字段（M6）+ launcher 图标引用（M6 偏差③）。
+     *
+     * 图标口径：模板壳预置两套自适应图标资源（icon_indigo/icon_slate），
+     * resources.arsc **不动**——[iconResId] 指向模板里已存在的资源完整 ID，
+     * [iconRef] 写回 rawValue（如 `@mipmap/icon_slate`，仅作可读性提示，
+     * 运行时以 typed value 的资源 ID 为准）。
+     */
     data class ManifestPatch(
         val packageName: String,
         val versionCode: Int,
         val versionName: String,
         val label: String,
+        val iconResId: Int? = null,
+        val iconRef: String? = null,
     )
 
     private const val RES_XML_TYPE = 0x0003
@@ -37,6 +47,7 @@ object AxmlPatcher {
     private const val TYPE_STRING = 0x03
     private const val TYPE_INT_DEC = 0x10
     private const val TYPE_INT_HEX = 0x11
+    private const val TYPE_REFERENCE = 0x01
     private const val NO_INDEX = -1
 
     fun patch(manifest: ByteArray, patch: ManifestPatch): ByteArray {
@@ -65,8 +76,12 @@ object AxmlPatcher {
                     )
                     "application" -> collectEdits(
                         manifest, off, pool, edits,
-                        want = mapOf("label" to pool.indexOfOrAppend(patch.label)),
+                        want = buildMap {
+                            put("label", pool.indexOfOrAppend(patch.label))
+                            patch.iconRef?.let { put("icon", pool.indexOfOrAppend(it)) }
+                        },
                         intValues = emptyMap(),
+                        refValues = patch.iconResId?.let { mapOf("icon" to it) } ?: emptyMap(),
                     )
                 }
             }
@@ -105,6 +120,7 @@ object AxmlPatcher {
         edits: MutableList<Pair<Int, ByteArray>>,
         want: Map<String, Int>,
         intValues: Map<String, Int>,
+        refValues: Map<String, Int> = emptyMap(),
     ) {
         val attributeStart = shortAt(data, chunkAt + 24)
         val attributeSize = shortAt(data, chunkAt + 26)
@@ -123,6 +139,12 @@ object AxmlPatcher {
                 // 整型属性（versionCode）：data 直接写 int 数值，类型不动
                 attrName in intValues && (dataType == TYPE_INT_DEC || dataType == TYPE_INT_HEX) ->
                     edits += (attrAt + 16) to intBytes(intValues.getValue(attrName))
+                // 资源引用改写（launcher 图标）：保持 REFERENCE 类型，typed data 换新资源 ID
+                attrName in refValues -> {
+                    edits += (attrAt + 12) to shortBytes(8) // typed value size
+                    edits += (attrAt + 15) to byteArrayOf(TYPE_REFERENCE.toByte())
+                    edits += (attrAt + 16) to intBytes(refValues.getValue(attrName))
+                }
                 // 字符串字面量属性：typed data → 新字符串索引
                 dataType == TYPE_STRING ->
                     edits += (attrAt + 16) to intBytes(newStringIdx)

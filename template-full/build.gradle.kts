@@ -25,6 +25,8 @@ android {
         // 两壳共用模板壳运行时（单份源码，manifest 差异化权限）
         java.srcDir(layout.projectDirectory.dir("../template-common/src/main/kotlin"))
         assets.srcDir(layout.projectDirectory.dir("../template-common/src/main/assets"))
+        // launcher 图标资源同样单份（M6 偏差③：icon_indigo/icon_slate 自适应图标预设）
+        res.srcDir(layout.projectDirectory.dir("../template-common/src/main/res"))
     }
 }
 

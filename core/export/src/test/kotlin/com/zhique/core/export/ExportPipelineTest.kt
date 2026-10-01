@@ -128,4 +128,70 @@ class ExportPipelineTest {
         val ob = service.export(b.id, "计算器", "min")
         assertTrue(oa.record.packageName != ob.record.packageName)
     }
+
+    // ---- launcher 图标注入端到端（M6 偏差③） ----
+
+    @Test
+    fun `图标注入端到端-项目默认靛蓝与向导石板色各归位`() {
+        val (repo, _, service) = wire("min")
+        val injector = AssetInjector()
+        val arsc = injector.resourcesArsc(TemplateFixtures.min())!!
+        val indigo = ResourceTableReader.entryId(arsc, "mipmap", "icon_indigo")
+        val slate = ResourceTableReader.entryId(arsc, "mipmap", "icon_slate")
+
+        val meta = repo.create("深色工具", "<h1></h1>") // 项目 iconColor 默认 #46509F
+        // v1：项目默认色 → 靛蓝图标（导出内含 ApkVerifier 校验，抛错即挂）
+        val v1 = service.export(meta.id, "深色工具", "min")
+        assertEquals(indigo, AxmlReader.readManifest(manifestOf(v1.apk)).iconResId)
+        // v2：向导当次选石板色 → 石板图标（版本自增不受影响）
+        val v2 = service.export(meta.id, "深色工具", "min", iconColor = "#2E3644")
+        assertEquals(slate, AxmlReader.readManifest(manifestOf(v2.apk)).iconResId)
+        assertEquals(2, v2.record.versionCode)
+
+        // 系统视角核对：badging 解析出的应用图标文件 == arsc 里该预设资源指向的文件
+        assertLauncherIconResolves(v1.apk, "mipmap/icon_indigo")
+        assertLauncherIconResolves(v2.apk, "mipmap/icon_slate")
+    }
+
+    /** aapt badging 的 application icon 路径须等于 arsc 中 [resource] 指向的资源文件。 */
+    private fun assertLauncherIconResolves(apk: File, resource: String) {
+        val tools = locateAapt()
+        if (tools == null) {
+            println("skip badging 断言：未找到 Android SDK build-tools（arsc/manifest 断言已覆盖机制正确性）")
+            return
+        }
+        val (aapt, aapt2) = tools
+        val resources = run(aapt2, "dump", "resources", apk.absolutePath)
+        val lines = resources.lines()
+        val resIdx = lines.indexOfFirst { it.contains(resource) }
+        assertTrue(resIdx >= 0 && resIdx + 1 < lines.size, "arsc 中应含 $resource：\n$resources")
+        val fileLine = lines[resIdx + 1]
+        assertTrue(fileLine.contains("(file) res/"), "arsc $resource 条目下应有 (file) res/… 行：\n$resources")
+        val resPath = Regex("""\(file\) (res/\S+?) type=""").find(fileLine)!!.groupValues[1]
+
+        val badging = run(aapt, "d", "badging", apk.absolutePath)
+        val iconLine = badging.lineSequence().firstOrNull { it.startsWith("application: ") }
+            ?: error("badging 应有 application 行：\n$badging")
+        assertTrue(
+            iconLine.contains("icon='$resPath'"),
+            "launcher 图标应解析到 $resource 的资源文件 $resPath，实际：$iconLine",
+        )
+    }
+
+    private fun locateAapt(): Pair<String, String>? {
+        val sdk = System.getProperty("zhique.android.sdk") ?: return null
+        val dir = File(sdk, "build-tools")
+        val exe = if (System.getProperty("os.name").lowercase().contains("win")) ".exe" else ""
+        val best = dir.listFiles { f -> f.isDirectory && File(f, "aapt$exe").isFile }
+            ?.maxByOrNull { it.name } ?: return null
+        return File(best, "aapt$exe").absolutePath to File(best, "aapt2$exe").absolutePath
+    }
+
+    private fun run(vararg cmd: String): String {
+        val p = ProcessBuilder(*cmd).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        p.waitFor()
+        assertTrue(p.exitValue() == 0, "${cmd[0]} 退出码非 0：\n$out")
+        return out
+    }
 }

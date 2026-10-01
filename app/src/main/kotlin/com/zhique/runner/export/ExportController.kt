@@ -16,7 +16,12 @@ import kotlinx.coroutines.launch
 
 /** 导出执行缝（测试注入；生产 = ExportService::export）。 */
 fun interface ExportExecutor {
-    suspend fun export(projectId: String, appName: String, variant: String): ExportOutcome
+    suspend fun export(
+        projectId: String,
+        appName: String,
+        variant: String,
+        iconColor: String,
+    ): ExportOutcome
 }
 
 /** 导出向导状态（3 步：①应用信息 ②权限与签名 ③打包→完成）。 */
@@ -148,6 +153,7 @@ class ExportController(
                     projectId = snapshot.projectId,
                     appName = snapshot.appName,
                     variant = snapshot.variant,
+                    iconColor = snapshot.iconColor,
                 )
                 _state.update {
                     it.copy(running = false, result = outcome, backup = keystore.backupStatus())

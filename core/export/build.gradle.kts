@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -38,12 +39,20 @@ val harvestTemplates = tasks.register<Copy>("harvestTemplates") {
 val templateMinApkPath = templateMinApk.get().asFile.absolutePath
 val templateFullApkPath = templateFullApk.get().asFile.absolutePath
 
+// 图标注入 badging 断言用：SDK 路径（测试内找 build-tools/*/aapt；找不到则跳过该断言）
+val sdkDir: String? = System.getenv("ANDROID_HOME")
+    ?: System.getenv("ANDROID_SDK_ROOT")
+    ?: rootProject.file("local.properties").takeIf { it.isFile }?.let { props ->
+        Properties().apply { props.inputStream().use { load(it) } }.getProperty("sdk.dir")
+    }
+
 tasks.named("preBuild") { dependsOn(harvestTemplates) }
 
 tasks.withType<Test>().configureEach {
     dependsOn(":template-min:assembleRelease", ":template-full:assembleRelease")
     systemProperty("zhique.template.minApk", templateMinApkPath)
     systemProperty("zhique.template.fullApk", templateFullApkPath)
+    sdkDir?.let { systemProperty("zhique.android.sdk", it) }
 }
 
 dependencies {

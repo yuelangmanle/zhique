@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- M6 偏差③收口：模板壳预置两套 launcher 自适应图标背景色。
+     运行期导出不改 resources.arsc——AxmlPatcher 只把 application@icon
+     引用改写到这两套已存在资源之一（见 :core:export AssetInjector.IconPreset）。 -->
+<resources>
+    <color name="icon_bg_indigo">#46509F</color>
+    <color name="icon_bg_slate">#414B5C</color>
+</resources>

@@ -334,9 +334,9 @@ fun ZhiqueApp(
                                 repo = container.repo,
                                 registry = container.permissionRegistry,
                                 keystore = container.keystoreManager,
-                                executor = { projectId, appName, variant ->
+                                executor = { projectId, appName, variant, iconColor ->
                                     withContext(Dispatchers.IO) {
-                                        container.exportService.export(projectId, appName, variant)
+                                        container.exportService.export(projectId, appName, variant, iconColor)
                                     }
                                 },
                                 scope = scope,

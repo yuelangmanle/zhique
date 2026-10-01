@@ -55,8 +55,8 @@ class ExportControllerTest {
     private fun ctx(
         scheduler: TestCoroutineScheduler,
         backgroundScope: CoroutineScope,
-        executorFactory: (Ctx) -> suspend (String, String, String) -> ExportOutcome = {
-            { _, _, _ -> throw UnsupportedOperationException("not wired") }
+        executorFactory: (Ctx) -> suspend (String, String, String, String) -> ExportOutcome = {
+            { _, _, _, _ -> throw UnsupportedOperationException("not wired") }
         },
     ): Ctx {
         tmp.create()
@@ -71,7 +71,7 @@ class ExportControllerTest {
             repo = repo,
             registry = registry,
             keystore = keystore,
-            executor = { p, a, v -> executorFactory(c)(p, a, v) },
+            executor = { p, a, v, color -> executorFactory(c)(p, a, v, color) },
             scope = backgroundScope,
             ioDispatcher = StandardTestDispatcher(scheduler),
         )
@@ -137,7 +137,7 @@ class ExportControllerTest {
 
     @Test
     fun `打包成功后结果与导出记录就位`() = runTest {
-        val ctx = ctx(testScheduler, this) { c -> { p, _, v ->
+        val ctx = ctx(testScheduler, this) { c -> { p, _, v, _ ->
             assertEquals("min", v)
             c.outcome(1)
         } }
@@ -154,7 +154,7 @@ class ExportControllerTest {
 
     @Test
     fun `签名不一致时切阻断态且不产生结果`() = runTest {
-        val ctx = ctx(testScheduler, this) { _ -> { _, _, _ ->
+        val ctx = ctx(testScheduler, this) { _ -> { _, _, _, _ ->
             throw SignatureMismatchException("com.zhique.export.app", "ks", listOf("other"))
         } }
         ctx.controller.refresh(); advanceUntilIdle()
@@ -173,7 +173,7 @@ class ExportControllerTest {
     @Test
     fun `执行失败时错误可见可重试`() = runTest {
         var fail = true
-        val ctx = ctx(testScheduler, this) { c -> { p, _, _ ->
+        val ctx = ctx(testScheduler, this) { c -> { p, _, _, _ ->
             if (fail) throw IllegalStateException("打包失败")
             c.outcome(1)
         } }

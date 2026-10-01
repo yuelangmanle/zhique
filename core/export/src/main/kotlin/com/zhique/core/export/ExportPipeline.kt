@@ -48,6 +48,8 @@ class ExportPipeline(
         val appName: String,
         val projectFiles: Map<String, ByteArray>,
         val signingKey: Signer.Key,
+        /** 项目图标色（`#RRGGBB`）：映射最近预置图标资源改写 launcher 引用；null 保持模板默认。 */
+        val iconColor: String? = null,
     )
 
     data class Output(val apk: File, val certSha256: String)
@@ -72,7 +74,15 @@ class ExportPipeline(
     private fun exportInternal(request: Request, unsigned: File, signed: File): String {
         // ① 注入项目资产（旧 assets/project 全删）
         injector.inject(templates.template(request.variant), request.projectFiles, unsigned)
-        // ② 身份补丁：从 APK 里取出二进制 manifest → 改写 package/versionCode/versionName/label → 写回
+        // ①' launcher 图标（M6 偏差③）：项目图标色 → 最近预置资源 → 资源 ID
+        //     （从模板 resources.arsc 查，arsc 本身不动）；null=保持模板默认
+        val icon = request.iconColor?.let { hex ->
+            val preset = nearestIconPreset(hex)
+            val arsc = injector.resourcesArsc(templates.template(request.variant))
+                ?: throw IllegalStateException("模板缺 resources.arsc，无法定位图标资源")
+            preset to ResourceTableReader.entryId(arsc, "mipmap", preset.resName)
+        }
+        // ② 身份补丁：从 APK 里取出二进制 manifest → 改写 package/versionCode/versionName/label/icon → 写回
         ZipArchive(unsigned.toPath()).use { zip ->
             val buf = zip.getContent(MANIFEST_ENTRY)
             val manifestBytes = ByteArray(buf.remaining()).also { buf.get(it) }
@@ -86,7 +96,8 @@ class ExportPipeline(
                             versionCode = request.versionCode,
                             versionName = request.versionName,
                             label = request.appName,
-                        ),
+                            iconResId = icon?.second?.toInt(),
+                            iconRef = icon?.first?.ref,                        ),
                     ),
                     MANIFEST_ENTRY,
                     Deflater.BEST_SPEED,
@@ -123,8 +134,14 @@ class ExportService(
 
     /**
      * 完整导出。[SignatureMismatchException] 会原样抛出（UI 阻断页的触发源）。
+     * [iconColor] 为导出向导当次选择的图标色（null 用项目 [ProjectMeta.iconColor]）。
      */
-    fun export(projectId: String, appName: String, variant: String): ExportOutcome {
+    fun export(
+        projectId: String,
+        appName: String,
+        variant: String,
+        iconColor: String? = null,
+    ): ExportOutcome {
         guard?.verifyBeforeExport(projectId)
         val meta = repo.meta(projectId)
         val pkg = version.packageName(meta)
@@ -142,6 +159,7 @@ class ExportService(
                     repo.projectDir(projectId),
                     extra = mapOf(AssetInjector.PROJECT_JSON_ENTRY to metaJson),
                 ),
+                iconColor = iconColor ?: meta.iconColor,
                 signingKey = keystore.signingKey(),
             ),
         )

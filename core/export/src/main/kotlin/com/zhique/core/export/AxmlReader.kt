@@ -10,6 +10,8 @@ object AxmlReader {
         val versionCode: Long?,
         val versionName: String?,
         val label: String?,
+        /** application@icon 的资源完整 ID（REFERENCE typed value；无 icon 属性为 null）。 */
+        val iconResId: Long? = null,
     )
 
     private const val RES_STRING_POOL_TYPE = 0x0001
@@ -17,6 +19,7 @@ object AxmlReader {
     private const val TYPE_STRING = 0x03
     private const val TYPE_INT_DEC = 0x10
     private const val TYPE_INT_HEX = 0x11
+    private const val TYPE_REFERENCE = 0x01
 
     fun readManifest(manifest: ByteArray): ManifestInfo {
         val fileHeaderSize = shortAt(manifest, 2) // 文件头：type(2)+headerSize(2)+size(4)
@@ -27,6 +30,7 @@ object AxmlReader {
         var code: Long? = null
         var vName: String? = null
         var label: String? = null
+        var icon: Long? = null
         while (off < manifest.size) {
             val chunkType = shortAt(manifest, off)
             val chunkSize = intAt(manifest, off + 4)
@@ -51,13 +55,15 @@ object AxmlReader {
                         "manifest" to "versionCode" -> code = value as? Long
                         "manifest" to "versionName" -> vName = value as? String
                         "application" to "label" -> label = value as? String
+                        "application" to "icon" ->
+                            if (dataType == TYPE_REFERENCE) icon = dataVal.toLong()
                     }
                 }
             }
             if (chunkSize <= 0) break
             off += chunkSize
         }
-        return ManifestInfo(pkg, code, vName, label)
+        return ManifestInfo(pkg, code, vName, label, icon)
     }
 
     /** 解码字符串池（测试核对用）。返回 (字符串清单, 是否 UTF-8 编码)。 */

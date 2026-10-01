@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 预设 launcher 图标·靛蓝（默认，同织雀语义色） -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/icon_bg_indigo" />
+    <foreground android:drawable="@drawable/icon_foreground" />
+</adaptive-icon>

@@ -60,7 +60,7 @@ class ExportWizardScreenTest {
     private fun setup(
         scheduler: TestCoroutineScheduler,
         backgroundScope: CoroutineScope,
-        executor: suspend (String, String, String) -> ExportOutcome = { _, _, _ ->
+        executor: suspend (String, String, String, String) -> ExportOutcome = { _, _, _, _ ->
             throw UnsupportedOperationException()
         },
     ) {
@@ -111,7 +111,7 @@ class ExportWizardScreenTest {
 
     @Test
     fun `打包完成页展示包信息与交付动作`() = runTest {
-        setup(testScheduler, this) { p, _, _ ->
+        setup(testScheduler, this) { p, _, _, _ ->
             ExportOutcome(
                 apk = File(tmp.newFolder(), "out.apk").apply { writeBytes(ByteArray(4)) },
                 record = ExportRecord("com.zhique.export.app", 1, "1.0.1", 42, "min", "a".repeat(64)),
@@ -131,7 +131,7 @@ class ExportWizardScreenTest {
 
     @Test
     fun `签名不一致出现阻断页说明出路`() = runTest {
-        setup(testScheduler, this) { _, _, _ ->
+        setup(testScheduler, this) { _, _, _, _ ->
             throw SignatureMismatchException("com.zhique.export.app", "ks", listOf("other"))
         }
         compose.onNodeWithTag("wizard-name").performTextInput("便签plus")
