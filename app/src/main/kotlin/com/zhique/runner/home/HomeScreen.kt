@@ -298,7 +298,7 @@ private fun ProjectCard(
         Row(
             Modifier
                 .fillMaxWidth()
-                .combinedClickable(onClick = {}, onLongClick = onLongPress)
+                .combinedClickable(onClick = onRun, onLongClick = onLongPress)
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -149,6 +149,24 @@ fun ZhiqueApp(
         agentMeta0 != null || editorMeta0 != null || pasteDraft != null || wizardMeta0 != null ||
         publishMeta0 != null
 
+    // 系统返回键按「当前最深层界面」逐级回退（质量修复：此前无 BackHandler，
+    // 二级页按返回直接 finish Activity 退出应用）。回退语义与 when 分支优先级一致。
+    androidx.activity.compose.BackHandler(enabled = onboardingNeeded == false) {
+        when {
+            runnerProject != null -> { runnerProject = null; pendingProjectId = null }
+            agentMeta0 != null -> agentProject = null
+            editorMeta0 != null -> { editorProject = null; chatAsk = null }
+            pasteDraft != null -> pasteDraft = null
+            wizardMeta0 != null -> wizardProject = null
+            publishMeta0 != null -> publishProject = null
+            chatAsk != null -> chatAsk = null
+            settingsPage != null -> { settingsPage = null; permFocus = null }
+            permFocus != null -> permFocus = null
+            promptSeed != null -> promptSeed = null
+            tab != TAB_PROJECTS -> tab = TAB_PROJECTS
+        }
+    }
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {

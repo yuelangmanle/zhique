@@ -28,6 +28,11 @@ android {
     val releaseStoreFile = File(releaseStorePath).canonicalFile
     require(releaseStoreFile.path.endsWith("zhique-release.jks")) { "签名库文件名须为 zhique-release.jks" }
     val releasePassFile = File(releaseStoreFile.parentFile, "password.txt").canonicalFile
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures { compose = true }
     signingConfigs {
         if (releaseStoreFile.exists()) {
             create("release") {
