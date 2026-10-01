@@ -52,6 +52,8 @@ fun PastePreviewScreen(
     controller: PastePreviewController,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** CompatHint 反向兜底入口（Task 8.2）：带原句跳织雀提示词桥重写。 */
+    onOpenPromptBridge: ((seed: String) -> Unit)? = null,
 ) {
     val s by controller.state.collectAsState()
     var reportExpanded by remember { mutableStateOf(false) }
@@ -143,6 +145,14 @@ fun PastePreviewScreen(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.testTag("paste-hints"),
                         )
+                        onOpenPromptBridge?.let { open ->
+                            TextButton(
+                                onClick = { open(controller.state.value.raw) },
+                                modifier = Modifier.testTag("paste-hints-promptbridge"),
+                            ) {
+                                Text("想调系统权限？用织雀提示词桥重写 →")
+                            }
+                        }
                     }
                     s.error?.let { error ->
                         Text(

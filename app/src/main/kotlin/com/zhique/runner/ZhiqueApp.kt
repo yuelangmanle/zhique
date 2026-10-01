@@ -81,6 +81,8 @@ fun ZhiqueApp(
     var tab by rememberSaveable { mutableStateOf(TAB_PROJECTS) }
     var settingsPage by rememberSaveable { mutableStateOf<String?>(null) }
     var permFocus by rememberSaveable { mutableStateOf<String?>(null) }
+    // 织雀提示词桥预填（CompatHint 反向兜底入口带入粘贴原句）
+    var promptSeed by remember { mutableStateOf<String?>(null) }
 
     // 首启引导：仅在未完成时显示（X4）
     var onboardingNeeded by remember { mutableStateOf<Boolean?>(null) }
@@ -267,6 +269,12 @@ fun ZhiqueApp(
                         PastePreviewScreen(
                             controller = controller,
                             onBack = { pasteDraft = null },
+                            onOpenPromptBridge = { seed ->
+                                promptSeed = seed
+                                pasteDraft = null
+                                tab = TAB_SETTINGS
+                                settingsPage = "promptbridge"
+                            },
                         )
                     }
                     wizardMeta0 != null -> {
@@ -370,6 +378,7 @@ fun ZhiqueApp(
                             },
                             apilot = container.apilotController,
                             onBack = { settingsPage = null },
+                            onOpenPromptBridge = { settingsPage = "promptbridge" },
                         )
                         "router" -> RoleRouterPage(container, scope, onBack = { settingsPage = null })
                         "permissions" -> PermissionCenterPage(
@@ -391,6 +400,17 @@ fun ZhiqueApp(
                             container = container,
                             scope = scope,
                             onBack = { settingsPage = null },
+                            onToast = toast,
+                        )
+                        "promptbridge" -> com.zhique.runner.settings.PromptBridgeScreen(
+                            controller = remember {
+                                com.zhique.runner.settings.PromptBridgeController()
+                            },
+                            onBack = {
+                                settingsPage = null
+                                promptSeed = null
+                            },
+                            initialIdea = promptSeed,
                             onToast = toast,
                         )
                         else -> SettingsScreen(

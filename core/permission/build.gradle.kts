@@ -34,4 +34,6 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    // M8 提示词桥防漂移：zq-docs 资产清单 × Capability 枚举交叉比对
+    testImplementation(project(":core:paste"))
 }

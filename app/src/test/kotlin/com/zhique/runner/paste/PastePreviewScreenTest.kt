@@ -106,4 +106,26 @@ class PastePreviewScreenTest {
         kotlin.test.assertTrue(ran)
         kotlin.test.assertEquals(1, repo.list().size)
     }
+
+    @Test
+    fun `CompatHint入口跳织雀提示词桥带原句`() {
+        val (c, _) = newController()
+        var seed: String? = null
+        compose.setContent {
+            ZqTheme {
+                PastePreviewScreen(
+                    controller = c,
+                    onBack = {},
+                    onOpenPromptBridge = { seed = it },
+                )
+            }
+        }
+        // 粘贴内容带标准权限 API 与 zq 调用 → 触发 CompatHint 与入口按钮
+        c.start("<html><body><script>navigator.mediaDevices.getUserMedia(function(){});zq.camera.capture();</script></body></html>")
+        compose.waitForIdle()
+        compose.onNodeWithTag("paste-hints").assertExists()
+        compose.onNodeWithTag("paste-hints-promptbridge").performClick()
+        compose.waitForIdle()
+        kotlin.test.assertTrue(seed!!.contains("getUserMedia"))
+    }
 }
