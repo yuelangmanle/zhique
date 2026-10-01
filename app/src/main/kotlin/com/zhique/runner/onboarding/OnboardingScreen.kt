@@ -28,15 +28,25 @@ import androidx.compose.ui.unit.dp
 
 /**
  * 首启引导（规格 §5.3 屏 1，X4 90 秒）：
- * 步骤 1 粘贴识别 API 配置 → 预填表单 + 测连通；步骤 2 Apilot 接入入口占位（待 M8）；
+ * 步骤 1 粘贴识别 API 配置 → 预填表单 + 测连通；步骤 2 Apilot 接入（M8 激活：
+ * 四档 scope 授权读取，Key 不勾不回传）；
  * 可跳过玩示例；隐私告知卡勾选记录（「代码将发送至你配置的服务商」）。
  */
 @Composable
 fun OnboardingScreen(
     controller: OnboardingController,
     modifier: Modifier = Modifier,
+    apilot: com.zhique.runner.settings.ApilotController? = null,
 ) {
     val state by controller.state.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val apilotState: com.zhique.runner.settings.ApilotController.UiState? = apilot?.state?.collectAsState()?.value
+    val apilotNotice = apilotState?.notice
+    val apilotLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
+    }
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
@@ -95,15 +105,28 @@ fun OnboardingScreen(
                     modifier = Modifier.testTag("onb-notice"))
             }
 
-            // 步骤 2：Apilot 接入入口（占位，M8 接线 §4.9）
+            // 步骤 2：Apilot 接入（M8 接线 §4.9：PICK_API_CONFIG 四档 scope）
             Column(Modifier.fillMaxWidth().testTag("onb-apilot-card")) {
                 Text("步骤 2 · 从 Apilot 导入（可选）", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "已装 Apilot？一步授权读取 API 配置（Key 不勾不回传）。",
+                    "已装 Apilot？一步授权读取 API 配置（Key 不勾不回传）。" +
+                        if (apilotState?.installed == true) "已检测到 Apilot。" else "未检测到 Apilot 时此步可跳过。",
                     color = MaterialTheme.colorScheme.secondary,
                 )
-                OutlinedButton(onClick = { /* 待 M8：PICK_API_CONFIG 意图 */ }, modifier = Modifier.testTag("onb-apilot")) {
-                    Text("Apilot 接入（待 M8）")
+                OutlinedButton(
+                    onClick = { apilot?.let { apilotLauncher.launch(it.pickIntent()) } },
+                    enabled = apilot != null && apilotState?.installed == true,
+                    modifier = Modifier.testTag("onb-apilot"),
+                ) {
+                    Text("从 Apilot 接入")
+                }
+                apilotNotice?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.testTag("onb-apilot-notice"),
+                    )
                 }
             }
 

@@ -87,9 +87,9 @@ class OnboardingScreenTest {
         compose.onNodeWithText("已识别并预填，请核对后测连通").assertExists()
         assertEquals("https://api.example.invalid", c.state.value.baseUrl)
         assertEquals("deepseek-chat", c.state.value.model)
-        // Apilot 占位与隐私卡在场
+        // Apilot 接入卡（M8 已激活；未装 Apilot 时按钮禁用）与隐私卡在场
         compose.onNodeWithTag("onb-apilot-card").assertExists()
-        compose.onNodeWithText("Apilot 接入（待 M8）").assertExists()
+        compose.onNodeWithText("从 Apilot 接入").assertExists()
     }
 
     @Test

@@ -155,6 +155,7 @@ fun ZhiqueApp(
                                 },
                             )
                         },
+                        apilot = container.apilotController,
                     )
                     meta != null -> RunnerScreen(
                         project = meta,
@@ -367,6 +368,7 @@ fun ZhiqueApp(
                             controller = remember {
                                 ProvidersController(container.providerStore, ModelListFetcher(), scope)
                             },
+                            apilot = container.apilotController,
                             onBack = { settingsPage = null },
                         )
                         "router" -> RoleRouterPage(container, scope, onBack = { settingsPage = null })

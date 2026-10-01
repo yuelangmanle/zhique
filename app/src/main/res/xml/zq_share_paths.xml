@@ -4,4 +4,6 @@
     <files-path name="projects" path="zhique-root/projects/" />
     <!-- M6 导出物分享（apk / .jks 备份） -->
     <cache-path name="exports" path="exports/" />
+    <!-- M8 Apilot 导入大负载的一次性只读 URI（即用即弃，Apilot 侧 10 分钟后亦清理） -->
+    <cache-path name="apilot" path="apilot/" />
 </paths>

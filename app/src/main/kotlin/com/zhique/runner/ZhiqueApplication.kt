@@ -44,6 +44,53 @@ class AppContainer(
         com.zhique.runner.onboarding.OnboardingPreferences(settingsDataStore)
     }
 
+    // ---- M8 互联（Apilot 双向流转） ----
+
+    /** 桥接审计记录（不含 Key/payload，设置里可清）。 */
+    val apilotAudit: com.zhique.core.apilot.ApilotAuditStore by lazy {
+        com.zhique.core.apilot.ApilotAuditStore(File(File(context.filesDir, "apilot"), "audit.jsonl"))
+    }
+
+    /** 上次接入/推送时间（与设置域共用 DataStore）。 */
+    val apilotSync: com.zhique.runner.settings.ApilotSyncStore by lazy {
+        com.zhique.runner.settings.ApilotSyncStore(settingsDataStore)
+    }
+
+    private val appScope: kotlinx.coroutines.CoroutineScope by lazy {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+    }
+
+    /**
+     * Apilot 双向流转控制器（进程级单点）。
+     * 大负载 URI 通道走 zqfile FileProvider 的 apilot/ 缓存目录（一次性 content URI）。
+     */
+    val apilotController: com.zhique.runner.settings.ApilotController by lazy {
+        val appContext = context
+        com.zhique.runner.settings.ApilotController(
+            store = providerStore,
+            audit = apilotAudit,
+            sync = apilotSync,
+            checkInstalled = {
+                com.zhique.core.apilot.ApilotBridge.isInstalled(appContext)
+            },
+            signatureProvider = {
+                com.zhique.core.apilot.ApilotBridge().ownSignatureSha256(appContext)
+            },
+            uriProvider = { json -> apilotPayloadUri(appContext, json) },
+            selfPackageName = context.packageName,
+            scope = appScope,
+        )
+    }
+
+    /** 把导入 payload 落成一次性只读 content URI（Apilot 10 分钟后删缓存，本方即用即弃）。 */
+    private fun apilotPayloadUri(appContext: android.content.Context, json: String): android.net.Uri {
+        val dir = File(appContext.cacheDir, "apilot").apply { mkdirs() }
+        // 清掉上一轮残留（上次授权的临时文件）
+        dir.listFiles()?.forEach { it.delete() }
+        val file = File(dir, "payload-${System.currentTimeMillis()}.json").apply { writeText(json) }
+        return androidx.core.content.FileProvider.getUriForFile(appContext, "${appContext.packageName}.zqfile", file)
+    }
+
     /** 授权卡状态持有者（PermissionPrompt 的 :app 实现，进程级单实例）。 */
     val permissionPrompt: com.zhique.runner.permission.AppPermissionPrompt by lazy {
         com.zhique.runner.permission.AppPermissionPrompt()
