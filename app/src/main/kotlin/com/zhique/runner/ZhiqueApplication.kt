@@ -13,6 +13,8 @@ import com.zhique.runner.settings.AndroidKeystoreProvider
 import com.zhique.runner.settings.ProviderStore
 import com.zhique.runner.settings.RoleBindingStore
 import java.io.File
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /** 进程级依赖容器。密钥主密钥来源可注入（测试用软件 KeyProvider，生产走 AndroidKeystore）。 */
 class AppContainer(
@@ -139,9 +141,65 @@ class AppContainer(
         com.zhique.core.publish.PatStore(File(root, "publish/pat.enc"), CryptoStore(keyProvider))
     }
 
-    /** 发布偏好（更新通道 stable/beta，与设置域共用 DataStore）。 */
+    /** 发布偏好（更新通道 stable/beta + 推送偏好，与设置域共用 DataStore）。 */
     val publishPreferences: com.zhique.runner.settings.PublishPreferences by lazy {
         com.zhique.runner.settings.PublishPreferences(settingsDataStore)
+    }
+
+    // ---- M9 设置全集 ----
+
+    /** 输出·思考·上下文设置（规格 §7 AI 服务商子节点）。 */
+    val aiPreferences: com.zhique.runner.settings.AiPreferences by lazy {
+        com.zhique.runner.settings.AiPreferences(settingsDataStore)
+    }
+
+    /** Web 设置（桌面 UA/下载行为/eruda 开关）。 */
+    val webPreferences: com.zhique.runner.settings.WebPreferences by lazy {
+        com.zhique.runner.settings.WebPreferences(settingsDataStore)
+    }
+
+    /** 通用设置（外观/运行器/编辑器/通知三事件开关）。 */
+    val generalPreferences: com.zhique.runner.settings.GeneralPreferences by lazy {
+        com.zhique.runner.settings.GeneralPreferences(settingsDataStore)
+    }
+
+    /** 隐私与安全存储（应用锁 PIN 哈希/隐私告知记录）。 */
+    val privacyPreferences: com.zhique.runner.settings.PrivacyPreferences by lazy {
+        com.zhique.runner.settings.PrivacyPreferences(settingsDataStore)
+    }
+
+    /** 应用锁控制器（进程级单点；MainActivity/ZhiqueApp 接 onResume/onStop）。 */
+    val appLockController: com.zhique.runner.settings.AppLockController by lazy {
+        com.zhique.runner.settings.AppLockController(privacyPreferences, appScope)
+    }
+
+    /**
+     * 通知三事件触发缝（M9）：先查通用设置的三枚开关，再落系统通知。
+     * 通知权限未授予/渠道缺失时内部静默跳过。
+     */
+    val eventNotifier: com.zhique.runner.notify.EventNotifier by lazy {
+        val appContext = context
+        val general = generalPreferences
+        val generalScope = appScope
+        { channel: String, title: String, body: String ->
+            generalScope.launch {
+                val allowed = when (channel) {
+                    com.zhique.runner.notify.ZhiqueNotifications.CHANNEL_EXPORT_DONE ->
+                        general.notifyExportDone.first()
+                    com.zhique.runner.notify.ZhiqueNotifications.CHANNEL_AGENT_DONE ->
+                        general.notifyAgentDone.first()
+                    com.zhique.runner.notify.ZhiqueNotifications.CHANNEL_NEW_VERSION ->
+                        general.notifyNewVersion.first()
+                    else -> false
+                }
+                if (allowed) {
+                    com.zhique.runner.notify.ZhiqueNotifications.notify(
+                        appContext, channel, title, body,
+                        notificationId = (title.hashCode() to body.hashCode()).hashCode(),
+                    )
+                }
+            }
+        }
     }
 
     /** Git 底座（JGit）与 GitHub REST（OkHttp，PAT 零日志）。 */
@@ -185,6 +243,12 @@ class AppContainer(
 
 class ZhiqueApplication : Application() {
     val container: AppContainer by lazy { AppContainer(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        // M9：通知三事件渠道注册（幂等）
+        com.zhique.runner.notify.ZhiqueNotifications.ensureChannels(this)
+    }
 }
 
 /** 前台读剪贴板一次（回前台/显式刷新时调用，不做后台监听）。 */

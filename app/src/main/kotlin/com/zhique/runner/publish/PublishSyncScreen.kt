@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zhique.core.publish.PatStore
 import com.zhique.runner.settings.PublishPreferences
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -54,11 +55,17 @@ fun PublishSyncScreen(
     var patStatus by remember { mutableStateOf("检查中…") }
     var hasPat by remember { mutableStateOf(false) }
     var channel by remember { mutableStateOf(PublishPreferences.CHANNEL_STABLE) }
+    var commitLang by remember { mutableStateOf(PublishPreferences.COMMIT_ZH) }
+    var defaultBranch by remember { mutableStateOf(PublishPreferences.DEFAULT_BRANCH) }
+    var newRepoPrivate by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         hasPat = patStore.hasPat()
         patStatus = if (hasPat) "已配置（加密存储于本机）" else "未配置"
         channel = prefs.channelNow()
+        commitLang = prefs.commitLanguage.first()
+        defaultBranch = prefs.defaultBranch.first()
+        newRepoPrivate = prefs.newRepoPrivate.first()
     }
 
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -169,6 +176,71 @@ fun PublishSyncScreen(
                     )
                     Text("beta")
                 }
+
+                // ---- M9 补齐：推送偏好（commit 语言 / 默认分支 / 新仓默认公私） ----
+                Spacer(Modifier.height(24.dp))
+                Text("推送偏好", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "commit 语言影响 AI 生成的提交信息；默认分支与新仓可见性用于首次发布建仓。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("commit-lang-picker")) {
+                    RadioButton(
+                        selected = commitLang == PublishPreferences.COMMIT_ZH,
+                        onClick = {
+                            commitLang = PublishPreferences.COMMIT_ZH
+                            scope.launch { prefs.setCommitLanguage(commitLang) }
+                        },
+                        modifier = Modifier.testTag("commit-lang-zh"),
+                    )
+                    Text("中文")
+                    Spacer(Modifier.width(16.dp))
+                    RadioButton(
+                        selected = commitLang == PublishPreferences.COMMIT_EN,
+                        onClick = {
+                            commitLang = PublishPreferences.COMMIT_EN
+                            scope.launch { prefs.setCommitLanguage(commitLang) }
+                        },
+                        modifier = Modifier.testTag("commit-lang-en"),
+                    )
+                    Text("English")
+                }
+                OutlinedTextField(
+                    value = defaultBranch,
+                    onValueChange = { defaultBranch = it },
+                    label = { Text("默认分支") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("default-branch-input"),
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.testTag("new-repo-private-row"),
+                ) {
+                    Text("新仓库默认私有", Modifier.weight(1f))
+                    androidx.compose.material3.Switch(
+                        checked = newRepoPrivate,
+                        onCheckedChange = {
+                            newRepoPrivate = it
+                            scope.launch { prefs.setNewRepoPrivate(it) }
+                        },
+                        modifier = Modifier.testTag("new-repo-private-switch"),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        scope.launch {
+                            runCatching { prefs.setDefaultBranch(defaultBranch.trim()) }
+                                .onSuccess { onToast("推送偏好已保存") }
+                                .onFailure { onToast("保存失败：${it.message}") }
+                        }
+                    },
+                    enabled = defaultBranch.isNotBlank(),
+                    modifier = Modifier.testTag("push-prefs-save"),
+                ) { Text("保存推送偏好") }
             }
         }
     }

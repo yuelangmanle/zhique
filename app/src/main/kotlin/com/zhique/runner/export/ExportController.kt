@@ -51,6 +51,8 @@ class ExportController(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onToast: (String) -> Unit = {},
+    /** 通知三事件挂点（M9）：导出成功触发「导出完成」，开关过滤在容器侧。 */
+    private val onNotify: (channel: String, title: String, body: String) -> Unit = { _, _, _ -> },
 ) {
 
     private val _state = MutableStateFlow(ExportWizardState(projectId = projectId))
@@ -150,6 +152,11 @@ class ExportController(
                 _state.update {
                     it.copy(running = false, result = outcome, backup = keystore.backupStatus())
                 }
+                onNotify(
+                    com.zhique.runner.notify.ZhiqueNotifications.CHANNEL_EXPORT_DONE,
+                    "导出完成",
+                    "${outcome.record.packageName} v${outcome.record.versionName} 已打包（${outcome.record.variant}）",
+                )
             } catch (e: SignatureMismatchException) {
                 _state.update { it.copy(running = false, mismatch = true, error = e.message) }
             } catch (t: Throwable) {

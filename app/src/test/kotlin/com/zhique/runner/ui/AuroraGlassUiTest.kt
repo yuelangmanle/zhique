@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class AuroraGlassDesignTest {
+class AuroraGlassUiTest {
 
     // ---- 动效常量（规格 §5.2：damping 0.75–0.85） ----
 

@@ -61,6 +61,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.biometric)
 
     implementation(project(":core:common"))
     implementation(project(":core:project"))

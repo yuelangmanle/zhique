@@ -91,6 +91,8 @@ class AgentController(
         val web: WebControl? = null,
         val recordUsage: (suspend (Int) -> Unit)? = null,
         val onToast: (String) -> Unit = {},
+        /** 通知三事件挂点（M9）：Agent 完成触发，开关过滤在容器侧。 */
+        val onNotify: (channel: String, title: String, body: String) -> Unit = { _, _, _ -> },
     )
 
     private val _state = MutableStateFlow(AgentUiState(goal = "", projectName = deps.projectName, vision = deps.vision))
@@ -302,8 +304,15 @@ class AgentController(
                 _state.update { it.copy(awaitConfirm = e) }
             }
             AgentEvent.BudgetHit -> _state.update { it.copy(running = false, budgetHit = true, budget = budgetUi(b)) }
-            is AgentEvent.Finished -> _state.update {
-                it.copy(running = false, finished = true, contextUsage = asm.usage(), budget = budgetUi(b))
+            is AgentEvent.Finished -> {
+                _state.update {
+                    it.copy(running = false, finished = true, contextUsage = asm.usage(), budget = budgetUi(b))
+                }
+                deps.onNotify(
+                    com.zhique.runner.notify.ZhiqueNotifications.CHANNEL_AGENT_DONE,
+                    "Agent 完成",
+                    "「${_state.value.goal.take(24)}」任务已完成",
+                )
             }
             is AgentEvent.Failed -> _state.update { it.copy(running = false, error = e.message, budget = budgetUi(b)) }
         }

@@ -40,6 +40,8 @@ class AboutController(
     private val downloadsDir: File,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** 通知三事件挂点（M9）：发现新版本触发，开关过滤在容器侧。 */
+    private val onNotify: (channel: String, title: String, body: String) -> Unit = { _, _, _ -> },
 ) {
 
     private val _state = MutableStateFlow(AboutUiState(version = currentVersion))
@@ -73,6 +75,13 @@ class AboutController(
                     checking = false,
                     update = info,
                     updateMessage = info?.let { u -> "发现新版本 ${u.tagName}，可下载安装" } ?: "已是最新版本",
+                )
+            }
+            if (info != null) {
+                onNotify(
+                    com.zhique.runner.notify.ZhiqueNotifications.CHANNEL_NEW_VERSION,
+                    "织雀新版本",
+                    "发现新版本 ${info.tagName}，可到「关于织雀」下载安装",
                 )
             }
         }

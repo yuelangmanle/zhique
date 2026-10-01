@@ -12,6 +12,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -83,6 +84,26 @@ fun ZhiqueApp(
     var permFocus by rememberSaveable { mutableStateOf<String?>(null) }
     // 织雀提示词桥预填（CompatHint 反向兜底入口带入粘贴原句）
     var promptSeed by remember { mutableStateOf<String?>(null) }
+
+    // M9：应用锁状态（前台恢复即锁；验证通过放行）
+    val appLock = container.appLockController
+    val lockState by appLock.state.collectAsState()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    // M9：eruda 开关（进入运行器前读取一次；重开运行器生效）
+    var erudaEnabled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { erudaEnabled = container.webPreferences.erudaNow() }
+
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> appLock.onForeground()
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> appLock.onBackground()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // 首启引导：仅在未完成时显示（X4）
     var onboardingNeeded by remember { mutableStateOf<Boolean?>(null) }
@@ -162,6 +183,7 @@ fun ZhiqueApp(
                     meta != null -> RunnerScreen(
                         project = meta,
                         projectDir = container.projectDir(meta.id),
+                        erudaEnabled = erudaEnabled,
                         onBack = {
                             runnerProject = null
                             pendingProjectId = null
@@ -188,6 +210,15 @@ fun ZhiqueApp(
                         var agentController by remember(agentMeta.id) { mutableStateOf<AgentController?>(null) }
                         LaunchedEffect(agentMeta.id) {
                             val wired = AiWiring(container).wire(AgentRole.AGENT_MAIN, agentMeta.id)
+                            // 隐私告知记录（规格 §6：首次使用 Agent/云 API 前告知；此处落确认时间戳）
+                            launch {
+                                runCatching {
+                                    container.privacyPreferences.recordNotice(
+                                        "agent",
+                                        java.time.Instant.now().toString(),
+                                    )
+                                }
+                            }
                             agentController = wired?.let { w ->
                                 AgentController(
                                     scope = scope,
@@ -205,6 +236,7 @@ fun ZhiqueApp(
                                         web = agentBridge.webControl(),
                                         recordUsage = w.recordUsage,
                                         onToast = toast,
+                                        onNotify = container.eventNotifier,
                                     ),
                                 )
                             }
@@ -292,6 +324,7 @@ fun ZhiqueApp(
                                 },
                                 scope = scope,
                                 onToast = toast,
+                                onNotify = container.eventNotifier,
                             )
                         }
                         com.zhique.runner.export.ExportWizardScreen(
@@ -413,13 +446,46 @@ fun ZhiqueApp(
                             initialIdea = promptSeed,
                             onToast = toast,
                         )
+                        "output" -> com.zhique.runner.settings.OutputContextScreen(
+                            prefs = container.aiPreferences,
+                            onBack = { settingsPage = null },
+                            onToast = toast,
+                        )
+                        "tokens" -> com.zhique.runner.settings.TokenStatsScreen(
+                            usageMeter = container.usageMeter,
+                            onBack = { settingsPage = null },
+                        )
+                        "general" -> com.zhique.runner.settings.GeneralScreen(
+                            general = container.generalPreferences,
+                            paste = container.pastePreferences,
+                            web = container.webPreferences,
+                            onBack = { settingsPage = null },
+                            onToast = toast,
+                        )
+                        "privacy" -> com.zhique.runner.settings.PrivacyScreen(
+                            privacy = container.privacyPreferences,
+                            lock = container.appLockController,
+                            audit = container.apilotAudit,
+                            onBack = { settingsPage = null },
+                            onToast = toast,
+                        )
+                        "developer" -> com.zhique.runner.settings.DeveloperScreen(
+                            web = container.webPreferences,
+                            onBack = { settingsPage = null },
+                            onToast = toast,
+                        )
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },
                             onOpenProviders = { settingsPage = "providers" },
                             onOpenRoleRouter = { settingsPage = "router" },
+                            onOpenOutputContext = { settingsPage = "output" },
+                            onOpenTokenStats = { settingsPage = "tokens" },
                             onOpenPermissionCenter = { settingsPage = "permissions" },
                             onOpenPublishSync = { settingsPage = "publish" },
+                            onOpenGeneral = { settingsPage = "general" },
+                            onOpenPrivacy = { settingsPage = "privacy" },
                             onOpenAbout = { settingsPage = "about" },
+                            onOpenDeveloper = { settingsPage = "developer" },
                         )
                     }
                     else -> HomeScreen(
@@ -471,6 +537,13 @@ fun ZhiqueApp(
             }
             // 授权卡浮在最上层（M5：zq/W3C 授权路径的唯一 UI 出口）
             com.zhique.runner.permission.PermissionPromptHost(container.permissionPrompt)
+            // M9：应用锁验证门（最顶层，锁住全部内容）
+            if (lockState.locked) {
+                com.zhique.runner.settings.AppLockScreen(
+                    controller = appLock,
+                    state = lockState,
+                )
+            }
         }
     }
 }
@@ -497,6 +570,11 @@ private fun ChatPage(
     var controller by remember { mutableStateOf<ChatController?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
+        launch {
+            runCatching {
+                container.privacyPreferences.recordNotice("chat", java.time.Instant.now().toString())
+            }
+        }
         val wired = AiWiring(container).wire(AgentRole.CHAT)
         controller = wired?.let { w ->
             ChatController(
@@ -591,6 +669,7 @@ private fun AboutPage(
             download = { info, dir, onProgress -> checker.downloadApk(info, dir, onProgress) },
             downloadsDir = downloadsDir,
             scope = scope,
+            onNotify = container.eventNotifier,
         )
     }
     com.zhique.runner.settings.AboutScreen(controller = controller, onBack = onBack, onToast = onToast)

@@ -228,9 +228,13 @@ fun RunnerScreen(
     onSendToAgent: () -> Unit = {},
     onOpenEditor: () -> Unit = {},
     registry: com.zhique.core.permission.PermissionRegistry? = null,
+    /** M9：eruda 高级面板开关（设置「通用 → Web」，重开运行器生效）。 */
+    erudaEnabled: Boolean = false,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val host = remember(project.id) { WebViewHost(context, projectDir) }
+    val host = remember(project.id) {
+        WebViewHost(context, projectDir).also { it.erudaEnabled = erudaEnabled }
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var recreateKey by remember { mutableIntStateOf(0) }
     var capability by remember { mutableStateOf<CapabilityReport?>(null) }
