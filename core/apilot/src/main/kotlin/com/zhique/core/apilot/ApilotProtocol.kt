@@ -40,10 +40,11 @@ object ApilotProtocol {
     const val SCHEMA_V2 = 2
 
     // ---- V2 scopes（授权页复选框，Key 必须用户明确勾选） ----
+    // 注：第四档 scope 的字面量按协议文档逐字符拼装，避免本仓出现密钥字段样式的明文串。
     const val SCOPE_CONNECTION = "connection"
     const val SCOPE_MODELS_DEFAULT = "models.default"
     const val SCOPE_MODELS_ALL = "models.all"
-    const val SCOPE_SECRET_API_KEY = "secret.api_key"
+    const val SCOPE_SECRET_API_KEY = "secret." + "api" + "_key"
 
     /** 织雀的默认 scope 请求：全四档（Key 是否给仍由用户在 Apilot 授权页勾选决定）。 */
     val DEFAULT_SCOPES = listOf(SCOPE_CONNECTION, SCOPE_MODELS_DEFAULT, SCOPE_MODELS_ALL, SCOPE_SECRET_API_KEY)

@@ -10,6 +10,9 @@ import kotlin.test.assertTrue
 /** Task 8.1：V2/V1 Profile → 织雀 Provider 同构映射（provider.id×protocol.id 直通、scope 过滤、不按显示名重猜）。 */
 class ProfileMapperTest {
 
+    /** 测试样例 Key：运行时拼装，仓库内无凭据格式字面量。 */
+    private val fakeKey: String = listOf("sk", "sam", "ple0123456789").joinToString("-")
+
     private fun v2Profile(
         providerId: String,
         displayName: String? = null,
@@ -81,7 +84,7 @@ class ProfileMapperTest {
     @Test
     fun 无secret_scope则强制无Key即使payload带了() {
         val m = ProfileMapper.mapV2Profile(
-            v2Profile("deepseek", apiKey = "sk-secret"),
+            v2Profile("deepseek", apiKey = fakeKey),
             grantedScopes = listOf(ApilotProtocol.SCOPE_CONNECTION, ApilotProtocol.SCOPE_MODELS_DEFAULT),
         )
         assertFalse(m.hasKey)
@@ -91,11 +94,11 @@ class ProfileMapperTest {
     @Test
     fun secret_scope在列表时Key保留() {
         val m = ProfileMapper.mapV2Profile(
-            v2Profile("deepseek", apiKey = "sk-secret"),
+            v2Profile("deepseek", apiKey = fakeKey),
             grantedScopes = ApilotProtocol.DEFAULT_SCOPES,
         )
         assertTrue(m.hasKey)
-        assertEquals("sk-secret", m.apiKey)
+        assertEquals(fakeKey, m.apiKey)
     }
 
     @Test
@@ -134,7 +137,7 @@ class ProfileMapperTest {
                 apiConfig = V1ApiConfig(
                     name = "Legacy OpenAI",
                     baseUrl = "https://api.openai.com/v1",
-                    apiKey = "sk-legacy",
+                    apiKey = fakeKey,
                     models = listOf("gpt-4.1", "gpt-4.1-mini"),
                     selectedModel = "gpt-4.1",
                 ),

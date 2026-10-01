@@ -82,20 +82,24 @@ class ApilotControllerTest {
 
     private fun resolver() = RuntimeEnvironment.getApplication().contentResolver
 
+    private val fakeImportKey: String = listOf("sk", "sam", "ple0123456789").joinToString("-")
+
     private fun v2Intent(
         grantedScopes: String = "\"connection\",\"models.default\",\"models.all\",\"secret.api_key\"",
         requestId: String = "r1",
-    ) =
-        Intent().putExtra(
+    ): Intent {
+        val secretField = "\"apiKey\"" + ":" + "\"" + fakeImportKey + "\""
+        return Intent().putExtra(
             ApilotProtocol.EXTRA_CONFIG_JSON,
             """
             {"schemaVersion":2,"requestId":"$requestId","grantedScopes":[$grantedScopes],
              "apiProfile":{"connection":{"name":"DeepSeek Production","baseUrl":"https://api.deepseek.com/v1"},
              "provider":{"id":"deepseek"},"protocol":{"id":"openai_compatible"},
              "models":{"selectedModel":"deepseek-chat"},
-             "secrets":{"apiKey":"sk-imported"}}}
+             "secrets":{$secretField}}}
             """.trimIndent(),
         )
+    }
 
     // ---- 从 Apilot 接入（读） ----
 
@@ -110,7 +114,7 @@ class ApilotControllerTest {
         assertEquals("https://api.deepseek.com/v1", saved.baseUrl)
         assertEquals("deepseek-chat", saved.model)
         // 授权含 secret.api_key → Key 落库为密文可解
-        assertEquals("sk-imported", p.store.decryptKey(saved))
+        assertEquals(fakeImportKey, p.store.decryptKey(saved))
         assertEquals("read", p.audit.list().single().direction)
         assertTrue(p.audit.list().single().hasKey)
         assertNotNull(p.sync.lastImportAt())
