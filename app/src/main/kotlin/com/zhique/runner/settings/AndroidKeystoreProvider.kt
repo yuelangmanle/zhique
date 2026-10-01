@@ -22,6 +22,11 @@ class AndroidKeystoreProvider(private val alias: String = DEFAULT_ALIAS) : KeyPr
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
+                // 关闭强制随机化 IV：keystore2 对随机化密钥拒绝任何 caller-IV 操作
+                // （真机夜间循环：解密持久化密文即抛 Caller-provided IV not permitted）。
+                // IV 由 CryptoStore 用 SecureRandom 生成并随密文存储，随机性不降；
+                // 硬件绑定（密钥不出安全区）保留。
+                .setRandomizedEncryptionRequired(false)
                 .build(),
         )
         return generator.generateKey()

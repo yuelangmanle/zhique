@@ -272,7 +272,7 @@ private fun SignStep(controller: ExportController, state: ExportWizardState, onB
     }
 }
 
-/** 步③：打包进度。 */
+/** 步③：打包进度（含失败可见性：错误必须显形，不得吞成"等待开始"——真机夜间循环发现）。 */
 @Composable
 private fun PackStep(state: ExportWizardState) {
     Column(
@@ -280,13 +280,44 @@ private fun PackStep(state: ExportWizardState) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        CircularProgressIndicator(Modifier.size(48.dp).testTag("wizard-progress"))
-        Spacer(Modifier.height(16.dp))
-        Text(
-            if (state.running) "正在打包（注入 → 签名 → 校验）…" else "等待开始",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.testTag("wizard-progress-text"),
-        )
+        val err = state.error
+        val mismatch = state.mismatch
+        when {
+            state.result != null -> Unit // DoneStep 接管
+            mismatch -> {
+                Text("签名不匹配：已安装版本由其他密钥签名", color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    err ?: "请先卸载旧包或恢复正确密钥库后重试",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            err != null -> {
+                Text("导出失败", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    err,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "返回上一步重试；若持续失败请在开发者页导出日志",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                CircularProgressIndicator(Modifier.size(48.dp).testTag("wizard-progress"))
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    if (state.running) "正在打包（注入 → 签名 → 校验）…" else "准备中…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("wizard-progress-text"),
+                )
+            }
+        }
     }
 }
 

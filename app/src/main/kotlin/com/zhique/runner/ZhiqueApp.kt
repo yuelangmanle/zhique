@@ -187,9 +187,17 @@ fun ZhiqueApp(
                                 onSkipPlaySample = {
                                     onboardingNeeded = false
                                     scope.launch(Dispatchers.IO) {
-                                        val created = runCatching {
-                                            container.repo.create(HomeController.SAMPLE_NAME, HomeController.EMPTY_HTML)
+                                        // 与首页「运行示例」同源：加载 assets/samples/stars.html
+                                        // （质量修复：此前误建 EMPTY_HTML 空项目，名星空示例实为空白页）
+                                        val html = runCatching {
+                                            context.assets.open("samples/stars.html")
+                                                .bufferedReader().use { it.readText() }
                                         }.getOrNull()
+                                        val created = html?.let { body ->
+                                            runCatching {
+                                                container.repo.create(HomeController.SAMPLE_NAME, body)
+                                            }.getOrNull()
+                                        }
                                         withContext(Dispatchers.Main) {
                                             if (created != null) {
                                                 pendingProjectId = created.id

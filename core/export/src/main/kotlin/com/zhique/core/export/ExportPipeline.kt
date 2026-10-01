@@ -21,7 +21,8 @@ class AssetTemplateProvider(
         val cached = File(cacheDir, "$variant.apk")
         if (cached.isFile && cached.length() > 0) return cached
         cacheDir.mkdirs()
-        context.assets.open("templates/$variant.apk").use { input ->
+        // 资产名与 harvestTemplates 拷贝产物一致：template-min.apk / template-full.apk
+        context.assets.open(templateAssetPath(variant)).use { input ->
             cached.outputStream().use { input.copyTo(it) }
         }
         return cached
@@ -175,3 +176,6 @@ class ExportService(
         return ExportOutcome(output.apk, record)
     }
 }
+
+/** 模板资产路径单一来源（防 harvestTemplates 拷贝名与运行期读取名漂移——真机夜间循环教训）。 */
+internal fun templateAssetPath(variant: String): String = "templates/template-$variant.apk"
