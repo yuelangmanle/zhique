@@ -61,6 +61,8 @@ internal class TailBuffer(private val cap: Int) {
     fun append(text: String): TailBuffer {
         sb.append(text)
         if (sb.length > cap) sb.delete(0, sb.length - cap)
+        // M3 债务收敛：UTF-16 裁剪切代理对——delete 后首位是低代理（其高代理半已被裁掉）时补删一位
+        if (sb.isNotEmpty() && Character.isLowSurrogate(sb[0])) sb.delete(0, 1)
         return this
     }
 
@@ -178,6 +180,9 @@ class ChatController(
         val partial = s.turns.lastOrNull { it.role == "assistant" }?.content ?: return
         scope.launch(io) {
             _state.update { it.copy(busy = true, streaming = true) }
+            // M3 债务收敛：续写流必须重置缓冲——否则新思考增量叠进上一段思考，落轮时混显
+            liveThinkingBuf.reset()
+            liveContentBuf.reset()
             try {
                 val out = continuer.continueOnce(partial, req, ::onStreamEvent)
                 replaceLastAssistant(out.content, out.segments, out.limitHit)
@@ -243,6 +248,7 @@ class ChatController(
     }
 
     private fun replaceLastAssistant(stitched: String, segments: Int, limitHit: Boolean) {
+        // 缓冲已在 continueOutput 重置：非空即本段续写的新思考（落轮与 live 展示一致，不混上段）
         val thinking = liveThinkingBuf.value()
         val idx = _state.value.turns.indexOfLast { it.role == "assistant" }
         _state.update { s ->
@@ -253,6 +259,7 @@ class ChatController(
                     content = stitched,
                     segments = segments,
                     truncated = limitHit,
+                    thinking = thinking.ifEmpty { t.thinking },
                     thinkingTokens = estimateTokens(thinking.ifEmpty { t.thinking }),
                 )
             }

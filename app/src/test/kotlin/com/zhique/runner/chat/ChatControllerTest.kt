@@ -120,6 +120,32 @@ class ChatControllerTest {
     }
 
     @Test
+    fun `续写重置思考缓冲_新旧思考不混显`() = runTest {
+        // M3 债务收敛：continueOutput 不 reset liveThinkingBuf 时，续写思考会叠进上一段
+        val scripts = ArrayDeque(
+            listOf(
+                listOf(
+                    StreamEvent.ThinkingDelta("旧思考"),
+                    StreamEvent.ContentDelta("半截"),
+                    StreamEvent.Done(StopReason.LENGTH),
+                ),
+                listOf(
+                    StreamEvent.ThinkingDelta("新思考"),
+                    StreamEvent.ContentDelta("接上"),
+                    StreamEvent.Done(StopReason.STOP),
+                ),
+            ),
+        )
+        val c = newController(scripts, maxSegments = 0)
+        c.send("写")
+        assertTrue(c.state.value.truncated)
+        c.continueOutput()
+        val turn = c.state.value.turns.last()
+        assertEquals("新思考", turn.thinking, "续写后的思考只含本段，不混上一段")
+        assertEquals("半截接上", turn.content)
+    }
+
+    @Test
     fun `取消与错误落错误态`() = runTest {
         val c1 = newController(ArrayDeque(listOf(listOf(StreamEvent.Done(StopReason.ERROR("boom"))))))
         c1.send("q")

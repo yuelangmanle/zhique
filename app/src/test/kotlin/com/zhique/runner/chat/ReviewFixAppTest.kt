@@ -91,4 +91,14 @@ class ReviewFixAppTest {
         assertEquals("x", buf.value(), "reset 后可复用")
         assertEquals(1, buf.length())
     }
+
+    @Test
+    fun `fix10_TailBuffer裁剪不切代理对`() {
+        // M3 债务收敛：cap 落在代理对中间时补删半边，缓冲头永不出现孤立低代理
+        val buf = TailBuffer(cap = 3)
+        buf.append("\uD83D\uDE00x") // 😀 + x，len 3
+        buf.append("y")             // len 4 > 3 → 裁 1 位后首字符是低代理 → 再补删 1 位
+        assertEquals("xy", buf.value())
+        assertFalse(Character.isLowSurrogate(buf.value()[0]), "缓冲头不得是孤立低代理")
+    }
 }
