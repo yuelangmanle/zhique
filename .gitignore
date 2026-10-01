@@ -9,3 +9,4 @@ local.properties
 .DS_Store
 out/
 core/export/src/main/assets/templates/
+core/web/build/

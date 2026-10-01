@@ -80,6 +80,8 @@ fun HomeScreen(
     onPastePreview: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenPermissions: (ProjectMeta) -> Unit = {},
+    /** 剪贴板检测开关（M9 §7「智能粘贴」）：关=不自动检测、不显剪贴板卡与刷新按钮。 */
+    clipboardDetection: Boolean = true,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -101,11 +103,13 @@ fun HomeScreen(
     val historyIds by controller.historyIds.collectAsState()
     val clipboardCandidate by controller.clipboardCandidate.collectAsState()
 
-    // 回前台读一次剪贴板（规格 §2.1：不做后台监听）
+    // 回前台读一次剪贴板（规格 §2.1：不做后台监听）；检测开关关闭时跳过
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, clipboardDetection) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) controller.checkClipboard()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && clipboardDetection) {
+                controller.checkClipboard()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -145,10 +149,12 @@ fun HomeScreen(
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(
-                    onClick = { controller.checkClipboard() },
-                    modifier = Modifier.testTag("clipboard-refresh"),
-                ) { Text("刷新剪贴板") }
+                if (clipboardDetection) {
+                    TextButton(
+                        onClick = { controller.checkClipboard() },
+                        modifier = Modifier.testTag("clipboard-refresh"),
+                    ) { Text("刷新剪贴板") }
+                }
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.testTag("open-settings"),
@@ -157,7 +163,7 @@ fun HomeScreen(
                 }
             }
             val candidate = clipboardCandidate
-            if (candidate != null) {
+            if (clipboardDetection && candidate != null) {
                 ClipboardCard(
                     text = candidate,
                     onPreview = {

@@ -28,6 +28,7 @@ class GeneralPreferences(private val store: DataStore<Preferences>) {
         val immersiveMode: Boolean,
         val editorFontSize: Int,
         val editorAutoIndent: Boolean,
+        val editorFontFamily: String,
         val notifyExportDone: Boolean,
         val notifyAgentDone: Boolean,
         val notifyNewVersion: Boolean,
@@ -41,6 +42,7 @@ class GeneralPreferences(private val store: DataStore<Preferences>) {
     val immersiveMode: Flow<Boolean> = store.data.map { it[IMMERSIVE] ?: false }
     val editorFontSize: Flow<Int> = store.data.map { it[EDITOR_FONT] ?: 14 }
     val editorAutoIndent: Flow<Boolean> = store.data.map { it[EDITOR_AUTO_INDENT] ?: true }
+    val editorFontFamily: Flow<String> = store.data.map { it[EDITOR_FONT_FAMILY] ?: FONT_MONO }
     val notifyExportDone: Flow<Boolean> = store.data.map { it[NOTIFY_EXPORT] ?: true }
     val notifyAgentDone: Flow<Boolean> = store.data.map { it[NOTIFY_AGENT] ?: true }
     val notifyNewVersion: Flow<Boolean> = store.data.map { it[NOTIFY_NEW_VERSION] ?: true }
@@ -54,6 +56,7 @@ class GeneralPreferences(private val store: DataStore<Preferences>) {
         immersiveMode = immersiveMode.first(),
         editorFontSize = editorFontSize.first(),
         editorAutoIndent = editorAutoIndent.first(),
+        editorFontFamily = editorFontFamily.first(),
         notifyExportDone = notifyExportDone.first(),
         notifyAgentDone = notifyAgentDone.first(),
         notifyNewVersion = notifyNewVersion.first(),
@@ -82,6 +85,12 @@ class GeneralPreferences(private val store: DataStore<Preferences>) {
     }
 
     suspend fun setEditorAutoIndent(v: Boolean) = store.edit { it[EDITOR_AUTO_INDENT] = v }
+
+    /** 代码字体族（平台等宽三档，sora-editor setTypeface；重开编辑器生效）。 */
+    suspend fun setEditorFontFamily(v: String) {
+        require(v == FONT_MONO || v == FONT_SANS_MONO || v == FONT_SERIF_MONO)
+        store.edit { it[EDITOR_FONT_FAMILY] = v }
+    }
     suspend fun setNotifyExportDone(v: Boolean) = store.edit { it[NOTIFY_EXPORT] = v }
     suspend fun setNotifyAgentDone(v: Boolean) = store.edit { it[NOTIFY_AGENT] = v }
     suspend fun setNotifyNewVersion(v: Boolean) = store.edit { it[NOTIFY_NEW_VERSION] = v }
@@ -99,6 +108,10 @@ class GeneralPreferences(private val store: DataStore<Preferences>) {
         val IMMERSIVE = booleanPreferencesKey("runner_immersive")
         val EDITOR_FONT = intPreferencesKey("editor_font_size")
         val EDITOR_AUTO_INDENT = booleanPreferencesKey("editor_auto_indent")
+        val EDITOR_FONT_FAMILY = stringPreferencesKey("editor_font_family")
+        const val FONT_MONO = "monospace"
+        const val FONT_SANS_MONO = "sans-serif-monospace"
+        const val FONT_SERIF_MONO = "serif-monospace"
         val NOTIFY_EXPORT = booleanPreferencesKey("notify_export_done")
         val NOTIFY_AGENT = booleanPreferencesKey("notify_agent_done")
         val NOTIFY_NEW_VERSION = booleanPreferencesKey("notify_new_version")

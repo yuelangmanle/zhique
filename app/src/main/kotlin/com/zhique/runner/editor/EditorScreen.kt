@@ -203,6 +203,8 @@ fun EditorScreen(
     onBack: () -> Unit,
     onAskAi: (EditorAskContext) -> Unit,
     modifier: Modifier = Modifier,
+    /** 代码字体族（M9 §7「编辑器 → 代码字体」：平台等宽三档；重开编辑器生效）。 */
+    fontFamily: String = "monospace",
 ) {
     androidx.compose.runtime.LaunchedEffect(Unit) { controller.open() }
     val state by controller.state.collectAsState()
@@ -216,7 +218,7 @@ fun EditorScreen(
         onAskAi = onAskAi,
         modifier = modifier,
         editorSlot = { m, path, content, readOnly, onContent, onSel ->
-            RealEditorSlot(m, path, content, readOnly, onContent, onSel)
+            RealEditorSlot(m, path, content, readOnly, onContent, onSel, fontFamily = fontFamily)
         },
     )
 }
@@ -383,12 +385,17 @@ fun RealEditorSlot(
     onContentChange: (String) -> Unit,
     onSelection: (String) -> Unit,
     onEditorCreated: (ZqCodeEditor) -> Unit = {},
+    fontFamily: String = "monospace",
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val editor = androidx.compose.runtime.remember(path) {
         ZqCodeEditor(context).apply {
             setEditorLanguage(EditorLanguages.create(context, path))
             EditorLanguages.colorScheme(context)?.let { setColorScheme(it) }
+            // M9：代码字体族（设置「编辑器 → 代码字体」，正文与行号同步应用）
+            val tf = android.graphics.Typeface.create(fontFamily, android.graphics.Typeface.NORMAL)
+            setTypefaceText(tf)
+            setTypefaceLineNumber(tf)
             isEditable = !readOnly
             subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
                 if (event.action != ContentChangeEvent.ACTION_SET_NEW_TEXT) {

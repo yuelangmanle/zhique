@@ -5,6 +5,7 @@ import com.zhique.core.paste.Assembled
 import com.zhique.core.paste.Assembler
 import com.zhique.core.paste.CleanAction
 import com.zhique.core.paste.Cleaner
+import com.zhique.core.paste.CleanStrict
 import com.zhique.core.paste.CompatHint
 import com.zhique.core.paste.CompatScanner
 import com.zhique.core.paste.PasteClassifier
@@ -39,6 +40,8 @@ class PastePreviewController(
     private val aiParser: AiFallback.Parser? = null,
     private val onToast: (String) -> Unit = {},
     private val onRun: (ProjectMeta) -> Unit = {},
+    /** 清洗严格度缝（M9 §7「清洗严格度」）：由设置 DataStore 供给，重算时读取。 */
+    private val strictness: suspend () -> CleanStrict = { CleanStrict.STANDARD },
 ) {
 
     data class UiState(
@@ -187,7 +190,8 @@ class PastePreviewController(
         }
         // 重活只依赖 raw/cleaningApplied 快照；结果合并走 update，保住并发进来的 name 等编辑
         val classified = PasteClassifier().classify(snapshot.raw)
-        val cleaned = Cleaner.clean(snapshot.raw, enabled = snapshot.cleaningApplied)
+        val strict = runCatching { strictness() }.getOrDefault(CleanStrict.STANDARD)
+        val cleaned = Cleaner.clean(snapshot.raw, enabled = snapshot.cleaningApplied, strict = strict)
         var assembled = Assembler.assemble(classified.form, cleaned)
         val hints = CompatScanner.scan(assembled.html)
 

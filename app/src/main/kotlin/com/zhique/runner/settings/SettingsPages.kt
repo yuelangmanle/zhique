@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -72,8 +73,13 @@ internal fun SettingsPageScaffold(
 
 @Composable
 internal fun SwitchRow(tag: String, title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    // 整行可点切换（Material 列表项惯例）：测试对行 tag 的点击与真机点行都落到同一动作
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp).testTag(tag),
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, onValueChange = onChange)
+            .padding(vertical = 6.dp)
+            .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -84,7 +90,7 @@ internal fun SwitchRow(tag: String, title: String, subtitle: String, checked: Bo
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -331,6 +337,9 @@ fun GeneralScreen(
     var bubbleRemember by remember { mutableStateOf(true) }
     var immersive by remember { mutableStateOf(false) }
     var autoRun by remember { mutableStateOf(false) }
+    var clipboardDetect by remember { mutableStateOf(true) }
+    var cleanStrictConservative by remember { mutableStateOf(false) }
+    var fontMono by remember { mutableStateOf(GeneralPreferences.FONT_MONO) }
     var fontSize by remember { mutableIntStateOf(14) }
     var autoIndent by remember { mutableStateOf(true) }
     var desktopUA by remember { mutableStateOf(false) }
@@ -351,6 +360,9 @@ fun GeneralScreen(
         notifyAgent = g.notifyAgentDone
         notifyVersion = g.notifyNewVersion
         autoRun = paste.autoRun.first()
+        clipboardDetect = paste.clipboardDetection.first()
+        cleanStrictConservative = paste.cleanStrictness.first() == PastePreferences.CLEAN_CONSERVATIVE
+        fontMono = g.editorFontFamily
         val w = web.snapshot()
         desktopUA = w.desktopUA
         downloadAsk = w.downloadBehavior == WebPreferences.DOWNLOAD_ASK
@@ -412,6 +424,30 @@ fun GeneralScreen(
                 scope.launch { paste.setAutoRun(it) }
             },
         )
+        SwitchRow(
+            tag = "general-paste-detect",
+            title = "剪贴板检测",
+            subtitle = "回首页自动识别剪贴板中的代码（关闭不显剪贴板卡）",
+            checked = clipboardDetect,
+            onChange = {
+                clipboardDetect = it
+                scope.launch { paste.setClipboardDetection(it) }
+            },
+        )
+        Text("清洗严格度", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "标准：剥围栏+剥行号污染+剔说明文字；保守：只剥结构围栏，内容原样保留。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        RadioRow("general-paste-strict-standard", "标准", !cleanStrictConservative) {
+            cleanStrictConservative = false
+            scope.launch { paste.setCleanStrictness(PastePreferences.CLEAN_STANDARD) }
+        }
+        RadioRow("general-paste-strict-conservative", "保守", cleanStrictConservative) {
+            cleanStrictConservative = true
+            scope.launch { paste.setCleanStrictness(PastePreferences.CLEAN_CONSERVATIVE) }
+        }
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
         Text("编辑器", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("general-font-row")) {
@@ -440,6 +476,24 @@ fun GeneralScreen(
                 scope.launch { general.setEditorAutoIndent(it) }
             },
         )
+        Text("代码字体", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "平台等宽三档（重开编辑器生效）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        RadioRow("general-font-family-monospace", "等宽（默认）", fontMono == GeneralPreferences.FONT_MONO) {
+            fontMono = GeneralPreferences.FONT_MONO
+            scope.launch { general.setEditorFontFamily(fontMono) }
+        }
+        RadioRow("general-font-family-sans", "无衬线等宽", fontMono == GeneralPreferences.FONT_SANS_MONO) {
+            fontMono = GeneralPreferences.FONT_SANS_MONO
+            scope.launch { general.setEditorFontFamily(fontMono) }
+        }
+        RadioRow("general-font-family-serif", "衬线等宽", fontMono == GeneralPreferences.FONT_SERIF_MONO) {
+            fontMono = GeneralPreferences.FONT_SERIF_MONO
+            scope.launch { general.setEditorFontFamily(fontMono) }
+        }
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
         Text("Web", style = MaterialTheme.typography.titleMedium)
         Text(

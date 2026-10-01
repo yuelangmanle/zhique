@@ -52,6 +52,7 @@ import com.zhique.runner.settings.ProvidersScreen
 import com.zhique.runner.settings.RoleRouterScreen
 import com.zhique.runner.settings.SettingsScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -265,8 +266,13 @@ fun ZhiqueApp(
                             controller.open()
                             controller.refreshAgentRunning()
                         }
+                        var editorFont by remember(editorMeta.id) { mutableStateOf("monospace") }
+                        LaunchedEffect(editorMeta.id) {
+                            editorFont = container.generalPreferences.editorFontFamily.first()
+                        }
                         EditorScreen(
                             controller = controller,
+                            fontFamily = editorFont,
                             onBack = { editorProject = null },
                             onAskAi = { ask ->
                                 chatAsk = ask
@@ -282,6 +288,15 @@ fun ZhiqueApp(
                                 repo = container.repo,
                                 scope = scope,
                                 autoRunStore = container.pastePreferences,
+                                strictness = {
+                                    if (container.pastePreferences.cleanStrictness.first() ==
+                                        com.zhique.runner.paste.PastePreferences.CLEAN_CONSERVATIVE
+                                    ) {
+                                        com.zhique.core.paste.CleanStrict.CONSERVATIVE
+                                    } else {
+                                        com.zhique.core.paste.CleanStrict.STANDARD
+                                    }
+                                },
                                 onToast = toast,
                                 onRun = { created ->
                                     pasteDraft = null
@@ -446,6 +461,15 @@ fun ZhiqueApp(
                             initialIdea = promptSeed,
                             onToast = toast,
                         )
+                        "diagnostics" -> com.zhique.runner.settings.DiagnosticsScreen(
+                            controller = remember {
+                                com.zhique.runner.settings.DiagnosticsController(
+                                    store = container.providerStore,
+                                    scope = scope,
+                                )
+                            },
+                            onBack = { settingsPage = null },
+                        )
                         "output" -> com.zhique.runner.settings.OutputContextScreen(
                             prefs = container.aiPreferences,
                             onBack = { settingsPage = null },
@@ -480,6 +504,7 @@ fun ZhiqueApp(
                             onOpenRoleRouter = { settingsPage = "router" },
                             onOpenOutputContext = { settingsPage = "output" },
                             onOpenTokenStats = { settingsPage = "tokens" },
+                            onOpenDiagnostics = { settingsPage = "diagnostics" },
                             onOpenPermissionCenter = { settingsPage = "permissions" },
                             onOpenPublishSync = { settingsPage = "publish" },
                             onOpenGeneral = { settingsPage = "general" },
@@ -488,8 +513,12 @@ fun ZhiqueApp(
                             onOpenDeveloper = { settingsPage = "developer" },
                         )
                     }
-                    else -> HomeScreen(
+                    else -> {
+                        val clipboardDetect by container.pastePreferences.clipboardDetection
+                            .collectAsState(initial = true)
+                        HomeScreen(
                         repo = container.repo,
+                        clipboardDetection = clipboardDetect,
                         onRun = {
                             runnerProject = null
                             pendingProjectId = it.id
@@ -505,7 +534,8 @@ fun ZhiqueApp(
                             tab = TAB_SETTINGS
                             settingsPage = "permissions"
                         },
-                    )
+                        )
+                    }
                 }
             }
 

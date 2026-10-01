@@ -4,6 +4,13 @@ package com.zhique.core.paste
 data class CleanAction(val kind: String, val excerpt: String)
 
 /**
+ * 清洗严格度（规格 §7「智能粘贴 → 清洗严格度」，M9 补齐）：
+ * - [STANDARD]：全量剥离——剥围栏 + 剥行号污染 + 剔说明文字（现行行为，默认）；
+ * - [CONSERVATIVE]：保守——只剥结构标记（围栏），保留行号污染与说明文字原样。
+ */
+enum class CleanStrict { STANDARD, CONSERVATIVE }
+
+/**
  * 清洗结果。[blocks] 是按围栏解析、已剥污染的代码块（含语言标注，供组装引擎路由）；
  * [text] 为 blocks 的拼接视图；[original] 保留原始输入——「整体撤销」= 用它重跑（规格 §4.1.4）。
  */
@@ -17,6 +24,7 @@ data class CleanResult(
 /**
  * 清洗器：剥 markdown 围栏（经 [FenceParser]）、剥行号前缀污染、剔除围栏外说明文字。
  * 清洗确定性：同一输入重跑结果一致（测试断言 data class 相等）。
+ * [strict] 档位见 [CleanStrict]；撤销路径（enabled=false）不受档位影响。
  */
 object Cleaner {
 
@@ -27,7 +35,7 @@ object Cleaner {
     /** 报告摘录限长。 */
     const val EXCERPT_MAX = 48
 
-    fun clean(raw: String, enabled: Boolean = true): CleanResult {
+    fun clean(raw: String, enabled: Boolean = true, strict: CleanStrict = CleanStrict.STANDARD): CleanResult {
         if (raw.isBlank()) return CleanResult("", emptyList(), emptyList(), raw)
 
         val doc = FenceParser.parse(raw)
@@ -45,14 +53,26 @@ object Cleaner {
 
         val actions = mutableListOf<CleanAction>()
 
-        // 无围栏：只做行号污染剥离
+        // 无围栏：只做行号污染剥离（保守档保留行号原样）
         if (doc.blocks.isEmpty()) {
             val trimmed = raw.trim()
+            if (strict == CleanStrict.CONSERVATIVE) {
+                return CleanResult(trimmed, emptyList(), emptyList(), raw)
+            }
             val stripped = stripLineNumberPrefixes(trimmed)
             if (stripped != trimmed) {
                 actions += CleanAction(ACTION_STRIP_LINE_NO, firstNumberedLine(trimmed))
             }
             return CleanResult(stripped, emptyList(), actions, raw)
+        }
+
+        if (strict == CleanStrict.CONSERVATIVE) {
+            // 保守：只剥围栏（结构标记），块内行号污染保留
+            for (fence in doc.fenceLines) {
+                actions += CleanAction(ACTION_STRIP_FENCE, fence.take(EXCERPT_MAX))
+            }
+            val blocks = doc.blocks.map { CodeBlock(it.lang, it.code.trim()) }
+            return CleanResult(blocks.joinToString("\n\n") { it.code }, blocks, actions, raw)
         }
 
         if (doc.prose.isNotBlank()) {

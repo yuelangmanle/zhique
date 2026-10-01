@@ -36,6 +36,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onOpenOutputContext: () -> Unit = {},
     onOpenTokenStats: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onOpenPermissionCenter: () -> Unit = {},
     onOpenPublishSync: () -> Unit = {},
     onOpenGeneral: () -> Unit = {},
@@ -61,6 +62,7 @@ fun SettingsScreen(
                 SettingRow("AI 服务商", "多协议接入 · 密钥加密存储", "settings-providers", onOpenProviders)
                 SettingRow("角色路由", "五槽模型分工 · 省钱/均衡/质量", "settings-router", onOpenRoleRouter)
                 SettingRow("输出 · 思考 · 上下文", "输出上限 · 续写段数 · 预算占比 · 压缩阈值", "settings-output-context", onOpenOutputContext)
+                SettingRow("连接诊断", "逐个测试连通 · 延迟与结果", "settings-diagnostics", onOpenDiagnostics)
                 SettingRow("Token 用量统计", "按服务商 / 按项目", "settings-token-stats", onOpenTokenStats)
             }
             SettingGroup("项目与产出") {

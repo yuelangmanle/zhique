@@ -173,6 +173,43 @@ class EditorScreenUiTest {
         }
         compose.waitForIdle()
     }
+
+    @Test
+    fun `代码字体族参数接线_三档可组合`() {
+        // M9 §7「编辑器 → 代码字体」：fontFamily 参数透传 RealEditorSlot（Typeface 应用）。
+        // 单次 setContent + 状态驱动切族（compose 规则一次测试只允许一次 setContent）。
+        val family = androidx.compose.runtime.mutableStateOf(GeneralPreferencesFontRefs.MONO)
+        compose.setContent {
+            ZqTheme {
+                EditorContent(
+                    state = state(),
+                    onBack = {},
+                    onSelectTab = {},
+                    onContentChange = { _, _ -> },
+                    onSelection = {},
+                    onAiInput = {},
+                    onAskAi = {},
+                    editorSlot = { m, _, content, _, onContent, _ ->
+                        RealEditorSlot(
+                            modifier = m.fillMaxWidth().height(200.dp),
+                            path = "index.html",
+                            content = content,
+                            readOnly = false,
+                            onContentChange = onContent,
+                            onSelection = {},
+                            fontFamily = family.value,
+                        )
+                    },
+                )
+            }
+        }
+        compose.onNodeWithTag("editor-back").assertExists()
+        listOf(GeneralPreferencesFontRefs.SANS, GeneralPreferencesFontRefs.SERIF).forEach { f ->
+            family.value = f
+            compose.waitForIdle()
+            compose.onNodeWithTag("editor-back").assertExists()
+        }
+    }
 }
 
 /** 编辑器测试桩：给个可见节点供断言。 */
@@ -182,4 +219,11 @@ private fun FakeEditorSlot(content: String, readOnly: Boolean) {
         text = "fake-editor:" + (if (readOnly) "ro" else "rw") + ":" + content.take(20),
         modifier = androidx.compose.ui.Modifier.testTag("fake-editor"),
     )
+}
+
+/** 字体族常量别名（与 GeneralPreferences 三档键值一致；就地定义避免跨包依赖）。 */
+object GeneralPreferencesFontRefs {
+    const val MONO = "monospace"
+    const val SANS = "sans-serif-monospace"
+    const val SERIF = "serif-monospace"
 }
