@@ -14,17 +14,27 @@
   });
   window.addEventListener('error', e => e.error ? post('js_error', { message: e.message, line: e.lineno, col: e.colno, stack: String(e.error.stack || '').slice(0, 2000) }) : post('resource_error', { url: e.target && e.target.src || '' }));
   window.addEventListener('unhandledrejection', e => post('promise_reject', { reason: String(e.reason) }));
+  // fetch：入参可为 Request 对象——String(Request) 会打出无信息量的 "[object Request]"，
+  // 归一为 URL 文本（读 url 不消费 body，Request 仍可原样透传）
+  function inputUrl(input) {
+    try { return (input && typeof input === 'object' && input.url) ? String(input.url) : String(input); }
+    catch (e) { return String(input); }
+  }
   const of = window.fetch;
   window.fetch = function (input, init) {
-    return of.call(this, input, init).then(r => { if (!r.ok) post('network_fail', { url: String(input), status: r.status }); return r; })
-      .catch(err => { post('network_fail', { url: String(input), error: String(err) }); throw err; });
+    const url = inputUrl(input);
+    return of.call(this, input, init).then(r => { if (!r.ok) post('network_fail', { url: url, status: r.status }); return r; })
+      .catch(err => { post('network_fail', { url: url, error: String(err) }); throw err; });
   };
+  // XHR：监听器挂 open 且按实例去重（send 可对同一对象多次调用，逐次 addEventListener 会叠加重复上报）
   const oo = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (m, u) { this._zu = u; this._zm = m; return oo.apply(this, arguments); };
-  const os = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function () {
-    this.addEventListener('load', () => { if (this.status >= 400) post('network_fail', { url: this._zu, status: this.status, method: this._zm }); });
-    return os.apply(this, arguments);
+  XMLHttpRequest.prototype.open = function (m, u) {
+    if (!this._zhiqueHooked) {
+      this._zhiqueHooked = true;
+      this.addEventListener('load', () => { if (this.status >= 400) post('network_fail', { url: this._zu, status: this.status, method: this._zm }); });
+    }
+    this._zu = u; this._zm = m;
+    return oo.apply(this, arguments);
   };
   window.addEventListener('load', () => setTimeout(() => {
     const empty = !document.body || document.body.children.length === 0 ||

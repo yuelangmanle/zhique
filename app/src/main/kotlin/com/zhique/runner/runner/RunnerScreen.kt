@@ -157,16 +157,24 @@ private fun SplitLayout(
                 webView(Modifier.fillMaxSize().testTag("web-host"))
             }
             // 可拖分界线，释放 spring 吸附 30/50/70%
+            // 与 DebugDrawer 同一跟手模式：起点定格 + 绝对位移 snapTo（增量累加会漂移）
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(16.dp)
                     .testTag("split-divider")
                     .pointerInput(h) {
+                        var startFraction = 0.5f
                         detectVerticalDragGestures(
+                            onDragStart = { startFraction = split.value },
                             onVerticalDrag = { change, dy ->
                                 change.consume()
-                                scope.launch { split.snapTo(split.value + dy / h) }
+                                scope.launch {
+                                    split.snapTo(
+                                        (startFraction + dy / h)
+                                            .coerceIn(SplitSnap.levels.first(), SplitSnap.levels.last()),
+                                    )
+                                }
                             },
                             onDragEnd = {
                                 scope.launch { split.animateTo(SplitSnap.target(split.value), ZqSpring) }
@@ -201,8 +209,6 @@ private fun SplitLayout(
         }
     }
 }
-
-private const val MAX_EVENTS = 500
 
 /**
  * 运行器屏（真实 WebView）：持有 [WebViewHost]，采集事件折算时间线，
