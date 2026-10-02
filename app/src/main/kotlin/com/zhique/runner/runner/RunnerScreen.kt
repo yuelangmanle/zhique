@@ -239,6 +239,35 @@ fun RunnerScreen(
     val host = remember(project.id) {
         WebViewHost(context, projectDir).also { it.erudaEnabled = erudaEnabled }
     }
+    // 文件选择桥（PM 审计修复：<input type=file> 此前完全无反应）——ActivityResult 承载
+    var pendingFileCb by remember {
+        mutableStateOf<android.webkit.ValueCallback<Array<android.net.Uri>>?>(null)
+    }
+    val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents(),
+    ) { uris ->
+        pendingFileCb?.onReceiveValue(uris.toTypedArray())
+        pendingFileCb = null
+    }
+    DisposableEffect(host) {
+        host.fileChooserLauncher = { _, cb ->
+            pendingFileCb?.onReceiveValue(null) // 上一次未决回调作废（防回调泄漏）
+            pendingFileCb = cb
+            filePicker.launch("*/*")
+        }
+        onDispose { host.fileChooserLauncher = null }
+    }
+    // 返回键 = 网页回退（浏览器惯例；PM 审计：此前一律直接退出运行器，
+    // 多页网页浏览后误退）、无历史时交回上层（退出运行器 → 回退链）。
+    // 跳过 about:blank：能力检测初始页会进 WebView 历史，直接 canGoBack 会退到空白页
+    androidx.activity.compose.BackHandler {
+        val wv = host.webView
+        val prevUrl = wv.copyBackForwardList().let { list ->
+            val idx = list.currentIndex - 1
+            if (idx >= 0) list.getItemAtIndex(idx)?.url else null
+        }
+        if (prevUrl != null && !prevUrl.startsWith("about:")) wv.goBack() else onBack()
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var recreateKey by remember { mutableIntStateOf(0) }
     var capability by remember { mutableStateOf<CapabilityReport?>(null) }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zhique.runner.ui.components.AuroraBackground
 import com.zhique.runner.ui.components.AuroraDomain
 
@@ -54,8 +56,10 @@ fun SettingsScreen(
         ) {
             Text(
                 "设置",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
             )
             SettingGroup("AI 服务商") {
                 SettingRow("对话", "AI 对话面板（思考折叠 · 续写 · 用量）", "settings-chat", onOpenChat)
@@ -97,12 +101,13 @@ private fun SettingRow(title: String, subtitle: String, tag: String, onClick: ()
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp)
+            .padding(horizontal = 20.dp, vertical = 13.dp)
             .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
@@ -110,6 +115,10 @@ private fun SettingRow(title: String, subtitle: String, tag: String, onClick: ()
             )
         }
         Spacer(Modifier.width(8.dp))
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outline,
+        )
     }
 }

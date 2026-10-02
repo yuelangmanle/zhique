@@ -82,6 +82,7 @@ fun HomeScreen(
     repo: ProjectRepository,
     onRun: (ProjectMeta) -> Unit,
     onChat: (ProjectMeta) -> Unit = {},
+    onEdit: (ProjectMeta) -> Unit = {},
     onToast: (String) -> Unit,
     modifier: Modifier = Modifier,
     clipboardText: (() -> String?)? = null,
@@ -246,6 +247,7 @@ fun HomeScreen(
                             project = project,
                             onRun = { onRun(project) },
                             onChat = { onChat(project) },
+                            onEdit = { onEdit(project) },
                             onLongPress = { menuFor = project },
                             menuExpanded = menuFor?.id == project.id,
                             onDismissMenu = { if (menuFor?.id == project.id) menuFor = null },
@@ -320,6 +322,7 @@ private fun ProjectCard(
     project: ProjectMeta,
     onRun: () -> Unit,
     onChat: () -> Unit = {},
+    onEdit: () -> Unit = {},
     onLongPress: () -> Unit,
     menuExpanded: Boolean,
     onDismissMenu: () -> Unit,
@@ -379,16 +382,23 @@ private fun ProjectCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(
-                onClick = onChat,
-                modifier = Modifier.testTag("chat-${project.id}"),
+            // AI 对话入口（文字胶囊：与运行键形状区分，不误读）
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .clickable(onClick = onChat)
+                    .padding(horizontal = 13.dp, vertical = 8.dp)
+                    .testTag("chat-${project.id}"),
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "AI 对话",
-                    tint = MaterialTheme.colorScheme.secondary,
+                Text(
+                    "AI",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
+            Spacer(Modifier.width(10.dp))
             // 主行动：实心圆形运行钮（视觉焦点）
             Box(
                 Modifier
@@ -407,6 +417,7 @@ private fun ProjectCard(
             }
             Box {
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+                    DropdownMenuItem(text = { Text("编辑代码") }, onClick = onEdit)
                     DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
                     DropdownMenuItem(text = { Text("移动分组") }, onClick = onMoveGroup)
                     DropdownMenuItem(

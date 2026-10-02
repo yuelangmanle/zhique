@@ -88,8 +88,11 @@ class HomeController(
 
     fun createEmpty() {
         scope.launch(io) {
-            repo.create(DEFAULT_NAME, EMPTY_HTML)
+            val meta = repo.create(DEFAULT_NAME, EMPTY_HTML)
             snapshot()
+            // PM 视角修复：点「+」期待直接看到新项目（与 createSample 行为一致），
+            // 此前只入库不打开，用户以为"新建没反应"
+            onRun(meta)
         }
     }
 

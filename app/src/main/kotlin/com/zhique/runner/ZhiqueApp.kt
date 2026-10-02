@@ -81,6 +81,22 @@ fun ZhiqueApp(
     val agentBridge = remember { AgentBridge() }
     var editorProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var chatProject by remember { mutableStateOf<ProjectMeta?>(null) }
+    // 子页回退链（PM 审计修复：运行器→编辑器/Agent/对话 后返回此前一律掉回首页，
+    // 重度用户来回切项目无从谈起）。进入子页时记下来源，返回时逐级还原。
+    var runnerReturn by remember { mutableStateOf<ProjectMeta?>(null) }
+    var editorReturn by remember { mutableStateOf<ProjectMeta?>(null) }
+    val backFromSub: () -> Unit = {
+        when {
+            editorReturn != null -> {
+                editorProject = editorReturn
+                editorReturn = null
+            }
+            runnerReturn != null -> {
+                runnerProject = runnerReturn
+                runnerReturn = null
+            }
+        }
+    }
     var chatAsk by remember { mutableStateOf<EditorAskContext?>(null) }
     var wizardProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var publishProject by remember { mutableStateOf<ProjectMeta?>(null) }
@@ -162,14 +178,14 @@ fun ZhiqueApp(
     androidx.activity.compose.BackHandler(enabled = onboardingNeeded == true) { /* 留在引导 */ }
     androidx.activity.compose.BackHandler(enabled = onboardingNeeded == false) {
         when {
-            runnerProject != null -> { runnerProject = null; pendingProjectId = null }
-            agentMeta0 != null -> agentProject = null
-            editorMeta0 != null -> { editorProject = null; chatAsk = null }
+            runnerProject != null -> { runnerProject = null; pendingProjectId = null; runnerReturn = null }
+            agentMeta0 != null -> { agentProject = null; backFromSub() }
+            editorMeta0 != null -> { editorProject = null; chatAsk = null; backFromSub() }
+            chatProject != null -> { chatProject = null; chatAsk = null; backFromSub() }
             pasteDraft != null -> pasteDraft = null
             wizardMeta0 != null -> wizardProject = null
             publishMeta0 != null -> publishProject = null
             chatAsk != null -> chatAsk = null
-            chatProject != null -> chatProject = null
             settingsPage != null -> { settingsPage = null; permFocus = null }
             permFocus != null -> permFocus = null
             promptSeed != null -> promptSeed = null
@@ -243,14 +259,17 @@ fun ZhiqueApp(
                         },
                         bridge = agentBridge,
                         onSendToAgent = {
+                            runnerReturn = meta
                             runnerProject = null
                             agentProject = meta
                         },
                         onOpenChat = {
+                            runnerReturn = meta
                             runnerProject = null
                             chatProject = meta
                         },
                         onOpenEditor = {
+                            runnerReturn = meta
                             runnerProject = null
                             editorProject = meta
                         },
@@ -298,7 +317,7 @@ fun ZhiqueApp(
                         }
                         val controller = agentController
                         if (controller != null) {
-                            AgentScreen(controller = controller, onBack = { agentProject = null })
+                            AgentScreen(controller = controller, onBack = { agentProject = null; backFromSub() })
                         } else {
                             // 无 Provider 空态（真机夜间循环：此前白屏无任何反馈）
                             Box(
@@ -347,21 +366,23 @@ fun ZhiqueApp(
                         EditorScreen(
                             controller = controller,
                             fontFamily = editorFont,
-                            onBack = { editorProject = null },
+                            onBack = { editorProject = null; backFromSub() },
                             onAskAi = { ask ->
+                                // PM 审计修复：不再跳设置 tab（导航断裂）；全屏对话 + 返回还原编辑器
                                 chatAsk = ask
+                                editorReturn = editorMeta
                                 editorProject = null
-                                tab = TAB_SETTINGS
-                                settingsPage = "chat"
+                                chatProject = editorMeta
                             },
                         )
                     }
                     chatMeta0 != null -> ChatPage(
                         container = container,
                         scope = scope,
-                        onBack = { chatProject = null },
+                        onBack = { chatProject = null; chatAsk = null; backFromSub() },
                         onToast = toast,
-                        initialAsk = null,
+                        initialAsk = chatAsk,
+                        projectId = chatMeta0.id,
                         onGoProviders = { chatProject = null; tab = TAB_SETTINGS; settingsPage = "providers" },
                     )
                     pasteDraft != null -> {
@@ -607,6 +628,7 @@ fun ZhiqueApp(
                             pendingProjectId = it.id
                         },
                         onChat = { chatProject = it },
+                        onEdit = { editorProject = it },
                         onToast = toast,
                         clipboardText = { readClipboardText(context) },
                         onPastePreview = { text ->
@@ -680,6 +702,7 @@ private fun ChatPage(
     onBack: () -> Unit,
     onToast: (String) -> Unit,
     initialAsk: EditorAskContext? = null,
+    projectId: String? = null,
     onGoProviders: () -> Unit = {},
 ) {
     var controller by remember { mutableStateOf<ChatController?>(null) }
@@ -707,6 +730,19 @@ private fun ChatPage(
     }
     val c = controller
     if (c != null) {
+        // 项目上下文注入（PM 审计修复）：从项目卡/运行器进入的对话，首条 system 消息
+        // 携带 index.html（截 6000 字符），AI 才知道"这个项目"是什么
+        LaunchedEffect(c, projectId) {
+            val pid = projectId ?: return@LaunchedEffect
+            val html = withContext(Dispatchers.IO) {
+                runCatching { container.repo.readFile(pid, "index.html") }.getOrNull()
+            } ?: return@LaunchedEffect
+            c.seedSystemContext(
+                "你是织雀内的编程助手。当前项目「${container.repo.meta(pid)?.name ?: pid}」的 index.html 如下（超长时截断）：\n" +
+                    "```html\n" + html.take(6000) + "\n```\n" +
+                    "用户会要求你解释、修改或继续开发这个项目。回答代码修改时给出可直接替换的完整片段。",
+            )
+        }
         // 编辑器「问 AI 这段」→ 选中范围作附加上下文自动发送（规格 F3）
         LaunchedEffect(initialAsk, c) {
             initialAsk?.let { ask -> c.sendWithContext(ask.selection, ask.language, ask.question) }

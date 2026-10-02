@@ -111,6 +111,10 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
     /** W3C geolocation 网关（:app 侧注入；null=一律拒绝）。 */
     var geolocationGateway: GeolocationGateway? = null
 
+    /** 文件选择注入点（:app 侧 ActivityResult 实现；null 时走系统 GET_CONTENT 兜底）。 */
+    var fileChooserLauncher:
+        ((acceptTypes: Array<String>, callback: android.webkit.ValueCallback<Array<android.net.Uri>>) -> Unit)? = null
+
     // 桥 JS 与 eruda 源必须在 webView 属性初始化（buildWebView→registerDocumentStartScript）
     // 之前声明——Kotlin 属性按声明序初始化，lazy 委托声明晚于使用点会在构造期 NPE
     // （真机质量修复 B1：首启进运行器 NoSuchMethodError 后紧跟的第二次崩溃）
@@ -215,6 +219,25 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                 request: WebResourceRequest,
             ): WebResourceResponse? = source.intercept(request.url)
 
+            // 外链导航拦截（PM 审计：此前点网页里的 http 链接会替换掉项目页且无法返回）
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest,
+            ): Boolean {
+                val url = request.url.toString()
+                val inApp = url.startsWith("about:") || url.startsWith("data:") ||
+                    url.startsWith("blob:") || url.startsWith("javascript:") ||
+                    url.contains(ASSET_DOMAIN)
+                if (inApp) return false
+                // http/https 外链 → 系统浏览器；其余 scheme 尝试外部应用，失败则吞掉
+                return runCatching {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, request.url)
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    appContext.startActivity(intent)
+                    true
+                }.getOrDefault(true)
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 if (url == "about:blank" && !capabilityDetected) {
                     capabilityDetected = true
@@ -285,6 +308,51 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                 gateway.onGeolocationPermissionShow(origin) { granted ->
                     callback.invoke(origin, granted, granted)
                 }
+            }
+
+            // 文件选择（PM 审计：<input type=file> 此前无任何反应）。宿主注入
+            // launcher（:app 的 ActivityResult）；未注入时尝试以系统文件选择器兜底。
+            override fun onShowFileChooser(
+                webView: WebView,
+                filePathCallback: android.webkit.ValueCallback<Array<android.net.Uri>>,
+                fileChooserParams: FileChooserParams,
+            ): Boolean {
+                val launcher = fileChooserLauncher
+                if (launcher != null) {
+                    launcher(fileChooserParams.acceptTypes ?: arrayOf("*/*"), filePathCallback)
+                    return true
+                }
+                return runCatching {
+                    val intent = (context as? android.app.Activity)?.let { act ->
+                        android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                            type = fileChooserParams.acceptTypes?.firstOrNull() ?: "*/*"
+                            putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                        }.let { i -> act.startActivityForResult(android.content.Intent.createChooser(i, "选择文件"), FILE_CHOOSER_REQUEST) }
+                    }
+                    intent != null
+                }.getOrDefault(false)
+            }
+
+            // window.open / target=_blank（PM 审计：此前点击无反应）→ 同一 WebView 承载
+            override fun onCreateWindow(
+                view: WebView,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message,
+            ): Boolean {
+                val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+                transport.webView = view
+                resultMsg.sendToTarget()
+                return true
+            }
+        }
+        // 网页触发的下载 → 系统下载器/浏览器（PM 审计：此前无反应）
+        wv.setDownloadListener { url, _, _, _, _ ->
+            runCatching {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
             }
         }
         wv.addJavascriptInterface(bridge, "ZhiqueNative")
@@ -366,6 +434,7 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
 
     private companion object {
         const val BRIDGE_ASSET = "zhique-bridge.js"
+        const val FILE_CHOOSER_REQUEST = 0x2A1
         const val ASSET_DOMAIN = "appassets.androidplatform.net"
         const val MAX_CRASH_RECOVERY = 3
     }

@@ -103,6 +103,16 @@ class ChatController(
 
     /** 发送历史（仅 role/content；思考不进历史）。 */
     private val history = mutableListOf<ChatMessage>()
+
+    /**
+     * 项目上下文注入（PM 审计修复：从项目卡/运行器进入的对话此前完全不知道是哪个项目，
+     * 用户问"帮我改这个页面"AI 无从谈起）。仅在会话首条且历史为空时生效，
+     * 以 system 消息进历史，用户可见的正文不受污染。
+     */
+    fun seedSystemContext(text: String) {
+        if (history.isNotEmpty()) return
+        history += ChatMessage("system", text)
+    }
     private var lastRequest: ChatRequest? = null
     private var thinkingStartMs = 0L
     private val liveThinkingBuf = TailBuffer(LIVE_BUFFER_CAP)
