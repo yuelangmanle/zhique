@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>极简番茄钟</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+    background: #101018; color: #eef0ff; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; user-select: none; }
+  body::before { content: ''; position: fixed; inset: -20%; z-index: 0;
+    background: radial-gradient(circle at 30% 25%, rgba(255,120,90,.16), transparent 45%),
+                radial-gradient(circle at 72% 78%, rgba(90,140,255,.14), transparent 48%);
+    animation: drift 16s ease-in-out infinite alternate; }
+  @keyframes drift { to { transform: translate(3%, -2%) scale(1.06); } }
+  .app { position: relative; z-index: 1; text-align: center; padding: 24px; }
+  .ring { position: relative; width: 264px; height: 264px; margin: 0 auto; }
+  svg { transform: rotate(-90deg); }
+  .track { stroke: rgba(255,255,255,.07); }
+  .prog { stroke: url(#g); stroke-linecap: round; transition: stroke-dashoffset .4s linear; }
+  .time { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; }
+  .mm { font-size: 58px; font-weight: 800; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+  .phase { font-size: 13px; color: #9aa2c8; margin-top: 6px; letter-spacing: 4px; }
+  .ctl { display: flex; gap: 14px; justify-content: center; margin-top: 34px; }
+  button { border: none; font-family: inherit; cursor: pointer; transition: transform .15s; }
+  button:active { transform: scale(.93); }
+  .main { font-size: 17px; font-weight: 700; color: #fff; padding: 15px 52px; border-radius: 999px;
+    background: linear-gradient(120deg, #ff785a, #ff5a8a); box-shadow: 0 12px 34px rgba(255,90,110,.35); }
+  .ghost { font-size: 14px; color: #9aa2c8; background: rgba(255,255,255,.06); padding: 15px 22px;
+    border-radius: 999px; }
+  .stat { margin-top: 26px; font-size: 12.5px; color: #7d86a8; line-height: 1.9; }
+  .stat b { color: #ffb199; }
+  .tip { margin-top: 8px; font-size: 11px; color: #565d7a; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="ring">
+    <svg width="264" height="264" viewBox="0 0 264 264">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ff785a"/><stop offset="1" stop-color="#ff5a8a"/>
+      </linearGradient></defs>
+      <circle class="track" cx="132" cy="132" r="116" fill="none" stroke-width="12"/>
+      <circle class="prog" id="prog" cx="132" cy="132" r="116" fill="none" stroke-width="12"
+        stroke-dasharray="728.8" stroke-dashoffset="0"/>
+    </svg>
+    <div class="time"><div class="mm" id="mm">25:00</div><div class="phase" id="phase">专注</div></div>
+  </div>
+  <div class="ctl">
+    <button class="main" id="go">开始专注</button>
+    <button class="ghost" id="reset">重置</button>
+  </div>
+  <div class="stat">今日已完成 <b id="done">0</b> 个番茄 · 累计专注 <b id="mins">0</b> 分钟
+    <div class="tip">数据保存在本机，退出重进不丢失（localStorage 持久化演示）</div></div>
+</div>
+<script>
+const KEY = 'zhique-pomodoro-v1';
+let store = { done: 0, mins: 0, day: new Date().toDateString(), remain: 25 * 60, focusing: false };
+try { Object.assign(store, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+if (store.day !== new Date().toDateString()) { store.done = 0; store.mins = 0; store.day = new Date().toDateString(); }
+
+const FOCUS = 25 * 60, BREAK = 5 * 60;
+let remain = store.remain ?? FOCUS, timer = null, focusing = store.focusing ?? false;
+const CIRC = 2 * Math.PI * 116;
+
+const $mm = document.getElementById('mm'), $phase = document.getElementById('phase');
+const $go = document.getElementById('go'), $prog = document.getElementById('prog');
+const $done = document.getElementById('done'), $mins = document.getElementById('mins');
+
+function save() { store.remain = remain; store.focusing = focusing;
+  try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
+function paint() {
+  const m = String(Math.floor(remain / 60)).padStart(2, '0');
+  const s = String(remain % 60).padStart(2, '0');
+  $mm.textContent = m + ':' + s;
+  $phase.textContent = focusing ? '专注' : (remain <= BREAK && remain < FOCUS ? '休息' : '专注');
+  const total = focusing ? FOCUS : BREAK;
+  $prog.style.strokeDashoffset = CIRC * (1 - remain / total);
+  $go.textContent = timer ? '暂停' : (remain < total ? '继续' : (focusing ? '开始专注' : '开始休息'));
+  $done.textContent = store.done; $mins.textContent = store.mins;
+}
+function tick() {
+  remain--;
+  if (remain <= 0) {
+    if (focusing) {
+      store.done++; store.mins += 25;
+      try { zq.notification.post({ title: '🍅 番茄完成', body: '休息 5 分钟吧' }).catch(()=>{}); } catch (e) {}
+      focusing = false; remain = BREAK;
+    } else { focusing = true; remain = FOCUS;
+      try { zq.notification.post({ title: '☕ 休息结束', body: '开始下一个番茄' }).catch(()=>{}); } catch (e) {} }
+    clearInterval(timer); timer = null;
+  }
+  paint(); save();
+}
+$go.addEventListener('click', () => {
+  if (timer) { clearInterval(timer); timer = null; }
+  else { timer = setInterval(tick, 1000); }
+  paint(); save();
+});
+document.getElementById('reset').addEventListener('click', () => {
+  clearInterval(timer); timer = null; remain = FOCUS; focusing = true;
+  paint(); save();
+});
+paint();
+console.log('番茄钟就绪 · 今日 ' + store.done + ' 个');
+</script>
+</body>
+</html>

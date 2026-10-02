@@ -41,6 +41,9 @@ object AxmlPatcher {
     )
 
     private const val RES_XML_TYPE = 0x0003
+
+    /** AGP 合并进模板 manifest 的动态接收器权限名后缀（${applicationId}.同后缀）。 */
+    private const val DYNAMIC_RECEIVER_PERMISSION_SUFFIX = ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
     private const val RES_STRING_POOL_TYPE = 0x0001
     private const val RES_XML_START_ELEMENT_TYPE = 0x0102
     private const val UTF8_FLAG = 0x100
@@ -83,6 +86,14 @@ object AxmlPatcher {
                         intValues = emptyMap(),
                         refValues = patch.iconResId?.let { mapOf("icon" to it) } ?: emptyMap(),
                     )
+                    // 模板自带的动态接收器权限名（AGP 合并时绑定模板 applicationId）
+                    // 必须跟随新包名——否则 androidx 运行期按新包名查权限
+                    // 会 SecurityException（潜在运行时崩溃，随包名改写一并修）
+                    "permission", "uses-permission" -> rewriteNameSuffix(
+                        manifest, off, pool, edits,
+                        suffix = DYNAMIC_RECEIVER_PERMISSION_SUFFIX,
+                        newValue = patch.packageName + DYNAMIC_RECEIVER_PERMISSION_SUFFIX,
+                    )
                 }
             }
             if (chunkSize <= 0) break
@@ -104,6 +115,41 @@ object AxmlPatcher {
         out.write(poolBytes)
         out.write(tail)
         return out.toByteArray()
+    }
+
+    /**
+     * 按后缀条件重写 `name` 属性（permission / uses-permission 的包名前缀跟随）。
+     * 仅当现值以 [suffix] 结尾才改写；找不到不报错（模板差异容忍）。
+     */
+    private fun rewriteNameSuffix(
+        data: ByteArray,
+        chunkAt: Int,
+        pool: StringPool,
+        edits: MutableList<Pair<Int, ByteArray>>,
+        suffix: String,
+        newValue: String,
+    ) {
+        val attributeStart = shortAt(data, chunkAt + 24)
+        val attributeSize = shortAt(data, chunkAt + 26)
+        val attributeCount = shortAt(data, chunkAt + 28)
+        require(attributeSize >= 20) { "unexpected attribute size: $attributeSize" }
+        for (i in 0 until attributeCount) {
+            val attrAt = chunkAt + 16 + attributeStart + i * attributeSize
+            val attrName = pool.string(intAt(data, attrAt + 4))
+            if (attrName != "name") continue
+            val current = pool.string(intAt(data, attrAt + 8))
+            if (!current.endsWith(suffix)) continue
+            val newIdx = pool.indexOfOrAppend(newValue)
+            edits += (attrAt + 8) to intBytes(newIdx)
+            val dataType = data[attrAt + 15].toInt() and 0xFF
+            if (dataType == TYPE_STRING) {
+                edits += (attrAt + 16) to intBytes(newIdx)
+            } else {
+                edits += (attrAt + 12) to shortBytes(8)
+                edits += (attrAt + 15) to byteArrayOf(TYPE_STRING.toByte())
+                edits += (attrAt + 16) to intBytes(newIdx)
+            }
+        }
     }
 
     // ---- 属性定位与改写 ----

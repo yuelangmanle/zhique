@@ -103,10 +103,33 @@ class HomeController(
                 onToast("示例资源缺失")
                 return@launch
             }
-            val meta = repo.create(SAMPLE_NAME, html)
+            // 允许重复创建：同名已存在时自动加序号（示例库每个都能玩）
+            val name = uniqueName(SAMPLE_NAME)
+            val meta = repo.create(name, html)
             snapshot()
             onRun(meta)
         }
+    }
+
+    /** 示例库通用创建（任一 assets/samples/<asset>）：同名加序号防覆盖。 */
+    fun createFromSample(displayName: String, html: String?) {
+        scope.launch(io) {
+            if (html.isNullOrBlank()) {
+                onToast("示例资源缺失")
+                return@launch
+            }
+            val meta = repo.create(uniqueName(displayName), html)
+            snapshot()
+            onRun(meta)
+        }
+    }
+
+    private fun uniqueName(base: String): String {
+        val existing = runCatching { repo.list().map { it.name }.toSet() }.getOrDefault(emptySet())
+        if (base !in existing) return base
+        var i = 2
+        while ("$base $i" in existing) i++
+        return "$base $i"
     }
 
     fun rename(id: String, name: String) {

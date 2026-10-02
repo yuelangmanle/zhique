@@ -827,6 +827,12 @@ private fun AboutPage(
             download = { info, dir, onProgress -> checker.downloadApk(info, dir, onProgress) },
             downloadsDir = downloadsDir,
             scope = scope,
+            localChangelog = {
+                // 内置更新日志（assets/CHANGELOG.md）——无 GitHub 也能查
+                runCatching {
+                    context.assets.open("CHANGELOG.md").bufferedReader().use { it.readText() }
+                }.getOrNull()
+            },
             onNotify = container.eventNotifier,
         )
     }
@@ -847,6 +853,11 @@ private fun PermissionCenterPage(
     onOpenKeystore: () -> Unit = {},
     keystore: com.zhique.core.export.KeystoreManager? = null,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val osGateway = androidx.compose.runtime.remember(context) {
+        (context as? androidx.activity.ComponentActivity)
+            ?.let { com.zhique.runner.runner.ActivityOsPermissionGateway(it) }
+    }
     com.zhique.runner.permission.PermissionCenterScreen(
         repo = container.repo,
         registry = container.permissionRegistry,
@@ -854,5 +865,6 @@ private fun PermissionCenterPage(
         onBack = onBack,
         onOpenKeystore = onOpenKeystore,
         keystore = keystore,
+        osGateway = osGateway,
     )
 }

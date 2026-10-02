@@ -170,4 +170,28 @@ class ProjectRepositoryTest {
         assertTrue(!java.io.File(repo.projectDir(copied.id), ".git").exists(), "复制不带走 .git")
         assertTrue(java.io.File(repo.projectDir(copied.id), "index.html").isFile)
     }
+
+    @Test
+    fun `损坏project_json自动重建不丢项目`() {
+        val a = repo.create("我的工具", "<html><head><title>工具页</title></head></html>")
+        // 模拟旧版崩溃窗口期写坏 meta（真机反馈"数据消失"根因）
+        java.io.File(repo.projectDir(a.id), "project.json").writeText("{ 损坏的 JSON ")
+
+        val listed = repo.list()
+        assertEquals(1, listed.size, "损坏 meta 必须自动重建而非静默消失")
+        assertEquals("工具页", listed.single().name, "重建名来自 <title>")
+        assertTrue(listed.single().rebuilt, "标记 rebuilt 供 UI 提示")
+        // 修复已写回：再读不再标记
+        assertTrue(!repo.list().single().rebuilt)
+        assertTrue(repo.corruptedProjects.isEmpty())
+    }
+
+    @Test
+    fun `无index_html的目录不重建计入损坏`() {
+        val a = repo.create("空壳", "<p></p>")
+        java.io.File(repo.projectDir(a.id), "index.html").delete()
+        java.io.File(repo.projectDir(a.id), "project.json").writeText("bad")
+        assertTrue(repo.list().isEmpty())
+        assertEquals(listOf(a.id), repo.corruptedProjects)
+    }
 }

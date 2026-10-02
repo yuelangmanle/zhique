@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>权限检测中心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+    background: #0b0d17; color: #e8eaf6; overflow-x: hidden; }
+  body::before { content: ''; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 15% 10%, rgba(91,141,239,.22), transparent 42%),
+                radial-gradient(circle at 85% 90%, rgba(122,90,214,.20), transparent 45%); }
+  .wrap { position: relative; max-width: 560px; margin: 0 auto; padding: 28px 18px 48px; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: .5px;
+    background: linear-gradient(120deg, #8fb3ff, #c9a8ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: #8b93b0; font-size: 13px; margin: 6px 0 18px; line-height: 1.6; }
+  .bar { position: relative; height: 52px; border-radius: 16px; overflow: hidden; margin-bottom: 20px;
+    background: linear-gradient(120deg, #4a63e7, #8a5cf6); display: flex; align-items: center;
+    padding: 0 18px; box-shadow: 0 10px 30px rgba(90,100,240,.35); cursor: pointer;
+    transition: transform .15s ease; }
+  .bar:active { transform: scale(.97); }
+  .bar .t { font-weight: 700; font-size: 15px; flex: 1; }
+  .bar .n { font-size: 12px; opacity: .85; background: rgba(255,255,255,.2);
+    padding: 4px 12px; border-radius: 12px; font-weight: 600; }
+  .card { display: flex; align-items: center; gap: 14px; padding: 15px 16px; margin-bottom: 10px;
+    border-radius: 16px; background: rgba(255,255,255,.045);
+    border: 1px solid rgba(255,255,255,.07); transition: border-color .3s; }
+  .card.ok { border-color: rgba(74,222,128,.4); background: rgba(74,222,128,.06); }
+  .card.no { border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.06); }
+  .card.run { border-color: rgba(139,163,255,.5); }
+  .ico { width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center;
+    justify-content: center; font-size: 21px; flex-shrink: 0;
+    background: rgba(255,255,255,.07); }
+  .mid { flex: 1; min-width: 0; }
+  .name { font-size: 15px; font-weight: 700; }
+  .hint { font-size: 11.5px; color: #7d86a3; margin-top: 3px; line-height: 1.45;
+    overflow: hidden; text-overflow: ellipsis; }
+  .go { font-size: 12.5px; font-weight: 700; padding: 8px 15px; border-radius: 12px; border: none;
+    background: rgba(139,163,255,.16); color: #a8bcff; flex-shrink: 0; transition: all .2s; }
+  .go:active { transform: scale(.93); background: rgba(139,163,255,.3); }
+  .go:disabled { opacity: .45; }
+  .st { font-size: 12px; font-weight: 700; padding: 6px 11px; border-radius: 10px; flex-shrink: 0; }
+  .st.idle { color: #7d86a3; background: rgba(255,255,255,.06); }
+  .st.ok { color: #4ade80; background: rgba(74,222,128,.14); }
+  .st.no { color: #f87171; background: rgba(248,113,113,.14); }
+  .sp { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.2);
+    border-top-color: #a8bcff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .foot { margin-top: 22px; font-size: 11.5px; color: #5d6480; line-height: 1.8; }
+  .foot b { color: #8b93b0; }
+  .reset { display: block; margin: 16px auto 0; font-size: 12px; color: #6e7694;
+    background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
+    padding: 8px 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛡️ 权限检测中心</h1>
+  <p class="sub">逐个检测织雀授予本页面的手机能力。每次检测会弹出授权卡——<br>选择「授予」即可真实调用，验证全部功能链条。</p>
+  <div class="bar" id="runAll">
+    <span class="t">一键全部检测</span>
+    <span class="n" id="counter">0 / 10</span>
+  </div>
+  <div id="list"></div>
+  <button class="reset" id="reset">重置全部结果</button>
+  <p class="foot"><b>说明</b>：被拒绝的能力不影响其他检测；重新授权可在织雀「设置 → 权限中心」修改。<br>检测结果保存在本机，退出再进也不会丢。</p>
+</div>
+<script>
+const CAPS = [
+  { id: 'camera',    ico: '📷', name: '相机',   hint: '拍摄一张照片（zq.camera.capture）',
+    run: () => zq.camera.capture({ dataUrl: false }).then(r => '照片已存：' + (r.path || 'ok').split('/').pop()) },
+  { id: 'mic',       ico: '🎤', name: '麦克风', hint: '录制 2 秒音频（zq.mic.record）',
+    run: () => zq.mic.record({ seconds: 2 }).then(r => '录音已存：' + (r.path || 'ok').split('/').pop()) },
+  { id: 'location',  ico: '📍', name: '定位',   hint: '读取一次当前位置（zq.location.get）',
+    run: () => zq.location.get().then(r => '纬度 ' + (r.latitude ?? r.lat ?? '?') + '，经度 ' + (r.longitude ?? r.lng ?? '?')) },
+  { id: 'sensor',    ico: '📈', name: '传感器', hint: '订阅加速度计 2 秒（zq.sensor.watch）',
+    run: () => new Promise((res, rej) => {
+      let got = 0;
+      zq.sensor.watch({ type: 'acceleration' }).then(r => {
+        const sub = r.sub;
+        zq.on(sub, v => {
+          got++;
+          if (got === 1) { zq.sensor.unwatch({ sub }).catch(()=>{}); res('已收到 ' + JSON.stringify(v).slice(0, 60)); }
+        });
+        setTimeout(() => { if (!got) { zq.sensor.unwatch({ sub }).catch(()=>{}); res('订阅成功（未在 2 秒内收到样本）'); } }, 2000);
+      }).catch(rej);
+    }) },
+  { id: 'bluetooth', ico: '📶', name: '蓝牙',   hint: '扫描附近 BLE 设备 3 秒（zq.bluetooth.scan）',
+    run: () => zq.bluetooth.scan({ seconds: 3 }).then(r => '扫描完成' + (Array.isArray(r.devices) ? '，发现 ' + r.devices.length + ' 台' : '')) },
+  { id: 'notification', ico: '🔔', name: '通知', hint: '发送一条系统通知（zq.notification）',
+    run: () => zq.notification.requestPermission().then(() => zq.notification.post({ title: '权限检测', body: '通知能力工作正常 ✓' })).then(() => '通知已发送，看状态栏') },
+  { id: 'clipboard', ico: '📋', name: '剪贴板', hint: '写入并读回一次（zq.clipboard）',
+    run: () => zq.clipboard.set({ text: '织雀权限检测 ' + Date.now() }).then(() => zq.clipboard.get()).then(r => '读回：' + String(r.text || '').slice(0, 24)) },
+  { id: 'share',     ico: '📤', name: '分享',   hint: '弹系统分享面板（zq.share.text）',
+    run: () => zq.share.text({ text: '来自织雀权限检测的分享测试' }).then(() => '已唤起分享面板') },
+  { id: 'file',      ico: '📁', name: '文件',   hint: '沙盒内写入并读回（zq.file）',
+    run: () => zq.file.write({ path: 'check.txt', content: 'ok ' + Date.now() }).then(() => zq.file.read({ path: 'check.txt' })).then(r => '读回：' + String(r.content || '').slice(0, 24)) },
+  { id: 'screen',    ico: '🖥️', name: '截屏',   hint: '抓取一帧屏幕（zq.screen.capture）',
+    run: () => zq.screen.capture({ dataUrl: false }).then(r => '截图已存：' + (r.path || 'ok').split('/').pop()) },
+];
+
+const KEY = 'zhique-perm-check-v1';
+let results = {};
+try { results = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { results = {}; }
+
+const list = document.getElementById('list');
+const counter = document.getElementById('counter');
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(results)); } catch (e) {} }
+
+function render() {
+  list.innerHTML = '';
+  let okCount = 0;
+  CAPS.forEach(cap => {
+    const r = results[cap.id];
+    if (r && r.state === 'ok') okCount++;
+    const card = document.createElement('div');
+    card.className = 'card' + (r ? (r.state === 'ok' ? ' ok' : r.state === 'no' ? ' no' : '') : '');
+    const detail = r && r.detail ? r.detail : cap.hint;
+    card.innerHTML =
+      '<div class="ico">' + cap.ico + '</div>' +
+      '<div class="mid"><div class="name">' + cap.name + '</div>' +
+      '<div class="hint" title="' + detail.replace(/"/g, '') + '">' + detail + '</div></div>';
+    const btn = document.createElement('button');
+    btn.className = r ? ('st ' + (r.state === 'ok' ? 'ok' : 'no')) : 'go';
+    btn.textContent = r ? (r.state === 'ok' ? '✓ 通过' : '✕ 未通过') : '检测';
+    btn.addEventListener('click', () => runOne(cap, btn, card));
+    card.appendChild(btn);
+    list.appendChild(card);
+  });
+  counter.textContent = okCount + ' / ' + CAPS.length;
+}
+function runOne(cap, btn, card) {
+  btn.className = 'go'; btn.disabled = true; btn.innerHTML = '<span class="sp"></span>';
+  card.classList.add('run');
+  const t0 = Date.now();
+  Promise.resolve().then(cap.run)
+    .then(detail => { results[cap.id] = { state: 'ok', detail: detail + '（' + ((Date.now() - t0) / 1000).toFixed(1) + 's）' }; save(); render(); })
+    .catch(err => {
+      const msg = String(err && err.message || err);
+      const denied = /denied|拒绝|取消|未授予/i.test(msg);
+      results[cap.id] = { state: 'no', detail: denied ? '被拒绝或取消——可在权限中心重新授权' : '失败：' + msg.slice(0, 80) };
+      save(); render();
+    });
+}
+document.getElementById('runAll').addEventListener('click', async () => {
+  for (const cap of CAPS) {
+    if (results[cap.id] && results[cap.id].state === 'ok') continue;
+    await new Promise(done => {
+      const btn = document.createElement('button');
+      const card = list.children[CAPS.indexOf(cap)];
+      runOne(cap, btn, card || document.createElement('div'));
+      setTimeout(done, 900);
+    });
+  }
+});
+document.getElementById('reset').addEventListener('click', () => { results = {}; save(); render(); });
+render();
+console.log('权限检测中心就绪');
+</script>
+</body>
+</html>

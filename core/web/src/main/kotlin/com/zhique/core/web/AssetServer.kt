@@ -35,7 +35,14 @@ class AssetServer(projectDir: File) : ProjectSource {
                 if (mime.startsWith("text/") ||
                     mime in TEXT_LIKE_MIMES
                 ) "utf-8" else null
-            return WebResourceResponse(mime, charset, f.inputStream())
+            // no-store：编辑器改码后重跑必须拿到新内容（真机反馈"删掉代码粘新的，
+            // 运行还是旧页"——WebView HTTP 缓存命中无缓存头的本地响应）
+            return WebResourceResponse(mime, charset, f.inputStream()).apply {
+                responseHeaders = mapOf(
+                    "Cache-Control" to "no-store, no-cache, must-revalidate",
+                    "Pragma" to "no-cache",
+                )
+            }
         }
 
         private fun guessMime(path: String): String {

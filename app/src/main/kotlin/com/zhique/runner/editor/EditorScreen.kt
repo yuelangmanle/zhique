@@ -283,6 +283,40 @@ fun EditorContent(
                 }
             }
 
+            // 小白快捷键（真机反馈：不知道怎么整体替换代码）：
+            // 「粘贴替换全文」= 剪贴板 → 智能清洗（剥围栏/行号）→ 全文替换当前文件
+            state.activeFile?.let { active ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AssistChip(
+                        onClick = {
+                            val clip = clipboard.getText()?.text
+                            if (clip.isNullOrBlank()) {
+                                // 空剪贴板不崩：静默（无 Toast 通道时由内容不变体现）
+                            } else {
+                                val clean = com.zhique.core.paste.Cleaner.clean(clip)
+                                val body = clean.text.ifBlank { clip }
+                                onContentChange(active.path, body)
+                            }
+                        },
+                        label = { Text("粘贴替换全文") },
+                        modifier = Modifier.testTag("editor-paste-replace"),
+                    )
+                    AssistChip(
+                        onClick = { onContentChange(active.path, "") },
+                        label = { Text("清空") },
+                        modifier = Modifier.testTag("editor-clear"),
+                    )
+                    AssistChip(
+                        onClick = { clipboard.setText(AnnotatedString(active.content)) },
+                        label = { Text("复制全文") },
+                        modifier = Modifier.testTag("editor-copy-all"),
+                    )
+                }
+            }
+
             // 选中浮出操作条
             if (state.selectedText.isNotBlank()) {
                 Row(

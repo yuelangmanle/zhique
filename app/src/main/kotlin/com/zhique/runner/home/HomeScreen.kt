@@ -94,6 +94,11 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val loadSample: (String) -> String? = { asset ->
+        runCatching {
+            context.assets.open("samples/$asset").bufferedReader().use { it.readText() }
+        }.getOrNull()
+    }
     val controller = remember(repo) {
         HomeController(
             repo = repo,
@@ -229,11 +234,11 @@ fun HomeScreen(
                             modifier = Modifier.testTag("empty-paste"),
                             shape = RoundedCornerShape(22.dp),
                         ) { Text("粘贴代码") }
-                        androidx.compose.material3.OutlinedButton(
-                            onClick = { controller.createSample() },
-                            modifier = Modifier.testTag("sample-button"),
-                            shape = RoundedCornerShape(22.dp),
-                        ) { Text("运行示例") }
+                    }
+                    Spacer(Modifier.size(28.dp))
+                    // 示例库（空态呈现全部预设示例，一键创建即玩）
+                    SampleGrid(compact = false) { entry ->
+                        controller.createFromSample(entry.name, loadSample(entry.asset))
                     }
                 }
             } else {
@@ -242,6 +247,11 @@ fun HomeScreen(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    item(key = "sample-strip") {
+                        SampleStrip { entry ->
+                            controller.createFromSample(entry.name, loadSample(entry.asset))
+                        }
+                    }
                     items(projects, key = { it.id }) { project ->
                         ProjectCard(
                             project = project,
@@ -317,6 +327,92 @@ fun HomeScreen(
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+/** 示例库·空态网格（两列卡片，渐变主色 + emoji + 描述）。 */
+@Composable
+private fun SampleGrid(compact: Boolean, onPick: (SampleEntry) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            "✨ 示例库",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            maxItemsInEachRow = 2,
+        ) {
+            SampleCatalog.ALL.forEach { entry ->
+                SampleTile(entry = entry, modifier = Modifier.weight(1f), onPick = onPick)
+            }
+        }
+    }
+}
+
+/** 示例库·有项目时的横向滑动条。 */
+@Composable
+private fun SampleStrip(onPick: (SampleEntry) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
+        Text(
+            "✨ 示例库 · 一键创建",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        )
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(SampleCatalog.ALL) { entry ->
+                SampleTile(
+                    entry = entry,
+                    modifier = Modifier.width(150.dp),
+                    onPick = onPick,
+                )
+            }
+        }
+    }
+}
+
+/** 单个示例卡：渐变底 + emoji + 名称 + 描述。 */
+@Composable
+private fun SampleTile(entry: SampleEntry, modifier: Modifier, onPick: (SampleEntry) -> Unit) {
+    val accent = parseIconColor(entry.accent)
+    androidx.compose.material3.Card(
+        modifier = modifier
+            .testTag("sample-${entry.asset}")
+            .clickable { onPick(entry) },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            Modifier
+                .background(gradientFor(accent))
+                .padding(13.dp),
+        ) {
+            Text(entry.emoji, style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.size(8.dp))
+            Text(
+                entry.name,
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                entry.desc,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.82f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ProjectCard(
     project: ProjectMeta,

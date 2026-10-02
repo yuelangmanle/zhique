@@ -81,6 +81,9 @@ fun PermissionCenterScreen(
     modifier: Modifier = Modifier,
     onOpenKeystore: () -> Unit = {},
     keystore: com.zhique.core.export.KeystoreManager? = null,
+    /** 系统权限网关（真机修复：权限中心「允许」此前只改矩阵状态、从不向系统申请——
+     *  用户看到"App 自己都没要过权限"。现在授予时同步弹系统权限确认框）。 */
+    osGateway: com.zhique.core.permission.OsPermissionGateway? = null,
 ) {
     var projects by remember { mutableStateOf<List<com.zhique.core.project.ProjectMeta>>(emptyList()) }
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -88,6 +91,7 @@ fun PermissionCenterScreen(
     val usage = remember { mutableStateMapOf<String, Int>() }
     var suggest by remember { mutableStateOf<List<String>>(emptyList()) }
     var menuFor by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     fun refresh(pid: String) {
         for ((cap, state) in registry.matrix(pid)) matrix[cap] = state
@@ -212,6 +216,18 @@ fun PermissionCenterScreen(
                                         selectedId?.let { pid ->
                                             registry.set(pid, cap.id, PState.GRANTED)
                                             refresh(pid)
+                                            // 同步发起系统权限申请（真机修复：让用户看到
+                                            // 真实的系统权限弹窗）。系统被拒时 OsGate 会把矩阵
+                                            // 回写 DENIED——矩阵始终反映真实可用性。
+                                            scope.launch {
+                                                com.zhique.core.permission.OsGate.ensure(
+                                                    registry = registry,
+                                                    projectId = pid,
+                                                    capability = cap,
+                                                    gateway = osGateway,
+                                                )
+                                                refresh(pid)
+                                            }
                                         }
                                     },
                                     modifier = Modifier.testTag("cap-set-GRANTED-${cap.id}"),

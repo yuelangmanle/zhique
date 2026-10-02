@@ -38,4 +38,8 @@ data class ProjectMeta(
     var providerOverride: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     var updatedAt: Long = createdAt,
-)
+) {
+    /** 本次读取是否由损坏元数据自动重建（纯内存标记，不落盘）。 */
+    @kotlinx.serialization.Transient
+    var rebuilt: Boolean = false
+}

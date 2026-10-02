@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>流光画板</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: #0a0c16; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px;
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 999px;
+    background: rgba(14,18,34,.72); border: 1px solid rgba(140,160,255,.18);
+    backdrop-filter: blur(14px); box-shadow: 0 12px 34px rgba(0,0,0,.5); }
+  .dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent;
+    transition: transform .15s, border-color .15s; }
+  .dot.on { border-color: #fff; transform: scale(1.16); }
+  .sep { width: 1px; height: 22px; background: rgba(255,255,255,.14); margin: 0 3px; }
+  .act { font: 12.5px system-ui, sans-serif; color: #c9d2ff; background: rgba(255,255,255,.08);
+    border: none; padding: 8px 14px; border-radius: 999px; }
+  .act:active { background: rgba(255,255,255,.2); }
+  .hint { position: fixed; top: 20px; width: 100%; text-align: center; pointer-events: none;
+    font: 11.5px system-ui, sans-serif; color: rgba(180,190,230,.5); letter-spacing: 2px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hint">滑动绘制流光 · 试试下面的颜色</div>
+<div class="bar" id="bar"></div>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  const img = ctx.getImageData(0, 0, cv.width || 1, cv.height || 1);
+  W = cv.width = innerWidth * DPR; H = cv.height = innerHeight * DPR;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  try { ctx.putImageData(img, 0, 0); } catch (e) {}
+}
+resize(); addEventListener('resize', resize);
+
+const COLORS = ['#7aa2ff', '#c78aff', '#5af0c8', '#ffb35a', '#ff6b9d', '#ffffff'];
+let color = COLORS[0], size = 14, drawing = false, lx = 0, ly = 0, hue = 0;
+
+function stroke(x, y) {
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 3.2 * DPR);
+  grad.addColorStop(0, color);
+  grad.addColorStop(.4, color + '88');
+  grad.addColorStop(1, 'transparent'.replace('transparent', hexA(color, 0)));
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(x, y, size * 3.2 * DPR, 0, 7); ctx.fill();
+  if (lx) {
+    ctx.strokeStyle = hexA(color, .55);
+    ctx.lineWidth = size * .9 * DPR; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(x, y); ctx.stroke();
+  }
+  lx = x; ly = y;
+}
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function pos(e) { const t = e.touches[0]; return [t.clientX * DPR, t.clientY * DPR]; }
+cv.addEventListener('touchstart', e => { drawing = true; lx = ly = 0; const [x, y] = pos(e); stroke(x, y); }, { passive: true });
+cv.addEventListener('touchmove', e => { if (!drawing) return; const [x, y] = pos(e); stroke(x, y); }, { passive: true });
+cv.addEventListener('touchend', () => { drawing = false; }, { passive: true });
+cv.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') { drawing = true; lx = ly = 0; stroke(e.clientX * DPR, e.clientY * DPR); } });
+cv.addEventListener('pointermove', e => { if (drawing && e.pointerType === 'mouse') stroke(e.clientX * DPR, e.clientY * DPR); });
+cv.addEventListener('pointerup', () => { drawing = false; });
+
+const bar = document.getElementById('bar');
+COLORS.forEach((c, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' on' : '');
+  d.style.background = c;
+  d.addEventListener('click', () => {
+    color = c;
+    [...bar.querySelectorAll('.dot')].forEach(x => x.classList.remove('on'));
+    d.classList.add('on');
+  });
+  bar.appendChild(d);
+});
+const sep = document.createElement('div'); sep.className = 'sep'; bar.appendChild(sep);
+const clear = document.createElement('button'); clear.className = 'act'; clear.textContent = '清空';
+clear.addEventListener('click', () => { ctx.clearRect(0, 0, W, H); });
+bar.appendChild(clear);
+const save = document.createElement('button'); save.className = 'act'; save.textContent = '保存';
+save.addEventListener('click', async () => {
+  save.textContent = '保存中…';
+  try {
+    const data = cv.toDataURL('image/png');
+    const base64 = data.split(',')[1];
+    await zq.file.write({ path: 'paint-' + Date.now() + '.png.b64', content: base64 });
+    save.textContent = '已存到项目 ✓';
+  } catch (e) { save.textContent = '保存失败'; }
+  setTimeout(() => { save.textContent = '保存'; }, 2400);
+});
+bar.appendChild(save);
+console.log('流光画板就绪');
+</script>
+</body>
+</html>

@@ -163,7 +163,12 @@ private fun ApilotSection(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { pickLauncher?.launch(controller.pickIntent()) },
+                    onClick = {
+                        // 真机修复：launch 全包 runCatching——ActivityNotFound / 包名解析失败
+                        // 等场景不允许闪退（真机反馈"点从 Apilot 接入闪退"）
+                        runCatching { pickLauncher?.launch(controller.pickIntent()) }
+                            .onFailure { controller.setNotice("无法打开 Apilot（${it.message}），请确认已安装最新版") }
+                    },
                     enabled = state.installed && !state.busy && pickLauncher != null,
                     modifier = Modifier.weight(1f).testTag("apilot-import"),
                 ) { Text("← 从 Apilot 接入") }
@@ -175,7 +180,8 @@ private fun ApilotSection(
                                 controller.setNotice("还没有可推送的服务商，先添加一个")
                             } else {
                                 controller.markSyncLaunched(plan.hasKey, plan.providerCount)
-                                syncLauncher?.launch(plan.intent)
+                                runCatching { syncLauncher?.launch(plan.intent) }
+                                    .onFailure { controller.setNotice("无法打开 Apilot（${it.message}），请确认已安装最新版") }
                             }
                         }
                     },

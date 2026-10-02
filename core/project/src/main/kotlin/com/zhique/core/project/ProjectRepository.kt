@@ -41,19 +41,48 @@ class ProjectRepository(private val root: File) {
         val corrupted = mutableListOf<String>()
         val metas = (projectsDir.listFiles()?.filter { it.isDirectory } ?: emptyList())
             .mapNotNull { dir ->
-                runCatching { readMeta(dir) }
-                    .onFailure {
-                        corrupted += dir.name
-                        System.err.println("[zhique] 损坏的 project.json，已跳过: ${dir.name}")
+                readMetaOrRebuild(dir)
+                    ?.also { meta ->
+                        if (meta.rebuilt) {
+                            System.err.println("[zhique] 项目元数据损坏，已自动重建: ${dir.name}")
+                        }
                     }
-                    .getOrNull()
+                    ?: run {
+                        corrupted += dir.name
+                        null
+                    }
             }
             .sortedBy { it.createdAt }
         corruptedProjects = corrupted
         return metas
     }
 
-    fun meta(id: String): ProjectMeta = readMeta(dir(id))
+    fun meta(id: String): ProjectMeta {
+        val d = dir(id)
+        return readMetaOrRebuild(d) ?: throw IllegalStateException("project not found: $id")
+    }
+
+    /**
+     * 读 meta；损坏/缺失时自动重建（用户数据永不消失——真机反馈"退出再进数据没了"
+     * 的根因是旧版崩溃窗口期写坏的 project.json 被静默跳过）。
+     * 重建策略：目录内有 index.html 即视为有效项目，从 `<title>` 或目录名取名字。
+     * 无法重建（无 index.html）才计入损坏清单。
+     */
+    private fun readMetaOrRebuild(dir: File): ProjectMeta? {
+        val f = File(dir, META_FILE)
+        if (f.isFile) {
+            runCatching { return readMeta(dir).also { it.rebuilt = false } }
+        }
+        val index = resolveIn(dir, "index.html")
+        if (!index.isFile) return null
+        val title = runCatching {
+            Regex("<title[^>]*>([^<]{1,64})</title>", RegexOption.IGNORE_CASE)
+                .find(index.readText())?.groupValues?.get(1)?.trim()
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        val meta = ProjectMeta(id = dir.name, name = title ?: dir.name).also { it.rebuilt = true }
+        runCatching { save(meta) } // 修复写回；失败下次仍可重建
+        return meta
+    }
 
     fun rename(id: String, name: String): ProjectMeta = mutate(id) { it.name = name }
 

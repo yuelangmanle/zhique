@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>粒子星云</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #05060f; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .hud { position: fixed; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center;
+    gap: 10px; pointer-events: none; }
+  .pill { font: 12px/1 system-ui, -apple-system, "PingFang SC", sans-serif; color: rgba(220,228,255,.75);
+    background: rgba(16,20,40,.55); border: 1px solid rgba(120,140,255,.22); border-radius: 14px;
+    padding: 8px 16px; backdrop-filter: blur(10px); }
+  .title { position: fixed; top: 22px; left: 0; right: 0; text-align: center; pointer-events: none;
+    font: 700 17px/1.4 system-ui, sans-serif; letter-spacing: 6px;
+    background: linear-gradient(120deg,#9db4ff,#d3b6ff,#9df0e0);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="title">粒 子 星 云</div>
+<div class="hud"><span class="pill">触摸吸引 · 双指扩散</span></div>
+<script>
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  cv.style.width = innerWidth + 'px';
+  cv.style.height = innerHeight + 'px';
+}
+resize();
+addEventListener('resize', resize);
+
+const N = 520;
+const PALETTE = [[157,180,255],[211,182,255],[157,240,224],[255,214,170],[255,170,208]];
+const pts = [];
+function spawn() {
+  const arm = Math.random() * Math.PI * 2;
+  const r = Math.pow(Math.random(), .65) * Math.min(W, H) * .42;
+  const col = PALETTE[(Math.random() * PALETTE.length) | 0];
+  return {
+    x: W / 2 + Math.cos(arm) * r, y: H / 2 + Math.sin(arm) * r * .86,
+    vx: 0, vy: 0, r: .8 + Math.random() * 2.1,
+    arm, baseR: r, spin: (.0016 + Math.random() * .0022) * (r > 60 ? 1 : -0.6),
+    col, tw: Math.random() * Math.PI * 2, tws: .02 + Math.random() * .04,
+  };
+}
+for (let i = 0; i < N; i++) pts.push(spawn());
+
+let touch = null, spread = 1;
+cv.addEventListener('touchstart', e => { touch = tp(e); spread = e.touches.length > 1 ? 1.6 : 1; }, { passive: true });
+cv.addEventListener('touchmove', e => { touch = tp(e); spread = e.touches.length > 1 ? 1.6 : 1; }, { passive: true });
+cv.addEventListener('touchend', () => { touch = null; spread = 1; }, { passive: true });
+function tp(e) { const t = e.touches[0]; return { x: t.clientX * DPR, y: t.clientY * DPR }; }
+
+let t = 0;
+function frame() {
+  t++;
+  ctx.fillStyle = 'rgba(5,6,15,.22)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  const cx = W / 2, cy = H / 2;
+  for (const p of pts) {
+    p.arm += p.spin * spread;
+    p.baseR += (spread > 1 ? .7 : -.35);
+    if (p.baseR < 18) { Object.assign(p, spawn()); p.baseR = 44; }
+    if (p.baseR > Math.min(W, H) * .58) { Object.assign(p, spawn()); }
+    const tx = cx + Math.cos(p.arm) * p.baseR;
+    const ty = cy + Math.sin(p.arm) * p.baseR * .86;
+    if (touch) {
+      const dx = touch.x - p.x, dy = touch.y - p.y;
+      const d2 = dx * dx + dy * dy + 900;
+      const f = Math.min(2600 / d2, 2.4);
+      p.vx += dx * f * .05; p.vy += dy * f * .05;
+    }
+    p.vx += (tx - p.x) * .012; p.vy += (ty - p.y) * .012;
+    p.vx *= .9; p.vy *= .9;
+    p.x += p.vx; p.y += p.vy;
+    p.tw += p.tws;
+    const a = .32 + Math.sin(p.tw) * .26;
+    const [r, g, b] = p.col;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+    ctx.shadowColor = `rgba(${r},${g},${b},.9)`;
+    ctx.shadowBlur = 14 * p.r;
+    ctx.arc(p.x, p.y, p.r * DPR, 0, 7);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, 130 * DPR);
+  core.addColorStop(0, 'rgba(220,230,255,.85)');
+  core.addColorStop(.32, 'rgba(150,170,255,.25)');
+  core.addColorStop(1, 'rgba(90,60,180,0)');
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.arc(cx, cy, 130 * DPR, 0, 7); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  requestAnimationFrame(frame);
+}
+frame();
+console.log('粒子星云已启动：' + N + ' 粒子');
+</script>
+</body>
+</html>

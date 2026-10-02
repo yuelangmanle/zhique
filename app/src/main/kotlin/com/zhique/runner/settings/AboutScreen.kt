@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zhique.core.publish.ReleaseInfo
 import com.zhique.runner.export.ExportDelivery
 
@@ -138,7 +139,25 @@ fun AboutScreen(
                 Spacer(Modifier.height(24.dp))
                 Text("更新日志", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
-                if (state.changelogs.isEmpty()) {
+                // 内置日志优先展示（迭代纪律：每次交付都更新，无网可查）
+                val local = state.localChangelog
+                if (!local.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("about-changelog-local"),
+                    ) {
+                        Text(
+                            local.trim(),
+                            style = MaterialTheme.typography.bodySmall,
+                            lineHeight = 19.sp,
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+                if (state.changelogs.isEmpty() && local.isNullOrBlank()) {
                     Text(
                         "暂无发布记录",
                         style = MaterialTheme.typography.bodySmall,

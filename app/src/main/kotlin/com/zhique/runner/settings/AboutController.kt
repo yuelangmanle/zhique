@@ -24,6 +24,8 @@ data class AboutUiState(
     val progress: Float = 0f,
     val downloadedApk: File? = null,
     val changelogs: List<ReleaseInfo> = emptyList(),
+    /** 内置更新日志全文（assets/CHANGELOG.md；无 GitHub 也可查，迭代纪律的展示面）。 */
+    val localChangelog: String? = null,
 )
 
 /**
@@ -40,6 +42,8 @@ class AboutController(
     private val downloadsDir: File,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** 内置更新日志读取（assets/CHANGELOG.md；null = 不展示本地日志）。 */
+    private val localChangelog: (suspend () -> String?)? = null,
     /** 通知三事件挂点（M9）：发现新版本触发，开关过滤在容器侧。 */
     private val onNotify: (channel: String, title: String, body: String) -> Unit = { _, _, _ -> },
 ) {
@@ -51,7 +55,8 @@ class AboutController(
         scope.launch(io) {
             val channel = runCatching { channelProvider() }.getOrDefault(PublishPreferences.CHANNEL_STABLE)
             val logs = runCatching { changelogs() }.getOrDefault(emptyList())
-            _state.update { it.copy(channel = channel, changelogs = logs) }
+            val local = runCatching { localChangelog?.invoke() }.getOrNull()
+            _state.update { it.copy(channel = channel, changelogs = logs, localChangelog = local) }
         }
     }
 
