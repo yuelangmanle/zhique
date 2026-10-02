@@ -113,6 +113,7 @@ fun DebugDrawer(
     timeline: Timeline = Timeline(emptyList(), emptyList(), emptyList(), emptyList()),
     capability: CapabilityReport? = null,
     onSendToAgent: () -> Unit = {},
+    onOpenChat: () -> Unit = {},
     onReload: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -192,7 +193,15 @@ fun DebugDrawer(
                     ) {
                         Text("🤖 交给 Agent", style = MaterialTheme.typography.labelMedium)
                     }
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = onOpenChat,
+                        modifier = Modifier.testTag("drawer-open-chat"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text("AI 对话", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(Modifier.width(8.dp))
                     if (capability?.degraded == true) {
                         Text(
                             "已降级 WebGL",

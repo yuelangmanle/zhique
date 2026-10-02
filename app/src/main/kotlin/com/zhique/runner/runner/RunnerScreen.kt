@@ -75,16 +75,15 @@ fun RunnerContent(
     onReload: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenEditor: () -> Unit = {},
+    onOpenChat: () -> Unit = {},
     webView: @Composable (Modifier) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
-        // 顶栏（真机修复：targetSdk 36 强制 edge-to-edge，必须避开状态栏，
-        // 否则工具栏与系统状态栏重叠）
+        // 顶栏（全局 insets 已由 ZhiqueApp 根统一处理，此处不再单独 padding）
         Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -113,6 +112,7 @@ fun RunnerContent(
                     timeline = timeline,
                     capability = capability,
                     onSendToAgent = onSendToAgent,
+                    onOpenChat = onOpenChat,
                     onReload = onReload,
                     modifier = Modifier.matchParentSize(),
                 )
@@ -230,6 +230,7 @@ fun RunnerScreen(
     bridge: com.zhique.runner.agent.AgentBridge? = null,
     onSendToAgent: () -> Unit = {},
     onOpenEditor: () -> Unit = {},
+    onOpenChat: () -> Unit = {},
     registry: com.zhique.core.permission.PermissionRegistry? = null,
     /** M9：eruda 高级面板开关（设置「通用 → Web」，重开运行器生效）。 */
     erudaEnabled: Boolean = false,
@@ -331,6 +332,7 @@ fun RunnerScreen(
             onReload = { host.reload() },
             modifier = modifier,
             onOpenEditor = onOpenEditor,
+            onOpenChat = onOpenChat,
             webView = { m ->
                 key(recreateKey) {
                     AndroidView(modifier = m, factory = { host.webView })

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -176,7 +177,15 @@ fun ZhiqueApp(
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    // 全局 insets（真机循环修复：targetSdk 36 强制 edge-to-edge，内容默认顶到
+    // 状态栏下。根节点统一 systemBarsPadding，各屏不再自行处理；运行器顶栏
+    // 的单独 statusBarsPadding 已移除避免双重留白）
+    Surface(
+        Modifier
+            .fillMaxSize()
+            .systemBarsPadding(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
@@ -236,6 +245,10 @@ fun ZhiqueApp(
                         onSendToAgent = {
                             runnerProject = null
                             agentProject = meta
+                        },
+                        onOpenChat = {
+                            runnerProject = null
+                            chatProject = meta
                         },
                         onOpenEditor = {
                             runnerProject = null

@@ -130,6 +130,7 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
 
     private var crashCount = 0
     private var capabilityDetected = false
+    private var hostCapabilityRechecked = false
 
     /** JS 桥存活标记：桥事件到达后，WebChromeClient 兜底采集静默，避免双份。 */
     @Volatile
@@ -221,6 +222,13 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                 } else if (url != "about:blank") {
                     // 项目页成功加载完成 → 连续崩溃计数归零（「连续崩溃≤3」语义）
                     crashCount = 0
+                    // 真机循环修复：WebGPU 需要安全上下文，about:blank（不透明源）上
+                    // navigator.gpu 恒为 undefined → 假阴性误降级。项目页（https 自定义
+                    // scheme）加载后重测一次，结果覆盖 about:blank 的初判。
+                    if (!hostCapabilityRechecked) {
+                        hostCapabilityRechecked = true
+                        detectCapabilities(view)
+                    }
                     // M9：eruda 开关打开 → 页尾注入内置资产（与自研采集共存）
                     if (erudaEnabled) {
                         ErudaInjector.pageEndScript(erudaSource)?.let { js ->

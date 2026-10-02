@@ -24,14 +24,14 @@ class ModelListFetcher(private val client: OkHttpClient = defaultHttpClient()) {
     private fun fetchBlocking(protocol: String, baseUrl: String, apiKey: String): List<String> {
         val (url, builder) = when (protocol) {
             Protocol.OPENAI_COMPATIBLE ->
-                baseUrl.trimEnd('/') + "/v1/models" to Request.Builder()
+                modelsUrl(baseUrl, "/v1") to Request.Builder()
                     .header("Authorization", "Bearer $apiKey")
             Protocol.ANTHROPIC_MESSAGES ->
-                baseUrl.trimEnd('/') + "/v1/models" to Request.Builder()
+                modelsUrl(baseUrl, "/v1") to Request.Builder()
                     .header("x-api-key", apiKey)
                     .header("anthropic-version", "2023-06-01")
             Protocol.GOOGLE_GENAI ->
-                baseUrl.trimEnd('/') + "/v1beta/models" to Request.Builder()
+                modelsUrl(baseUrl, "/v1beta") to Request.Builder()
                     .header("x-goog-api-key", apiKey)
             else -> throw AiError.Protocol("未知协议：$protocol")
         }
@@ -73,4 +73,19 @@ class ModelListFetcher(private val client: OkHttpClient = defaultHttpClient()) {
                 }
                 .orEmpty()
         }.getOrDefault(emptyList())
+
+    companion object {
+        /**
+         * 模型列表 URL 智能拼接（真机循环修复：baseUrl 已带 /v1 或 /v1beta 时
+         * 旧逻辑拼出 /v1/v1/models 404）。规则：baseUrl 已含版本段 → 只补 /models；
+         * 否则补「版本段 + /models」。DeepSeek 这类 /models 与 /v1/models 双兼容端点
+         * 两种输入都能命中。
+         */
+        fun modelsUrl(baseUrl: String, versionSegment: String): String {
+            val base = baseUrl.trimEnd('/')
+            val version = versionSegment.trimEnd('/')
+            if (base.endsWith(version)) return "$base/models"
+            return "$base$version/models"
+        }
+    }
 }
