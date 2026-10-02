@@ -2,6 +2,7 @@ package com.zhique.runner.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -50,6 +55,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zhique.core.project.ProjectMeta
 import com.zhique.core.project.ProjectRepository
 import java.text.SimpleDateFormat
@@ -142,29 +148,37 @@ fun HomeScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            val pasteNow = {
+                val text = clipboardText?.invoke()
+                if (text.isNullOrBlank()) onToast("剪贴板是空的——先去复制一段代码") else onPastePreview(text)
+            }
+            // 顶栏（视觉升级：品牌字标 + 紧凑图标动作；粘贴为主行动单独成钮）
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "织雀",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
                     modifier = Modifier.weight(1f),
                 )
+                Button(
+                    onClick = pasteNow,
+                    modifier = Modifier.testTag("paste-entry"),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Text("粘贴代码", style = MaterialTheme.typography.labelLarge)
+                }
+                Spacer(Modifier.width(4.dp))
                 if (clipboardDetection) {
-                    TextButton(
+                    IconButton(
                         onClick = { controller.checkClipboard() },
                         modifier = Modifier.testTag("clipboard-refresh"),
-                    ) { Text("刷新剪贴板") }
+                    ) { Icon(Icons.Filled.Refresh, contentDescription = "刷新剪贴板") }
                 }
-                // 常驻粘贴入口（真机反馈：粘贴的地方不明显——不该只在剪贴板有代码时出现）
-                TextButton(
-                    onClick = {
-                        val text = clipboardText?.invoke()
-                        if (text.isNullOrBlank()) onToast("剪贴板是空的——先去复制一段代码") else onPastePreview(text)
-                    },
-                    modifier = Modifier.testTag("paste-entry"),
-                ) { Text("粘贴") }
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.testTag("open-settings"),
@@ -174,7 +188,7 @@ fun HomeScreen(
             }
             val candidate = clipboardCandidate
             if (clipboardDetection && candidate != null) {
-                ClipboardCard(
+                ClipboardBanner(
                     text = candidate,
                     onPreview = {
                         controller.consumeClipboard()
@@ -187,22 +201,39 @@ fun HomeScreen(
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .padding(32.dp),
+                        .padding(horizontal = 32.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("还没有项目", style = MaterialTheme.typography.titleMedium)
+                    Box(
+                        Modifier
+                            .size(84.dp)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("🪶", style = MaterialTheme.typography.displaySmall) }
+                    Spacer(Modifier.size(20.dp))
+                    Text("还没有项目", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.size(8.dp))
                     Text(
-                        "粘贴代码即建项目（M2），或先玩示例",
+                        "从任何 AI 复制 HTML 代码，回来点「粘贴代码」即可运行",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-                    Spacer(Modifier.size(20.dp))
-                    Button(
-                        onClick = { controller.createSample() },
-                        modifier = Modifier.testTag("sample-button"),
-                    ) { Text("运行示例：星空") }
+                    Spacer(Modifier.size(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = pasteNow,
+                            modifier = Modifier.testTag("empty-paste"),
+                            shape = RoundedCornerShape(22.dp),
+                        ) { Text("粘贴代码") }
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { controller.createSample() },
+                            modifier = Modifier.testTag("sample-button"),
+                            shape = RoundedCornerShape(22.dp),
+                        ) { Text("运行示例") }
+                    }
                 }
             } else {
                 LazyColumn(
@@ -303,7 +334,7 @@ private fun ProjectCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("project-card"),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
@@ -314,43 +345,69 @@ private fun ProjectCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 图标容器：项目 iconColor（规格 §3.5）
+            // 渐变缩略图（Aurora Glass：项目色双停渐变 + 顶部高光，远看有质感）
             Box(
                 Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(parseIconColor(project.iconColor)),
-            )
-            Spacer(Modifier.width(12.dp))
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(gradientFor(parseIconColor(project.iconColor))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    project.name.take(1),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     project.name,
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.size(3.dp))
                 Text(
                     buildString {
-                        append(timeFormat.format(Date(project.updatedAt)))
+                        append(relativeTime(project.updatedAt))
                         if (project.group.isNotBlank()) append(" · ${project.group}")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Row {
-                TextButton(
-                    onClick = onChat,
-                    modifier = Modifier.testTag("chat-${project.id}"),
-                ) {
-                    Text("AI", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
-                }
-                TextButton(onClick = onRun, modifier = Modifier.testTag("run-${project.id}")) {
-                    Text("▶", color = MaterialTheme.colorScheme.primary)
-                }
-                Box {
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
-                        DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
+            IconButton(
+                onClick = onChat,
+                modifier = Modifier.testTag("chat-${project.id}"),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "AI 对话",
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            // 主行动：实心圆形运行钮（视觉焦点）
+            Box(
+                Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(21.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(onClick = onRun)
+                    .testTag("run-${project.id}"),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = "运行",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+            Box {
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+                    DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
                     DropdownMenuItem(text = { Text("移动分组") }, onClick = onMoveGroup)
                     DropdownMenuItem(
                         text = { Text("权限") },
@@ -361,14 +418,53 @@ private fun ProjectCard(
                     DropdownMenuItem(text = { Text("zip 导出") }, onClick = onExportZip)
                     DropdownMenuItem(text = { Text("删除") }, onClick = onDelete)
                 }
-                }
             }
         }
     }
 }
 
+/** 项目色 → 双停渐变（亮→深，视觉厚度；纯 JVM 可测）。 */
+internal fun gradientFor(base: Color): androidx.compose.ui.graphics.Brush {
+    val light = Color(
+        red = (base.red * 1.25f + 0.05f).coerceAtMost(1f),
+        green = (base.green * 1.25f + 0.05f).coerceAtMost(1f),
+        blue = (base.blue * 1.25f + 0.05f).coerceAtMost(1f),
+        alpha = 1f,
+    )
+    val deep = Color(
+        red = base.red * 0.62f,
+        green = base.green * 0.66f,
+        blue = base.blue * 0.92f,
+        alpha = 1f,
+    )
+    return androidx.compose.ui.graphics.Brush.linearGradient(
+        listOf(light, base, deep),
+        start = androidx.compose.ui.geometry.Offset.Zero,
+        end = androidx.compose.ui.geometry.Offset(180f, 180f),
+    )
+}
+
+/** 相对时间（今天=HH:mm，昨天=昨天，7 天内=N 天前，更早=MM-dd）。 */
+internal fun relativeTime(at: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - at
+    val dayMs = 24 * 60 * 60 * 1000L
+    return when {
+        diff < 60_000L -> "刚刚"
+        diff < 60 * 60_000L -> "${diff / 60_000L} 分钟前"
+        diff < dayMs && java.util.Calendar.getInstance().apply { timeInMillis = at }
+            .get(java.util.Calendar.DAY_OF_YEAR) ==
+            java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR) ->
+            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(at))
+        diff < 2 * dayMs -> "昨天"
+        diff < 7 * dayMs -> "${diff / dayMs} 天前"
+        else -> SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(at))
+    }
+}
+
+/** 剪贴板横幅（视觉升级：靛蓝渐变 + 外发光 + 白字，发现即可点）。 */
 @Composable
-private fun ClipboardCard(
+private fun ClipboardBanner(
     text: String,
     onPreview: () -> Unit,
     onDismiss: () -> Unit,
@@ -376,31 +472,54 @@ private fun ClipboardCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .testTag("clipboard-card"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                "检测到剪贴板中的代码",
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                text.lineSequence().firstOrNull { it.isNotBlank() }?.take(60) ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPreview, modifier = Modifier.testTag("clipboard-paste")) {
-                    Text("粘贴预览")
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.testTag("clipboard-dismiss")) {
-                    Text("忽略")
-                }
+        Row(
+            Modifier
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color(0xFF5A64C4), Color(0xFF7A5AD6)),
+                    ),
+                )
+                .clickable(onClick = onPreview)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("📋", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "剪贴板里有代码",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.size(2.dp))
+                Text(
+                    text.lineSequence().firstOrNull { it.isNotBlank() }?.take(48) ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White.copy(alpha = 0.22f))
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+            ) {
+                Text("粘贴", color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("clipboard-dismiss"),
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = "忽略", tint = Color.White.copy(alpha = 0.9f))
             }
         }
     }
