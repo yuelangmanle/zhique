@@ -3,14 +3,18 @@ package com.zhique.runner
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +79,7 @@ fun ZhiqueApp(
     var agentProject by remember { mutableStateOf<ProjectMeta?>(null) }
     val agentBridge = remember { AgentBridge() }
     var editorProject by remember { mutableStateOf<ProjectMeta?>(null) }
+    var chatProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var chatAsk by remember { mutableStateOf<EditorAskContext?>(null) }
     var wizardProject by remember { mutableStateOf<ProjectMeta?>(null) }
     var publishProject by remember { mutableStateOf<ProjectMeta?>(null) }
@@ -145,9 +150,10 @@ fun ZhiqueApp(
     val editorMeta0 = editorProject
     val wizardMeta0 = wizardProject
     val publishMeta0 = publishProject
+    val chatMeta0 = chatProject
     val fullScreen = onboardingNeeded == true || runnerProject != null ||
-        agentMeta0 != null || editorMeta0 != null || pasteDraft != null || wizardMeta0 != null ||
-        publishMeta0 != null
+        agentMeta0 != null || editorMeta0 != null || chatMeta0 != null || pasteDraft != null ||
+        wizardMeta0 != null || publishMeta0 != null
 
     // 系统返回键按「当前最深层界面」逐级回退（质量修复：此前无 BackHandler，
     // 二级页按返回直接 finish Activity 退出应用）。回退语义与 when 分支优先级一致。
@@ -162,6 +168,7 @@ fun ZhiqueApp(
             wizardMeta0 != null -> wizardProject = null
             publishMeta0 != null -> publishProject = null
             chatAsk != null -> chatAsk = null
+            chatProject != null -> chatProject = null
             settingsPage != null -> { settingsPage = null; permFocus = null }
             permFocus != null -> permFocus = null
             promptSeed != null -> promptSeed = null
@@ -279,6 +286,30 @@ fun ZhiqueApp(
                         val controller = agentController
                         if (controller != null) {
                             AgentScreen(controller = controller, onBack = { agentProject = null })
+                        } else {
+                            // 无 Provider 空态（真机夜间循环：此前白屏无任何反馈）
+                            Box(
+                                Modifier.fillMaxSize().padding(32.dp),
+                                contentAlignment = androidx.compose.ui.Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                    Text("还没有接入 AI 服务商", style = MaterialTheme.typography.titleMedium)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "接入后 Agent 即可自主修复代码",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.height(20.dp))
+                                    Button(onClick = {
+                                        agentProject = null
+                                        tab = TAB_SETTINGS
+                                        settingsPage = "providers"
+                                    }) { Text("去接入") }
+                                    Spacer(Modifier.height(12.dp))
+                                    TextButton(onClick = { agentProject = null }) { Text("返回") }
+                                }
+                            }
                         }
                     }
                     editorMeta0 != null -> {
@@ -312,6 +343,14 @@ fun ZhiqueApp(
                             },
                         )
                     }
+                    chatMeta0 != null -> ChatPage(
+                        container = container,
+                        scope = scope,
+                        onBack = { chatProject = null },
+                        onToast = toast,
+                        initialAsk = null,
+                        onGoProviders = { chatProject = null; tab = TAB_SETTINGS; settingsPage = "providers" },
+                    )
                     pasteDraft != null -> {
                         val controller = remember(pasteDraft) {
                             PastePreviewController(
@@ -449,6 +488,7 @@ fun ZhiqueApp(
                             onBack = { settingsPage = null; chatAsk = null },
                             onToast = toast,
                             initialAsk = chatAsk,
+                            onGoProviders = { settingsPage = "providers" },
                         )
                         "providers" -> ProvidersScreen(
                             controller = remember {
@@ -553,6 +593,7 @@ fun ZhiqueApp(
                             runnerProject = null
                             pendingProjectId = it.id
                         },
+                        onChat = { chatProject = it },
                         onToast = toast,
                         clipboardText = { readClipboardText(context) },
                         onPastePreview = { text ->
@@ -626,6 +667,7 @@ private fun ChatPage(
     onBack: () -> Unit,
     onToast: (String) -> Unit,
     initialAsk: EditorAskContext? = null,
+    onGoProviders: () -> Unit = {},
 ) {
     var controller by remember { mutableStateOf<ChatController?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -658,12 +700,19 @@ private fun ChatPage(
         }
         ChatScreen(controller = c, onBack = onBack)
     } else {
+        // 无 Provider 空态（真机夜间循环：只有一行提示无处可去——补引导按钮）
         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-            Text(
-                notice ?: "正在接入…",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(24.dp),
-            )
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                Text(
+                    notice ?: "正在接入…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(24.dp),
+                )
+                if (notice?.contains("服务商") == true) {
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onGoProviders) { Text("去接入") }
+                }
+            }
         }
     }
 }

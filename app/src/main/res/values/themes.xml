@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 全 Compose UI：框架主题只负责窗口底色与系统栏，绝不能带 ActionBar
+     （真机 B2：默认主题的 ActionBar 顶着"织雀"label 渲染成黑带遮挡内容）。 -->
+<resources>
+    <style name="Theme.Zhique" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0C0F17</item>
+        <item name="android:statusBarColor">#0C0F17</item>
+        <item name="android:navigationBarColor">#0C0F17</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

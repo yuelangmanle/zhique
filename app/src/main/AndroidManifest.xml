@@ -3,6 +3,19 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 包可见性（Android 11+ package visibility）：Apilot 桥接需要能探测到
+         com.example.api_manager 是否安装并发起 PICK/IMPORT Intent——
+         真机 B6：缺 <queries> 时 checkInstalled 永远 false，双向流转全灰。 -->
+    <queries>
+        <package android:name="com.example.api_manager" />
+        <intent>
+            <action android:name="com.apilot.intent.action.PICK_API_CONFIG" />
+        </intent>
+        <intent>
+            <action android:name="com.apilot.intent.action.IMPORT_API_CONFIGS" />
+        </intent>
+    </queries>
+
     <!-- M5 权限桥：全部 dangerous 权限集中申报（App 集中持权，网页按需经授权卡申请，规格 §4.6） -->
     <!-- 硬件可选声明（TV/桌面/ChromeOS 兼容：无相机/定位/话筒设备也能安装运行） -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -30,7 +43,7 @@
 
     <!-- allowBackup=false（质量审查 Important-3）：应用锁盐+哈希、密钥密文不随
      云备份/设备迁移导出——防离线爆破与密文搬运 -->
-    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false">
+    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false" android:theme="@style/Theme.Zhique">
 
         <!-- zq.share.file 的只读 URI 授权 -->
         <provider

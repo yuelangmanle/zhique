@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,11 +78,13 @@ fun RunnerContent(
     webView: @Composable (Modifier) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
-        // 顶栏
+        // 顶栏（真机修复：targetSdk 36 强制 edge-to-edge，必须避开状态栏，
+        // 否则工具栏与系统状态栏重叠）
         Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -280,9 +283,8 @@ fun RunnerScreen(
     }
     DisposableEffect(host) {
         host.onWebViewRecreated = { recreateKey++ }
-        host.onCapabilityDetected = { report ->
-            if (report.degraded) onToast("WebGPU 不可用，已降级 WebGL")
-        }
+        // 降级信息常驻抽屉徽标（不弹 Toast——真机反馈：一闪而逝还吓人）
+        host.onCapabilityDetected = { report -> capability = report }
         host.onCrashGiveUp = { onToast("页面多次崩溃，已停止自动恢复") }
         bridge?.host = host
         bridge?.buffer = buffer

@@ -1,8 +1,12 @@
 package com.zhique.runner.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,11 +60,27 @@ fun ProvidersScreen(
     val form by controller.form.collectAsState()
     val context = LocalContext.current
     val apilotState: ApilotController.UiState? = apilot?.state?.collectAsState()?.value
-    val pickLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
-        apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
+    // 显式稳定 key 注册（真机 B7：rememberLauncherForActivityResult 默认 key 含
+    // 随机成分，MIUI 上 FragmentActivity 校验 requestCode 只取低 16 位，重复
+    // 注册累积后越界崩溃 "Can only use lower 16 bits for requestCode"）
+    val registry = requireNotNull(androidx.activity.compose.LocalActivityResultRegistryOwner.current) {
+        "Activity Result registry 不可用（宿主必须是 ComponentActivity）"
+    }.activityResultRegistry
+    val pickLauncher = remember {
+        registry.register(
+            "zhique-apilot-pick",
+            ActivityResultContracts.StartActivityForResult(),
+        ) { result: ActivityResult ->
+            apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
+        }
     }
-    val syncLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
-        apilot?.handleSyncResult(result.resultCode)
+    val syncLauncher = remember {
+        registry.register(
+            "zhique-apilot-sync",
+            ActivityResultContracts.StartActivityForResult(),
+        ) { result: ActivityResult ->
+            apilot?.handleSyncResult(result.resultCode)
+        }
     }
     val scope = rememberCoroutineScope()
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

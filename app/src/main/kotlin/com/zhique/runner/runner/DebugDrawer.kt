@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -177,13 +178,21 @@ fun DebugDrawer(
                             .background(MaterialTheme.colorScheme.outline),
                     )
                 }
-                // 头部：能力降级标注 + 重载
+                // 头部：AI 入口（收起态即可见——真机反馈：藏在展开层里发现不了）+ 降级标注 + 重载
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Button(
+                        onClick = onSendToAgent,
+                        modifier = Modifier.testTag("drawer-send-agent"),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    ) {
+                        Text("🤖 交给 Agent", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(Modifier.width(12.dp))
                     if (capability?.degraded == true) {
                         Text(
                             "已降级 WebGL",

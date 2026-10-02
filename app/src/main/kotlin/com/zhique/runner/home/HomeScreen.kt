@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zhique.core.project.ProjectMeta
@@ -74,6 +75,7 @@ internal fun parseIconColor(hex: String): Color =
 fun HomeScreen(
     repo: ProjectRepository,
     onRun: (ProjectMeta) -> Unit,
+    onChat: (ProjectMeta) -> Unit = {},
     onToast: (String) -> Unit,
     modifier: Modifier = Modifier,
     clipboardText: (() -> String?)? = null,
@@ -155,6 +157,14 @@ fun HomeScreen(
                         modifier = Modifier.testTag("clipboard-refresh"),
                     ) { Text("刷新剪贴板") }
                 }
+                // 常驻粘贴入口（真机反馈：粘贴的地方不明显——不该只在剪贴板有代码时出现）
+                TextButton(
+                    onClick = {
+                        val text = clipboardText?.invoke()
+                        if (text.isNullOrBlank()) onToast("剪贴板是空的——先去复制一段代码") else onPastePreview(text)
+                    },
+                    modifier = Modifier.testTag("paste-entry"),
+                ) { Text("粘贴") }
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.testTag("open-settings"),
@@ -204,6 +214,7 @@ fun HomeScreen(
                         ProjectCard(
                             project = project,
                             onRun = { onRun(project) },
+                            onChat = { onChat(project) },
                             onLongPress = { menuFor = project },
                             menuExpanded = menuFor?.id == project.id,
                             onDismissMenu = { if (menuFor?.id == project.id) menuFor = null },
@@ -277,6 +288,7 @@ fun HomeScreen(
 private fun ProjectCard(
     project: ProjectMeta,
     onRun: () -> Unit,
+    onChat: () -> Unit = {},
     onLongPress: () -> Unit,
     menuExpanded: Boolean,
     onDismissMenu: () -> Unit,
@@ -326,12 +338,19 @@ private fun ProjectCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Box {
+            Row {
+                TextButton(
+                    onClick = onChat,
+                    modifier = Modifier.testTag("chat-${project.id}"),
+                ) {
+                    Text("AI", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                }
                 TextButton(onClick = onRun, modifier = Modifier.testTag("run-${project.id}")) {
                     Text("▶", color = MaterialTheme.colorScheme.primary)
                 }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
-                    DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
+                Box {
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+                        DropdownMenuItem(text = { Text("重命名") }, onClick = onRename)
                     DropdownMenuItem(text = { Text("移动分组") }, onClick = onMoveGroup)
                     DropdownMenuItem(
                         text = { Text("权限") },
@@ -341,6 +360,7 @@ private fun ProjectCard(
                     DropdownMenuItem(text = { Text("复制项目") }, onClick = onCopy)
                     DropdownMenuItem(text = { Text("zip 导出") }, onClick = onExportZip)
                     DropdownMenuItem(text = { Text("删除") }, onClick = onDelete)
+                }
                 }
             }
         }
