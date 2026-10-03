@@ -36,7 +36,7 @@
   .mid { flex: 1; min-width: 0; }
   .name { font-size: 15px; font-weight: 700; }
   .hint { font-size: 11.5px; color: #7d86a3; margin-top: 3px; line-height: 1.45;
-    overflow: hidden; text-overflow: ellipsis; }
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
   .go { font-size: 12.5px; font-weight: 700; padding: 8px 15px; border-radius: 12px; border: none;
     background: rgba(139,163,255,.16); color: #a8bcff; flex-shrink: 0; transition: all .2s; }
   .go:active { transform: scale(.93); background: rgba(139,163,255,.3); }
@@ -58,38 +58,52 @@
 <body>
 <div class="wrap">
   <h1>🛡️ 权限检测中心</h1>
-  <p class="sub">逐个检测织雀授予本页面的手机能力。每次检测会弹出授权卡——<br>选择「授予」即可真实调用，验证全部功能链条。</p>
+  <p class="sub">逐个检测织雀授予本页面的手机能力。检测会先弹<b>织雀授权卡</b>，再弹<b>系统权限框</b>——两层都要允许。</p>
   <div class="bar" id="runAll">
     <span class="t">一键全部检测</span>
-    <span class="n" id="counter">0 / 10</span>
+    <span class="n" id="counter">0 / 13</span>
   </div>
   <div id="list"></div>
   <button class="reset" id="reset">重置全部结果</button>
-  <p class="foot"><b>说明</b>：被拒绝的能力不影响其他检测；重新授权可在织雀「设置 → 权限中心」修改。<br>检测结果保存在本机，退出再进也不会丢。</p>
+  <p class="foot"><b>失败排查</b>：详情区会显示真实错误（原样透传，不再吞掉）。常见原因：<br>
+  ① 两层弹窗只允许了一层；② 定位/传感器需要系统里先有数据；③ 蓝牙需要手机蓝牙已开启。<br>
+  重新授权可在织雀「设置 → 权限中心」修改。检测结果保存在本机。</p>
 </div>
 <script>
 const CAPS = [
   { id: 'camera',    ico: '📷', name: '相机',   hint: '拍摄一张照片（zq.camera.capture）',
     run: () => zq.camera.capture({ dataUrl: false }).then(r => '照片已存：' + (r.path || 'ok').split('/').pop()) },
-  { id: 'mic',       ico: '🎤', name: '麦克风', hint: '录制 2 秒音频（zq.mic.record）',
+  { id: 'mic',       ico: '🎤', name: '麦克风', hint: '录制 2 秒音频（zq.mic.record，最长等 5 秒）',
     run: () => zq.mic.record({ seconds: 2 }).then(r => '录音已存：' + (r.path || 'ok').split('/').pop()) },
-  { id: 'location',  ico: '📍', name: '定位',   hint: '读取一次当前位置（zq.location.get）',
-    run: () => zq.location.get().then(r => '纬度 ' + (r.latitude ?? r.lat ?? '?') + '，经度 ' + (r.longitude ?? r.lng ?? '?')) },
-  { id: 'sensor',    ico: '📈', name: '传感器', hint: '订阅加速度计 2 秒（zq.sensor.watch）',
+  { id: 'location',  ico: '📍', name: '定位',   hint: '读取最近位置；为空时用 watch 等 8 秒拿一次实时定位',
+    run: () => zq.location.get().then(r => '纬度 ' + (r.lat ?? '?') + '，经度 ' + (r.lng ?? '?'))
+      .catch(e => {
+        // 首次使用常无 lastKnown：用 watch 等一个实时样本（8 秒）
+        return new Promise((res, rej) => {
+          let got = false;
+          zq.location.watch({ intervalMs: 1000 }).then(w => {
+            zq.on(w.sub, v => {
+              if (!got) { got = true; zq.location.unwatch({ sub: w.sub }).catch(()=>{}); res('实时定位：纬度 ' + (v.lat ?? '?') + '，经度 ' + (v.lng ?? '?')); }
+            });
+            setTimeout(() => { if (!got) { zq.location.unwatch({ sub: w.sub }).catch(()=>{}); rej(new Error('8 秒内未拿到定位（请确认系统定位已开启且在开阔处）')); } }, 8000);
+          }).catch(rej);
+        });
+      }) },
+  { id: 'sensor',    ico: '📈', name: '传感器', hint: '订阅加速度计（type=accel）收一个样本',
     run: () => new Promise((res, rej) => {
       let got = 0;
-      zq.sensor.watch({ type: 'acceleration' }).then(r => {
+      zq.sensor.watch({ type: 'accel' }).then(r => {
         const sub = r.sub;
         zq.on(sub, v => {
           got++;
-          if (got === 1) { zq.sensor.unwatch({ sub }).catch(()=>{}); res('已收到 ' + JSON.stringify(v).slice(0, 60)); }
+          if (got === 1) { zq.sensor.unwatch({ sub }).catch(()=>{}); res('样本：' + JSON.stringify(v).slice(0, 70)); }
         });
-        setTimeout(() => { if (!got) { zq.sensor.unwatch({ sub }).catch(()=>{}); res('订阅成功（未在 2 秒内收到样本）'); } }, 2000);
+        setTimeout(() => { if (!got) { zq.sensor.unwatch({ sub }).catch(()=>{}); rej(new Error('2 秒内未收到传感器样本')); } }, 2000);
       }).catch(rej);
     }) },
-  { id: 'bluetooth', ico: '📶', name: '蓝牙',   hint: '扫描附近 BLE 设备 3 秒（zq.bluetooth.scan）',
-    run: () => zq.bluetooth.scan({ seconds: 3 }).then(r => '扫描完成' + (Array.isArray(r.devices) ? '，发现 ' + r.devices.length + ' 台' : '')) },
-  { id: 'notification', ico: '🔔', name: '通知', hint: '发送一条系统通知（zq.notification）',
+  { id: 'bluetooth', ico: '📶', name: '蓝牙',   hint: '扫描附近 BLE 设备 3 秒（需手机蓝牙已开启）',
+    run: () => zq.bluetooth.scan({ seconds: 3 }).then(r => '扫描完成' + (Array.isArray(r.devices) ? '，发现 ' + r.devices.length + ' 台设备' : '')) },
+  { id: 'notification', ico: '🔔', name: '通知', hint: '发送一条系统通知（会先弹通知权限框）',
     run: () => zq.notification.requestPermission().then(() => zq.notification.post({ title: '权限检测', body: '通知能力工作正常 ✓' })).then(() => '通知已发送，看状态栏') },
   { id: 'clipboard', ico: '📋', name: '剪贴板', hint: '写入并读回一次（zq.clipboard）',
     run: () => zq.clipboard.set({ text: '织雀权限检测 ' + Date.now() }).then(() => zq.clipboard.get()).then(r => '读回：' + String(r.text || '').slice(0, 24)) },
@@ -97,11 +111,19 @@ const CAPS = [
     run: () => zq.share.text({ text: '来自织雀权限检测的分享测试' }).then(() => '已唤起分享面板') },
   { id: 'file',      ico: '📁', name: '文件',   hint: '沙盒内写入并读回（zq.file）',
     run: () => zq.file.write({ path: 'check.txt', content: 'ok ' + Date.now() }).then(() => zq.file.read({ path: 'check.txt' })).then(r => '读回：' + String(r.content || '').slice(0, 24)) },
-  { id: 'screen',    ico: '🖥️', name: '截屏',   hint: '抓取一帧屏幕（zq.screen.capture）',
+  { id: 'screen',    ico: '🖥️', name: '截屏',   hint: '抓取一帧屏幕（会弹系统投屏授权）',
     run: () => zq.screen.capture({ dataUrl: false }).then(r => '截图已存：' + (r.path || 'ok').split('/').pop()) },
+  { id: 'vibrate',   ico: '📳', name: '振动',   hint: 'navigator.vibrate 振动 300ms（W3C 标准，无需授权）',
+    run: () => { const ok = navigator.vibrate && navigator.vibrate(300); return ok ? Promise.resolve('已振动 300ms') : Promise.reject(new Error('navigator.vibrate 不可用')); } },
+  { id: 'storage',   ico: '💾', name: '本地存储', hint: 'localStorage 写读删一轮（页面数据持久化验证）',
+    run: () => { const k = 'zqtest-' + Date.now(); localStorage.setItem(k, 'v1'); const v = localStorage.getItem(k); localStorage.removeItem(k); return v === 'v1' ? Promise.resolve('读写删除一致 ✓') : Promise.reject(new Error('读写不一致')); } },
+  { id: 'webgl',     ico: '🧊', name: 'WebGL',  hint: '创建 WebGL 上下文并渲染一帧',
+    run: () => { const c = document.createElement('canvas'); const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (!gl) return Promise.reject(new Error('WebGL 上下文创建失败'));
+      const s = gl.getParameter(gl.VERSION) + ' · ' + gl.getParameter(gl.RENDERER); return Promise.resolve(s.slice(0, 70)); } },
 ];
 
-const KEY = 'zhique-perm-check-v1';
+const KEY = 'zhique-perm-check-v2';
 let results = {};
 try { results = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { results = {}; }
 
@@ -122,10 +144,10 @@ function render() {
     card.innerHTML =
       '<div class="ico">' + cap.ico + '</div>' +
       '<div class="mid"><div class="name">' + cap.name + '</div>' +
-      '<div class="hint" title="' + detail.replace(/"/g, '') + '">' + detail + '</div></div>';
+      '<div class="hint">' + detail.replace(/</g, '&lt;') + '</div></div>';
     const btn = document.createElement('button');
     btn.className = r ? ('st ' + (r.state === 'ok' ? 'ok' : 'no')) : 'go';
-    btn.textContent = r ? (r.state === 'ok' ? '✓ 通过' : '✕ 未通过') : '检测';
+    btn.textContent = r ? (r.state === 'ok' ? '✓ 通过' : '✕ 失败') : '检测';
     btn.addEventListener('click', () => runOne(cap, btn, card));
     card.appendChild(btn);
     list.appendChild(card);
@@ -139,26 +161,27 @@ function runOne(cap, btn, card) {
   Promise.resolve().then(cap.run)
     .then(detail => { results[cap.id] = { state: 'ok', detail: detail + '（' + ((Date.now() - t0) / 1000).toFixed(1) + 's）' }; save(); render(); })
     .catch(err => {
-      const msg = String(err && err.message || err);
-      const denied = /denied|拒绝|取消|未授予/i.test(msg);
-      results[cap.id] = { state: 'no', detail: denied ? '被拒绝或取消——可在权限中心重新授权' : '失败：' + msg.slice(0, 80) };
+      // 真实错误原样透传（不再吞成"被拒绝"——排查靠它）
+      const msg = String((err && err.message) || err);
+      results[cap.id] = { state: 'no', detail: '✕ ' + msg.slice(0, 160) };
       save(); render();
     });
 }
 document.getElementById('runAll').addEventListener('click', async () => {
   for (const cap of CAPS) {
     if (results[cap.id] && results[cap.id].state === 'ok') continue;
+    // 逐项同步推进：每项等 1.2s 给两层弹窗留出操作窗口
     await new Promise(done => {
-      const btn = document.createElement('button');
       const card = list.children[CAPS.indexOf(cap)];
+      const btn = card ? card.querySelector('.st, .go') : document.createElement('button');
       runOne(cap, btn, card || document.createElement('div'));
-      setTimeout(done, 900);
+      setTimeout(done, 1200);
     });
   }
 });
 document.getElementById('reset').addEventListener('click', () => { results = {}; save(); render(); });
 render();
-console.log('权限检测中心就绪');
+console.log('权限检测中心 v2 就绪（13 项）');
 </script>
 </body>
 </html>

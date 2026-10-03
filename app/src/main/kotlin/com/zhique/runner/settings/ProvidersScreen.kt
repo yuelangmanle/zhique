@@ -82,6 +82,15 @@ fun ProvidersScreen(
             apilot?.handleSyncResult(result.resultCode)
         }
     }
+    // 网关一键授权（Apilot v2.5.0+ GRANT_GATEWAY）：回传 baseUrl/model 直接落 Provider
+    val gatewayLauncher = remember {
+        registry.register(
+            "zhique-apilot-gateway",
+            ActivityResultContracts.StartActivityForResult(),
+        ) { result: ActivityResult ->
+            apilot?.handleGatewayResult(result.resultCode, result.data)
+        }
+    }
     val scope = rememberCoroutineScope()
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(12.dp)) {
@@ -129,7 +138,7 @@ fun ProvidersScreen(
                     }
                 }
                 if (apilot != null && apilotState != null) {
-                    ApilotSection(apilot, apilotState!!, pickLauncher, syncLauncher, scope)
+                    ApilotSection(apilot, apilotState!!, pickLauncher, syncLauncher, gatewayLauncher, scope)
                 }
             } else {
                 ProviderFormView(controller, form!!)
@@ -148,6 +157,7 @@ private fun ApilotSection(
     state: ApilotController.UiState,
     pickLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?,
     syncLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?,
+    gatewayLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
     Card(Modifier.fillMaxWidth().testTag("apilot-section")) {
@@ -162,6 +172,15 @@ private fun ApilotSection(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 一键网关（Apilot v2.5.0+ 推荐）：不用选配置，直接拿到 baseUrl+model
+                OutlinedButton(
+                    onClick = {
+                        runCatching { gatewayLauncher?.launch(controller.gatewayIntent()) }
+                            .onFailure { controller.setNotice("无法打开 Apilot（${it.message}），请确认已安装 v2.5.0+ 并启动网关") }
+                    },
+                    enabled = state.installed && !state.busy && gatewayLauncher != null,
+                    modifier = Modifier.weight(1f).testTag("apilot-gateway"),
+                ) { Text("⚡ 网关一键接入") }
                 OutlinedButton(
                     onClick = {
                         // 真机修复：launch 全包 runCatching——ActivityNotFound / 包名解析失败
@@ -171,7 +190,7 @@ private fun ApilotSection(
                     },
                     enabled = state.installed && !state.busy && pickLauncher != null,
                     modifier = Modifier.weight(1f).testTag("apilot-import"),
-                ) { Text("← 从 Apilot 接入") }
+                ) { Text("← 方案授权接入") }
                 OutlinedButton(
                     onClick = {
                         scope.launch {

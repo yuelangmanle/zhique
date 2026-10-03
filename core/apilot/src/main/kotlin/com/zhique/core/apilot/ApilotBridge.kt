@@ -8,7 +8,9 @@ import com.zhique.core.apilot.BuildConfig
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 
 /**
@@ -64,6 +66,54 @@ class ApilotBridge(
         putExtra(ApilotProtocol.EXTRA_SCHEMA_VERSION, ApilotProtocol.SCHEMA_V2)
         putStringArrayListExtra(ApilotProtocol.EXTRA_REQUESTED_SCOPES, ArrayList(scopes))
         putExtra(ApilotProtocol.EXTRA_RETURN_TRANSPORT, ApilotProtocol.TRANSPORT_AUTO)
+    }
+
+    /**
+     * 一键授予网关能力（官方文档 v2.5.0+「本地网关互操作」）：用户在 Apilot 确认后，
+     * Apilot 启动本地 OpenAI 兼容网关并回传描述符（baseUrl/model/token）。
+     * `scope`=loopback（仅本机，默认最安全）或 lan（局域网设备可用）。
+     */
+    fun buildGrantGatewayIntent(
+        requestIdValue: String = newRequestId(),
+        scope: String = ApilotProtocol.GATEWAY_SCOPE_LOOPBACK,
+    ): Intent = Intent(ApilotProtocol.ACTION_GRANT_GATEWAY).apply {
+        setPackage(apilotPackage)
+        putExtra(ApilotProtocol.EXTRA_SOURCE_NAME, sourceName)
+        putExtra(ApilotProtocol.EXTRA_REQUEST_ID, requestIdValue)
+        putExtra(ApilotProtocol.EXTRA_REQUESTED_SCOPE, scope)
+    }
+
+    /** 网关授权回传描述符（GATEWAY_GRANT_JSON 的结构化视图）。 */
+    data class GatewayGrant(
+        val baseUrl: String,
+        val model: String,
+        val scope: String,
+        val token: String?,
+        val headerName: String,
+        val apiKey: String?,
+    )
+
+    /**
+     * 解析网关授权回传。RESULT_OK 但 JSON 缺 baseUrl/model → Invalid；
+     * token 只在 lan 模式存在；apiKey（本机模式占位 Key）按文档可直接使用。
+     */
+    fun parseGatewayGrant(resultCode: Int, intent: Intent?): GatewayGrant? {
+        if (resultCode != android.app.Activity.RESULT_OK) return null
+        val grantJson = intent?.getStringExtra(ApilotProtocol.EXTRA_GATEWAY_GRANT_JSON) ?: return null
+        return runCatching {
+            val obj = this@ApilotBridge.json.parseToJsonElement(grantJson) as? JsonObject ?: return null
+            fun str(k: String) = (obj[k] as? JsonPrimitive)?.contentOrNull
+            val baseUrl = str("baseUrl") ?: return null
+            val model = str("model") ?: return null
+            GatewayGrant(
+                baseUrl = baseUrl,
+                model = model,
+                scope = str("scope") ?: ApilotProtocol.GATEWAY_SCOPE_LOOPBACK,
+                token = str("token"),
+                headerName = str("headerName") ?: "X-Gateway-Token",
+                apiKey = str("apiKey"),
+            )
+        }.getOrNull()
     }
 
     /**

@@ -101,6 +101,9 @@ class ApilotController(
     /** launch 前记住的 PICK REQUEST_ID（内存即可）：回传不匹配按无效结果处理，防串话。 */
     private var pendingPickRequestId: String? = null
 
+    /** launch 前记住的网关授权 REQUEST_ID（防串话；进程死亡 → 安全侧失败）。 */
+    private var pendingGatewayRequestId: String? = null
+
     init {
         refresh()
     }
@@ -124,6 +127,44 @@ class ApilotController(
     /** PICK 请求 Intent（四档 scope，Key 是否给由用户在 Apilot 授权页勾选）；同时钉住 REQUEST_ID。 */
     fun pickIntent(): Intent = bridge.buildPickIntent().also { intent ->
         pendingPickRequestId = intent.getStringExtra(ApilotProtocol.EXTRA_REQUEST_ID)
+    }
+
+    /** 网关一键授权 Intent（Apilot v2.5.0+ GRANT_GATEWAY；loopback 默认）。 */
+    fun gatewayIntent(): Intent = bridge.buildGrantGatewayIntent().also { intent ->
+        pendingGatewayRequestId = intent.getStringExtra(ApilotProtocol.EXTRA_REQUEST_ID)
+    }
+
+    /**
+     * 处理网关授权回传：把 baseUrl/model 直接落成 Provider（openai_compatible，
+     * Key=网关 apiKey 占位或 lan 模式的 token），桥接期间零手抄。
+     * 非法/取消 → notice 提示；成功 → 审计 + 状态刷新。
+     */
+    fun handleGatewayResult(resultCode: Int, data: Intent?) {
+        scope.launch(io) {
+            val expected = pendingGatewayRequestId
+            pendingGatewayRequestId = null
+            val grant = bridge.parseGatewayGrant(resultCode, data)
+            if (grant == null) {
+                setNotice("网关授权已取消或无效")
+                return@launch
+            }
+            val config = ProviderConfig(
+                id = UUID.randomUUID().toString(),
+                name = "Apilot 网关（${grant.model}）",
+                protocol = com.zhique.core.ai.Protocol.OPENAI_COMPATIBLE,
+                baseUrl = grant.baseUrl.trimEnd('/'),
+                keyCipher = store.encryptKey(grant.apiKey ?: grant.token ?: "gateway"),
+                model = grant.model,
+            )
+            store.upsert(config)
+            audit.record("gateway", config.name, hasKey = true)
+            _state.value = _state.value.copy(
+                installed = checkInstalled(),
+                lastImportAt = now(),
+                providerCount = store.list().size,
+                notice = "已接入 Apilot 网关：${grant.baseUrl} · ${grant.model}",
+            )
+        }
     }
 
     /**

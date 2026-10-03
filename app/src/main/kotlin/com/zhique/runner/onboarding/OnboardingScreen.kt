@@ -17,6 +17,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,11 +42,34 @@ fun OnboardingScreen(
     val state by controller.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val apilotState: com.zhique.runner.settings.ApilotController.UiState? = apilot?.state?.collectAsState()?.value
-    val apilotNotice = apilotState?.notice
-    val apilotLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
+    // 稳定 key 显式注册（真机 B7 回归修复：引导页这里仍是旧式 rememberLauncher——
+    // 随机 key 累积触发 FragmentActivity "Can only use lower 16 bits" 崩溃）
+    val registry = androidx.activity.compose.LocalActivityResultRegistryOwner.current
+        ?.activityResultRegistry ?: error("宿主非 ComponentActivity")
+    val apilotLauncher = remember {
+        registry.register(
+            "zhique-onboarding-apilot-pick",
+            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+        ) { result ->
+            apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
+        }
+    }
+    val apilotLauncherLaunch: (android.content.Intent) -> Unit = { intent ->
+        runCatching { apilotLauncher.launch(intent) }
+            .onFailure { apilot?.setNotice("无法打开 Apilot（${it.message}）") }
+    }
+    // 网关一键授权（独立稳定 key；回传走 handleGatewayResult 落 Provider）
+    val apilotGatewayLauncher = remember {
+        registry.register(
+            "zhique-onboarding-apilot-gateway",
+            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+        ) { result ->
+            apilot?.handleGatewayResult(result.resultCode, result.data)
+        }
+    }
+    val apilotGatewayLauncherLaunch: (android.content.Intent) -> Unit = { intent ->
+        runCatching { apilotGatewayLauncher.launch(intent) }
+            .onFailure { apilot?.setNotice("无法打开 Apilot（${it.message}）——网关功能需 Apilot v2.5.0+") }
     }
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -105,22 +129,30 @@ fun OnboardingScreen(
                     modifier = Modifier.testTag("onb-notice"))
             }
 
-            // 步骤 2：Apilot 接入（M8 接线 §4.9：PICK_API_CONFIG 四档 scope）
+            // 步骤 2：Apilot 接入（M8 §4.9 PICK_API_CONFIG + v2.5.0 GRANT_GATEWAY 一键网关）
             Column(Modifier.fillMaxWidth().testTag("onb-apilot-card")) {
                 Text("步骤 2 · 从 Apilot 导入（可选）", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "已装 Apilot？一步授权读取 API 配置（Key 不勾不回传）。" +
+                    "已装 Apilot？一键授权读取 API 配置（Key 不勾不回传）。" +
                         if (apilotState?.installed == true) "已检测到 Apilot。" else "未检测到 Apilot 时此步可跳过。",
                     color = MaterialTheme.colorScheme.secondary,
                 )
                 OutlinedButton(
-                    onClick = { apilot?.let { apilotLauncher.launch(it.pickIntent()) } },
+                    onClick = { apilot?.let { apilotLauncherLaunch(it.pickIntent()) } },
                     enabled = apilot != null && apilotState?.installed == true,
                     modifier = Modifier.testTag("onb-apilot"),
                 ) {
                     Text("从 Apilot 接入")
                 }
-                apilotNotice?.let {
+                // 一键网关（Apilot v2.5.0+）：免选配置，直接拿 baseUrl+model（独立 launcher 走网关回传）
+                OutlinedButton(
+                    onClick = { apilot?.let { apilotGatewayLauncherLaunch(it.gatewayIntent()) } },
+                    enabled = apilot != null && apilotState?.installed == true,
+                    modifier = Modifier.testTag("onb-apilot-gateway"),
+                ) {
+                    Text("⚡ 一键网关接入")
+                }
+                apilotState?.notice?.let {
                     Text(
                         it,
                         color = MaterialTheme.colorScheme.secondary,

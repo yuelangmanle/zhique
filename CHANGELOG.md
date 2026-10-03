@@ -3,6 +3,19 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.1（versionCode 3）· 2026-10-02
+
+**真机第三轮修复**
+
+- 修复：引导页「从 Apilot 接入」仍闪退（Can only use lower 16 bits）——引导页漏改
+  的旧式 launcher 补齐稳定 key 注册；引导页与设置页的 launch 全部 runCatching
+- 新增：**Apilot 一键网关接入**（v2.5.0+ GRANT_GATEWAY 协议）——引导页与 AI 服务商页
+  各加「⚡ 一键网关接入」，授权后网关地址/模型直接落 Provider，零手抄
+- 修复：权限检测中心传感器参数（acceleration → accel）与定位首测无 lastKnown 的
+  降级路径（改 watch 等 8 秒实时定位）
+- 修复：检测失败详情原样透传（不再吞成"被拒绝"），排查有据可依
+- 新增检测项：振动（W3C vibrate）、本地存储读写、WebGL 上下文——共 13 项
+
 ## 0.2.0（versionCode 2）· 2026-10-02
 
 **真机反馈修复（第二轮 + PM 级审计）**

@@ -17,6 +17,13 @@ object ApilotProtocol {
     const val ACTION_IMPORT = "com.apilot.intent.action.IMPORT_API_CONFIGS"
     const val ACTION_PICK = "com.apilot.intent.action.PICK_API_CONFIG"
 
+    // ---- 网关授权（官方文档 v2.5.0+「一键授予网关能力」） ----
+    const val ACTION_GRANT_GATEWAY = "com.apilot.intent.action.GRANT_GATEWAY"
+    const val EXTRA_GATEWAY_GRANT_JSON = "com.apilot.extra.GATEWAY_GRANT_JSON"
+    const val EXTRA_REQUESTED_SCOPE = "com.apilot.extra.REQUESTED_SCOPE"
+    const val GATEWAY_SCOPE_LOOPBACK = "loopback"
+    const val GATEWAY_SCOPE_LAN = "lan"
+
     // ---- MIME ----
     const val MIME_IMPORT = "application/vnd.apilot.api-configs+json"
     const val MIME_PROFILE_RESULT = "application/vnd.apilot.api-profile+json"
