@@ -174,11 +174,30 @@ class HomeController(
     companion object {
         const val DEFAULT_NAME = "未命名项目"
         const val SAMPLE_NAME = "星空示例"
+        // 空白项目欢迎页：全白 body 会触发白屏检测 + 「已降级」误报面（TV 走查），
+        // 给一个自解释的起点页——样式内联，用户替换全文即可
         val EMPTY_HTML = """
             <!DOCTYPE html>
-            <html>
+            <html lang="zh">
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>新项目</title>
+            <style>
+              html, body { margin: 0; height: 100%; }
+              body { display: flex; align-items: center; justify-content: center;
+                     background: #14151d; color: #e8e9f2; font-family: system-ui, sans-serif; }
+              .card { text-align: center; padding: 32px; }
+              h1 { font-size: 22px; margin: 0 0 10px; }
+              p { margin: 4px 0; color: #9aa0b5; font-size: 14px; }
+            </style>
+            </head>
             <body>
-              <h1>新项目</h1>
+              <div class="card">
+                <h1>空白项目就绪</h1>
+                <p>用「编辑器」写代码，或把 HTML 粘贴进来替换本页</p>
+                <p>也可以在抽屉里把页面交给 AI 对话来改</p>
+              </div>
             </body>
             </html>
         """.trimIndent()

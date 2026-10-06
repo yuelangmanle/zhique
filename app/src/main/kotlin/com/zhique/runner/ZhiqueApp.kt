@@ -582,6 +582,12 @@ fun ZhiqueApp(
                         "tokens" -> com.zhique.runner.settings.TokenStatsScreen(
                             usageMeter = container.usageMeter,
                             onBack = { settingsPage = null },
+                            resolveProvider = { id ->
+                                container.providerStore.list().firstOrNull { it.id == id }?.name
+                            },
+                            resolveProject = { id ->
+                                container.repo.list().firstOrNull { it.id == id }?.name
+                            },
                         )
                         "general" -> com.zhique.runner.settings.GeneralScreen(
                             general = container.generalPreferences,

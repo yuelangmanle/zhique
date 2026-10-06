@@ -203,8 +203,10 @@ fun DebugDrawer(
                     }
                     Spacer(Modifier.width(8.dp))
                     if (capability?.degraded == true) {
+                        // 无 WebGPU 的设备上恒真，对不用 WebGPU 的页面是噪音——
+                        // 措辞用环境说明而非「降级」警报（TV 走查）
                         Text(
-                            "已降级 WebGL",
+                            "WebGPU 不可用 · 已用 WebGL",
                             style = MaterialTheme.typography.labelMedium,
                             color = Color(0xFFB26A00),
                         )

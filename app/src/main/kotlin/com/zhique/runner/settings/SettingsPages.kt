@@ -273,30 +273,44 @@ fun OutputContextScreen(
 fun TokenStatsScreen(
     usageMeter: UsageMeter,
     onBack: () -> Unit,
+    resolveProvider: suspend (String) -> String? = { null },
+    resolveProject: suspend (String) -> String? = { null },
 ) {
     var byProvider by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var byProject by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var providerNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var projectNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     LaunchedEffect(Unit) {
-        byProvider = runCatching { usageMeter.all() }.getOrDefault(emptyMap())
-            .filterKeys { it.startsWith("provider:") }
+        val all = runCatching { usageMeter.all() }.getOrDefault(emptyMap())
+        byProvider = all.filterKeys { it.startsWith("provider:") }
             .mapKeys { it.key.removePrefix("provider:") }
-        byProject = runCatching { usageMeter.all() }.getOrDefault(emptyMap())
-            .filterKeys { it.startsWith("project:") }
+        byProject = all.filterKeys { it.startsWith("project:") }
             .mapKeys { it.key.removePrefix("project:") }
+        // 显示名解析（TV 走查：直接显示 UUID 用户不可读），解析失败回退原 id
+        providerNames = byProvider.keys.associateWith { id ->
+            runCatching { resolveProvider(id) }.getOrNull()?.takeIf { it.isNotBlank() } ?: id
+        }
+        projectNames = byProject.keys.associateWith { id ->
+            runCatching { resolveProject(id) }.getOrNull()?.takeIf { it.isNotBlank() } ?: id
+        }
     }
 
     SettingsPageScaffold("Token 用量统计", onBack) {
         Text("按服务商", style = MaterialTheme.typography.titleMedium)
-        TokenTable(byProvider, tagPrefix = "token-provider")
+        TokenTable(byProvider, names = providerNames, tagPrefix = "token-provider")
         Spacer(Modifier.height(16.dp))
         Text("按项目", style = MaterialTheme.typography.titleMedium)
-        TokenTable(byProject, tagPrefix = "token-project")
+        TokenTable(byProject, names = projectNames, tagPrefix = "token-project")
     }
 }
 
 @Composable
-private fun TokenTable(data: Map<String, Long>, tagPrefix: String) {
+private fun TokenTable(
+    data: Map<String, Long>,
+    tagPrefix: String,
+    names: Map<String, String> = emptyMap(),
+) {
     if (data.isEmpty()) {
         Text(
             "暂无记录",
@@ -313,7 +327,7 @@ private fun TokenTable(data: Map<String, Long>, tagPrefix: String) {
         Column(Modifier.padding(12.dp)) {
             data.forEach { (k, v) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).testTag("$tagPrefix-$k")) {
-                    Text(k.ifBlank { "（默认）" }, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    Text(names[k] ?: k.ifBlank { "（默认）" }, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     Text("$v tokens", style = MaterialTheme.typography.bodySmall)
                 }
             }

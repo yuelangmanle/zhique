@@ -148,7 +148,7 @@ fun AboutScreen(
                         modifier = Modifier.fillMaxWidth().testTag("about-changelog-local"),
                     ) {
                         Text(
-                            local.trim(),
+                            plainMarkdown(local),
                             style = MaterialTheme.typography.bodySmall,
                             lineHeight = 19.sp,
                             modifier = Modifier.padding(12.dp),
@@ -205,4 +205,18 @@ fun AboutScreen(
             }
         }
     }
+}
+
+/**
+ * 更新日志是 Markdown 源文件，纯 Text 直出会把 `#`/`**`/`` ` `` 标记一起显示——
+ * 轻量剥离常见行内与标题标记（不引入渲染库，保留列表与换行结构）。
+ */
+internal fun plainMarkdown(src: String): String = src.lines().joinToString("\n") { raw ->
+    var line = raw
+        .replace(Regex("^\\s{0,3}#{1,6}\\s+"), "") // 标题
+        .replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1") // 粗体
+        .replace(Regex("`([^`]+)`"), "$1") // 行内代码
+        .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1") // 链接留文字
+    if (line.startsWith("- ") || line.startsWith("* ")) line = "· " + line.substring(2)
+    line.trimEnd()
 }

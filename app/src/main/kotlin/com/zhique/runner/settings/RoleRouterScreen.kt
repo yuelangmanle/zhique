@@ -78,7 +78,12 @@ fun RoleRouterScreen(
                 val current = runCatching {
                     router.resolve(role, userRoles, projectOverrides, preset)
                 }.getOrNull()
-                SlotRow(role, router, preset, current?.model, scope, store)
+                SlotRow(
+                    role, router, preset, current?.model, scope, store,
+                    // 无手动绑定时显示的是预设推荐模型而非实际绑定，措辞须区分
+                    // （TV 走查：用户没配 gpt-4o 也显示「当前：gpt-4o」，误导）
+                    bound = userRoles.containsKey(role) || projectOverrides.containsKey(role),
+                )
             }
         }
     }
@@ -92,6 +97,7 @@ private fun SlotRow(
     currentModel: String?,
     scope: CoroutineScope,
     store: RoleBindingStore,
+    bound: Boolean,
 ) {
     var input by remember(currentModel) { mutableStateOf(currentModel ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -100,7 +106,8 @@ private fun SlotRow(
     Column(Modifier.fillMaxWidth().testTag("slot-${role.name}")) {
         Text("${role.label}（${role.hint}）", style = MaterialTheme.typography.titleSmall)
         Text(
-            "当前：${currentModel ?: "未配置"} · $modality",
+            if (bound) "当前：${currentModel ?: "未配置"} · $modality"
+            else "预设推荐：${currentModel ?: "未配置"} · $modality（未手动绑定，实际走默认服务商模型）",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.testTag("slot-current-${role.name}"),

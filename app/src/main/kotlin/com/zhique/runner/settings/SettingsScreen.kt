@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -46,11 +47,15 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit = {},
     onOpenDeveloper: () -> Unit = {},
 ) {
+    // 二级页返回时恢复滚动位置（进入二级页时本组合被 when 分支替换，rememberScrollState 会丢位置）
+    val scroll = rememberSaveable(
+        saver = androidx.compose.foundation.ScrollState.Saver,
+    ) { androidx.compose.foundation.ScrollState(0) }
     AuroraBackground(modifier.fillMaxSize(), domain = AuroraDomain.LIGHT) {
         Column(
             Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(top = 20.dp)
                 .testTag("settings-screen"),
         ) {
@@ -62,7 +67,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
             )
             SettingGroup("AI 服务商") {
-                SettingRow("对话", "AI 对话面板（思考折叠 · 续写 · 用量）", "settings-chat", onOpenChat)
+                SettingRow("对话", "打开 AI 对话面板（无项目绑定）", "settings-chat", onOpenChat)
                 SettingRow("AI 服务商", "多协议接入 · 密钥加密存储", "settings-providers", onOpenProviders)
                 SettingRow("角色路由", "五槽模型分工 · 省钱/均衡/质量", "settings-router", onOpenRoleRouter)
                 SettingRow("输出 · 思考 · 上下文", "输出上限 · 续写段数 · 预算占比 · 压缩阈值", "settings-output-context", onOpenOutputContext)
