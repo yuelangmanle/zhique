@@ -25,7 +25,13 @@ object ErudaInjector {
             append("if(window.").append(GUARD).append(")return;")
             append("window.").append(GUARD).append("=true;")
             append(erudaSource)
-            append(";if(window.eruda&&window.eruda.init){window.eruda.init();console.log('[eruda] 面板已加载')}else{console.log('[eruda] 加载异常: '+(typeof window.eruda))}")
+            // 面板主题跟系统深浅色（默认深色在浅色系统上违和）
+            append(";if(window.eruda&&window.eruda.init){")
+            append("try{var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;")
+            append("window.eruda.init({theme:dark?undefined:'Light'});")
+            append("console.log('[eruda] 面板已加载')}catch(e){")
+            append("window.eruda.init();console.log('[eruda] 面板已加载(默认主题)')}}")
+            append("else{console.log('[eruda] 加载异常: '+(typeof window.eruda))}")
             append("})();")
         }
     }
