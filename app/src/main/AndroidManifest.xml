@@ -42,9 +42,10 @@
 
 
     <!-- allowBackup=false（质量审查 Important-3）：应用锁盐+哈希、密钥密文不随
-     云备份/设备迁移导出——防离线爆破与密文搬运 -->
+     云备份/设备迁移导出——防离线爆破与密文搬运；dataExtractionRules 是 12+ 的
+     新机制（allowBackup 在部分 12+ 设备上被忽略），全域排除同语义 -->
     <!-- 网络安全配置：用户自填 HTTP 端点（Apilot 环回网关 / LAN 推理服务）必须允许明文 -->
-    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false" android:networkSecurityConfig="@xml/network_security_config" android:theme="@style/Theme.Zhique">
+    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="@xml/data_extraction_rules" android:networkSecurityConfig="@xml/network_security_config" android:theme="@style/Theme.Zhique">
 
         <!-- zq.share.file 的只读 URI 授权 -->
         <provider
