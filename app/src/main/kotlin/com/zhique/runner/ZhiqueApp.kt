@@ -752,7 +752,11 @@ private fun ChatPage(
         LaunchedEffect(initialAsk, c) {
             initialAsk?.let { ask -> c.sendWithContext(ask.selection, ask.language, ask.question) }
         }
-        ChatScreen(controller = c, onBack = onBack)
+        // 空历史欢迎语：项目对话直接打招呼（空屏对话区让用户不知道能干什么）
+        val welcome = projectId?.let { pid ->
+            container.repo.meta(pid)?.name?.let { name -> "这是「$name」的对话。可以直接问我怎么改这个页面。" }
+        }
+        ChatScreen(controller = c, onBack = onBack, welcomeText = welcome)
     } else {
         // 无 Provider 空态（真机夜间循环：只有一行提示无处可去——补引导按钮）
         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {

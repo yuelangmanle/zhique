@@ -34,8 +34,24 @@ internal fun MessageList(
     liveThinking: String = "",
     liveContent: String = "",
     error: String? = null,
+    welcomeText: String? = null,
 ) {
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 空历史欢迎：告诉用户这个对话绑定了什么、能干什么（TV 走查：空屏对话区无从下手）
+        if (turns.isEmpty() && !streaming && welcomeText != null) {
+            item(key = "welcome") {
+                Text(
+                    welcomeText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp)
+                        .testTag("chat-welcome"),
+                )
+            }
+        }
         itemsIndexed(turns, key = { i, turn -> "turn-$i-${turn.role}" }) { i, turn ->
             if (turn.role == "user") {
                 UserBubble(turn, i)

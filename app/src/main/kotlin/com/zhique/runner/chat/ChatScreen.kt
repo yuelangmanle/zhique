@@ -41,6 +41,7 @@ fun ChatScreen(
     controller: ChatController,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    welcomeText: String? = null,
 ) {
     val state by controller.state.collectAsState()
     val compression by controller.compression.collectAsState()
@@ -88,6 +89,7 @@ fun ChatScreen(
                 liveThinking = state.liveThinking,
                 liveContent = state.liveContent,
                 error = state.error,
+                welcomeText = welcomeText,
             )
 
             // 压缩摘要卡（保留/丢弃清单 + token 前后对比，复用 Agent 卡）
