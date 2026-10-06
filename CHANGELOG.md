@@ -3,6 +3,27 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.2（versionCode 4）· 2026-10-07
+
+**TV 夜循环第四轮：导出安装双 P0 根因 + AI 对话链路修复**
+
+- 修复：**点「安装」没反应**——PackageInstaller 待用户确认时系统返回的确认页
+  Intent 从未被启动，确认框永远不会出现。现已正确拉起；拉不起的设备提示
+  「存到下载目录后从文件管理器安装」
+- 修复：**第二个项目导出的包安装必失败**（INSTALL_FAILED_CONFLICTING_PROVIDER）——
+  模板 androidx-startup 的 authorities 没随导出包名改写，所有导出包共用一个
+  provider 名。现 authorities 与 receiver 权限引用均随包名改写（含回归测试）
+- 修复：**AI 对话 404**——Base URL 带 /v1 时对话请求拼出 /v1/v1/chat/completions；
+  三协议 chat 端点统一走版本段感知拼接（模型列表此前已修、chat 漏修）
+- 修复：**本地模型服务「无法连接」**——明文 HTTP（Apilot 环回网关、LM Studio/
+  Ollama 局域网端点）被系统默认禁明文拦截；新增网络安全配置允许用户自填 http
+- 修复：服务商表单「拉取模型列表」成败无反馈——提示上移到按钮旁，成功显示
+  「已拉取 N 个模型」
+- 改进：Token 用量统计显示服务商/项目名（不再显示 UUID）；角色路由无绑定时
+  显示「预设推荐」而非误导性的「当前」；空白项目改为自解释欢迎页；
+  「已降级 WebGL」改中性「WebGPU 不可用 · 已用 WebGL」；设置二级页返回恢复
+  滚动位置；更新日志不再直出 Markdown 标记；密钥库警示卡黄底深色文字
+
 ## 0.2.1（versionCode 3）· 2026-10-02
 
 **真机第三轮修复**
