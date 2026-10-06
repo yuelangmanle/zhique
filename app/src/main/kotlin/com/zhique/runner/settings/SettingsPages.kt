@@ -629,6 +629,16 @@ fun PrivacyScreen(
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth().testTag("privacy-pin-input"),
                 )
+                // 二次确认：PIN 错一次就锁死应用，必须重输一遍防手滑
+                var pinConfirm by remember { mutableStateOf("") }
+                OutlinedTextField(
+                    value = pinConfirm,
+                    onValueChange = { pinConfirm = it.filter { c -> c.isDigit() }.take(8) },
+                    label = { Text("再输一次确认") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth().testTag("privacy-pin-confirm"),
+                )
                 Row {
                     Button(
                         onClick = {
@@ -643,7 +653,7 @@ fun PrivacyScreen(
                                     .onFailure { onToast("设置失败：${it.message}") }
                             }
                         },
-                        enabled = pinInput.length in 4..8,
+                        enabled = pinInput.length in 4..8 && pinInput == pinConfirm,
                         modifier = Modifier.testTag("privacy-pin-save"),
                     ) { Text("保存") }
                     Spacer(Modifier.width(8.dp))
