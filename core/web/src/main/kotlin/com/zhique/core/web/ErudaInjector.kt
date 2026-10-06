@@ -29,6 +29,9 @@ object ErudaInjector {
             append(";if(window.eruda&&window.eruda.init){")
             append("try{var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;")
             append("window.eruda.init({theme:dark?undefined:'Light'});")
+            // 入口按钮默认右下角，会被织雀调试抽屉（底部常驻）遮挡——上移让位
+            append("var st=document.createElement('style');st.textContent=")
+            append("'.eruda-entry-btn{bottom:70px !important}';document.head.appendChild(st);")
             append("console.log('[eruda] 面板已加载')}catch(e){")
             append("window.eruda.init();console.log('[eruda] 面板已加载(默认主题)')}}")
             append("else{console.log('[eruda] 加载异常: '+(typeof window.eruda))}")
