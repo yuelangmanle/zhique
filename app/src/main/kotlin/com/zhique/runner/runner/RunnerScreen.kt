@@ -3,15 +3,18 @@ package com.zhique.runner.runner
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -122,6 +125,7 @@ fun RunnerContent(
                 timeline = timeline,
                 capability = capability,
                 onSendToAgent = onSendToAgent,
+                onOpenChat = onOpenChat,
                 onModeChange = onModeChange,
                 mode = mode,
                 webView = webView,
@@ -147,6 +151,7 @@ private fun SplitLayout(
     timeline: Timeline,
     capability: CapabilityReport?,
     onSendToAgent: () -> Unit,
+    onOpenChat: () -> Unit,
     onModeChange: (RunnerMode) -> Unit,
     mode: RunnerMode,
     webView: @Composable (Modifier) -> Unit,
@@ -194,20 +199,33 @@ private fun SplitLayout(
                         .background(MaterialTheme.colorScheme.outlineVariant),
                 )
             }
-            // AI 面板占位（M4 接线）
+            // 分屏下半区：对话引导卡（内嵌对话面板为 vNext 债务；开发占位文案已清）
             Box(
                 Modifier
                     .weight(1f - split.value.coerceIn(0.15f, 0.85f))
                     .background(MaterialTheme.colorScheme.surface),
             ) {
-                Text(
-                    "AI 面板（M4 接线）",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Column(
                     modifier = Modifier
-                        .align(Alignment.Center)
+                        .fillMaxSize()
+                        .padding(24.dp)
                         .testTag("ai-panel"),
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text("AI 对话", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "同屏对话面板即将支持；现在可打开全屏对话\n（已自动带上本项目上下文）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Button(onClick = onOpenChat, modifier = Modifier.testTag("split-open-chat")) {
+                        Text("打开对话")
+                    }
+                }
             }
         }
     }
