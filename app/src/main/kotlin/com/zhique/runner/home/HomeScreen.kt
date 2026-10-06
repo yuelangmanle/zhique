@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
@@ -111,6 +113,7 @@ fun HomeScreen(
                 }.getOrNull()
             },
             clipboardText = clipboardText,
+            onShareZip = { f -> com.zhique.runner.export.ExportDelivery.shareZip(context, f) },
         )
     }
     val projects by controller.projects.collectAsState()
@@ -294,6 +297,7 @@ fun HomeScreen(
             title = "移动到分组",
             initial = regroupTarget.group,
             hint = "留空表示取消分组",
+            suggestions = projects.mapNotNull { it.group.takeIf { g -> g.isNotBlank() } }.distinct(),
             onDismiss = { regroupFor = null },
             onConfirm = { group ->
                 controller.moveGroup(regroupTarget.id, group)
@@ -637,6 +641,8 @@ private fun TextInputDialog(
     title: String,
     initial: String,
     hint: String = "",
+    // 现有值快捷选择（移动分组用：免手输、避免拼写不一致分裂成新分组）
+    suggestions: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
@@ -645,13 +651,26 @@ private fun TextInputDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text(if (hint.isBlank()) "名称" else hint) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text(if (hint.isBlank()) "名称" else hint) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (suggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        suggestions.take(4).forEach { s ->
+                            AssistChip(
+                                onClick = { text = s },
+                                label = { Text(s) },
+                            )
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(text) }) { Text("确定") }

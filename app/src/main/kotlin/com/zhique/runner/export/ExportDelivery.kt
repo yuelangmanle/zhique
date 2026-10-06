@@ -107,6 +107,11 @@ object ExportDelivery {
         shareFile(context, jks, "application/octet-stream", "备份签名密钥库（.jks）到电脑")
     }
 
+    /** 分享项目 zip（主页长按菜单「zip 导出」的交付路径）。 */
+    fun shareZip(context: Context, zip: File) {
+        shareFile(context, zip, "application/zip", "分享项目 zip")
+    }
+
     private fun shareFile(context: Context, file: File, mime: String, title: String) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.zqfile", file)
         val intent = Intent(Intent.ACTION_SEND).apply {

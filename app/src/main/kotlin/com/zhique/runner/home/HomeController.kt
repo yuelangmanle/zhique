@@ -25,6 +25,8 @@ class HomeController(
     private val onRun: (ProjectMeta) -> Unit = {},
     private val sampleHtml: (suspend () -> String?)? = null,
     private val clipboardText: (() -> String?)? = null,
+    // zip 导出到系统分享（文件落在 app 私有 cache，用户必须经分享/文件选择器才能拿到）
+    private val onShareZip: (java.io.File) -> Unit = {},
 ) {
 
     private val _projects = MutableStateFlow<List<ProjectMeta>>(emptyList())
@@ -158,8 +160,15 @@ class HomeController(
 
     fun exportZip(id: String) {
         scope.launch(io) {
-            val f = repo.exportZip(id)
-            onToast("已导出 ${f.absolutePath}")
+            runCatching { repo.exportZip(id) }
+                .onSuccess { f ->
+                    // toast 只报结果；文件经系统分享交付（私有 cache 路径用户无法访问）。
+                    // 分享失败（如 FileProvider root 未覆盖）不能带崩协程
+                    runCatching { onShareZip(f) }
+                        .onFailure { onToast("分享失败：${it.message}") }
+                        .onSuccess { onToast("已打包，选择保存位置或分享") }
+                }
+                .onFailure { onToast("导出失败：${it.message}") }
         }
     }
 
