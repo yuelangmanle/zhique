@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置：本应用的核心场景要求允许用户自填 HTTP 端点——
+  Apilot 本地网关（127.0.0.1 环回）、局域网推理服务（LM Studio / Ollama，
+  http://192.168.x.x）、模拟器主机回环（10.0.2.2）均为明文 HTTP。
+  系统默认自 targetSdk 28 起禁明文，会导致「无法连接」假故障。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

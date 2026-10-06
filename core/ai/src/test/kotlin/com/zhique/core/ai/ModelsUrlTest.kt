@@ -21,4 +21,25 @@ class ModelsUrlTest {
     fun `gemini的v1beta路径`() {
         assertEquals("https://generativelanguage.googleapis.com/v1beta/models", ModelListFetcher.modelsUrl("https://generativelanguage.googleapis.com/v1beta", "/v1beta"))
     }
+
+    @Test
+    fun `chat端点同规则不重复拼接`() {
+        // TV 循环实测：base 带 /v1 时 chat 流拼出 /v1/v1/chat/completions 404
+        assertEquals(
+            "https://api.deepseek.com/v1/chat/completions",
+            ApiUrls.join("https://api.deepseek.com/v1", "/v1", "/chat/completions"),
+        )
+        assertEquals(
+            "https://api.openai.com/v1/chat/completions",
+            ApiUrls.join("https://api.openai.com", "/v1", "/chat/completions"),
+        )
+        assertEquals(
+            "https://example.com/v1/messages",
+            ApiUrls.join("https://example.com", "/v1", "/messages"),
+        )
+        assertEquals(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini:streamGenerateContent?alt=sse",
+            ApiUrls.join("https://generativelanguage.googleapis.com", "/v1beta", "/models/gemini:streamGenerateContent?alt=sse"),
+        )
+    }
 }

@@ -43,7 +43,7 @@ class OpenAiCompatProvider(private val client: OkHttpClient = defaultClient()) :
         sseChatFlow(client, buildHttpRequest(req)) { { payload -> parseChunk(payload) } }
 
     internal fun buildHttpRequest(req: ChatRequest): Request = Request.Builder()
-        .url(req.baseUrl.trimEnd('/') + PATH)
+        .url(ApiUrls.join(req.baseUrl, VERSION, TAIL))
         .header("Authorization", "Bearer ${req.apiKey}")
         .header("Content-Type", "application/json")
         .header("Accept", "text/event-stream")
@@ -51,7 +51,8 @@ class OpenAiCompatProvider(private val client: OkHttpClient = defaultClient()) :
         .build()
 
     companion object {
-        const val PATH = "/v1/chat/completions"
+        const val VERSION = "/v1"
+        const val TAIL = "/chat/completions"
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
         fun defaultClient(): OkHttpClient = defaultHttpClient()

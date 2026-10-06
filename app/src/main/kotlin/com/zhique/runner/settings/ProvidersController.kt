@@ -162,7 +162,13 @@ class ProvidersController(
                 }
                 .getOrNull()
             if (models != null) {
-                _form.update { it?.copy(busy = false, modelOptions = models, notice = null) }
+                _form.update {
+                    it?.copy(
+                        busy = false,
+                        modelOptions = models,
+                        notice = if (models.isEmpty()) "拉取成功：服务端未返回模型" else "已拉取 ${models.size} 个模型，点击选择",
+                    )
+                }
             }
         }
     }

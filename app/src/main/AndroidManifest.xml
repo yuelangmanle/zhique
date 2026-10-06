@@ -43,7 +43,8 @@
 
     <!-- allowBackup=false（质量审查 Important-3）：应用锁盐+哈希、密钥密文不随
      云备份/设备迁移导出——防离线爆破与密文搬运 -->
-    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false" android:theme="@style/Theme.Zhique">
+    <!-- 网络安全配置：用户自填 HTTP 端点（Apilot 环回网关 / LAN 推理服务）必须允许明文 -->
+    <application android:label="织雀" android:name=".ZhiqueApplication" android:allowBackup="false" android:networkSecurityConfig="@xml/network_security_config" android:theme="@style/Theme.Zhique">
 
         <!-- zq.share.file 的只读 URI 授权 -->
         <provider

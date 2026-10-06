@@ -35,13 +35,14 @@ class GeminiProvider(private val client: OkHttpClient = defaultHttpClient()) : P
         sseChatFlow(client, buildHttpRequest(req)) { { payload -> GeminiStreamParser().parse(payload) } }
 
     internal fun buildHttpRequest(req: ChatRequest): Request = Request.Builder()
-        .url(req.baseUrl.trimEnd('/') + "/v1beta/models/${req.model}:streamGenerateContent?alt=sse")
+        .url(ApiUrls.join(req.baseUrl, VERSION, "/models/${req.model}:streamGenerateContent?alt=sse"))
         .header("x-goog-api-key", req.apiKey)
         .header("Content-Type", "application/json")
         .post(buildGeminiRequestJson(req).toString().toRequestBody(JSON))
         .build()
 
     companion object {
+        const val VERSION = "/v1beta"
         private val JSON = "application/json; charset=utf-8".toMediaType()
     }
 }

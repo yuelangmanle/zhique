@@ -77,15 +77,24 @@ class ModelListFetcher(private val client: OkHttpClient = defaultHttpClient()) {
     companion object {
         /**
          * 模型列表 URL 智能拼接（真机循环修复：baseUrl 已带 /v1 或 /v1beta 时
-         * 旧逻辑拼出 /v1/v1/models 404）。规则：baseUrl 已含版本段 → 只补 /models；
-         * 否则补「版本段 + /models」。DeepSeek 这类 /models 与 /v1/models 双兼容端点
-         * 两种输入都能命中。
+         * 旧逻辑拼出 /v1/v1/models 404）。委托 [ApiUrls.join]。
          */
-        fun modelsUrl(baseUrl: String, versionSegment: String): String {
-            val base = baseUrl.trimEnd('/')
-            val version = versionSegment.trimEnd('/')
-            if (base.endsWith(version)) return "$base/models"
-            return "$base$version/models"
-        }
+        fun modelsUrl(baseUrl: String, versionSegment: String): String =
+            ApiUrls.join(baseUrl, versionSegment, "/models")
+    }
+}
+
+/**
+ * 端点 URL 智能拼接（对话流修复）：baseUrl 已含版本段（/v1、/v1beta）时只补
+ * 方法路径，否则补「版本段 + 方法路径」。模型列表与三协议 chat 端点共用——
+ * OpenAI 兼容生态里「base 已带 /v1」是主流填法（DeepSeek/OpenAI 官方文档即如此），
+ * 无脑拼版本段会产出 /v1/v1/chat/completions 404。
+ */
+object ApiUrls {
+    fun join(baseUrl: String, versionSegment: String, tail: String): String {
+        val base = baseUrl.trimEnd('/')
+        val version = versionSegment.trimEnd('/')
+        if (base.endsWith(version)) return "$base$tail"
+        return "$base$version$tail"
     }
 }

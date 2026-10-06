@@ -34,7 +34,7 @@ class AnthropicProvider(private val client: OkHttpClient = defaultHttpClient()) 
     private fun parser(): AnthropicStreamParser = AnthropicStreamParser()
 
     internal fun buildHttpRequest(req: ChatRequest): Request = Request.Builder()
-        .url(req.baseUrl.trimEnd('/') + PATH)
+        .url(ApiUrls.join(req.baseUrl, VERSION, TAIL))
         .header("x-api-key", req.apiKey)
         .header("anthropic-version", API_VERSION)
         .header("Content-Type", "application/json")
@@ -43,7 +43,8 @@ class AnthropicProvider(private val client: OkHttpClient = defaultHttpClient()) 
         .build()
 
     companion object {
-        const val PATH = "/v1/messages"
+        const val VERSION = "/v1"
+        const val TAIL = "/messages"
         const val API_VERSION = "2023-06-01"
         private val JSON = "application/json; charset=utf-8".toMediaType()
     }

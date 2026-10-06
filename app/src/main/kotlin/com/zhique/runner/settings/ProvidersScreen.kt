@@ -307,6 +307,11 @@ private fun ProviderFormView(controller: ProvidersController, form: ProviderForm
             OutlinedButton(onClick = controller::probeVision, enabled = !form.busy,
                 modifier = Modifier.testTag("probe-vision")) { Text("探测视觉") }
         }
+        // 反馈紧跟按钮行：notice 放在表单底部时用户点击「拉取/探测」后看不到任何变化
+        form.notice?.let {
+            Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.fillMaxWidth().testTag("provider-notice"))
+        }
         if (form.modelOptions.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 form.modelOptions.take(6).forEach { m ->
@@ -333,10 +338,6 @@ private fun ProviderFormView(controller: ProvidersController, form: ProviderForm
             OutlinedButton(onClick = { controller.setModalityManual(if (form.modalityManual == "vision") "text" else "vision") }) {
                 Text("切换覆盖")
             }
-        }
-        form.notice?.let {
-            Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.testTag("provider-notice"))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = controller::save, modifier = Modifier.testTag("provider-save")) { Text("保存") }
