@@ -254,9 +254,9 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                     }
                     // M9：eruda 开关打开 → 页尾注入内置资产（与自研采集共存）
                     if (erudaEnabled) {
-                        ErudaInjector.pageEndScript(erudaSource)?.let { js ->
-                            view.evaluateJavascript(js, null)
-                        }
+                        val js = ErudaInjector.pageEndScript(erudaSource)
+                        android.util.Log.i("ZhiqueEruda", "inject eruda: srcLen=${erudaSource.length} js=${js != null}")
+                        js?.let { view.evaluateJavascript(it) { r -> android.util.Log.i("ZhiqueEruda", "inject result: ${r?.take(80)}") } }
                     }
                 }
             }

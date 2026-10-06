@@ -254,9 +254,10 @@ fun RunnerScreen(
     erudaEnabled: Boolean = false,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val host = remember(project.id) {
-        WebViewHost(context, projectDir).also { it.erudaEnabled = erudaEnabled }
-    }
+    val host = remember(project.id) { WebViewHost(context, projectDir) }
+    // eruda 开关响应式同步：remember 缓存 host 后，仅靠构造时赋值会让
+    // 「设置里开了 eruda 再进同一项目」拿到旧值（开关永远要重启 app 才生效）
+    androidx.compose.runtime.SideEffect { host.erudaEnabled = erudaEnabled }
     // 文件选择桥（PM 审计修复：<input type=file> 此前完全无反应）——ActivityResult 承载
     var pendingFileCb by remember {
         mutableStateOf<android.webkit.ValueCallback<Array<android.net.Uri>>?>(null)

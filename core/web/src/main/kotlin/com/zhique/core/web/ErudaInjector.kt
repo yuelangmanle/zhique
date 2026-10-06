@@ -25,7 +25,7 @@ object ErudaInjector {
             append("if(window.").append(GUARD).append(")return;")
             append("window.").append(GUARD).append("=true;")
             append(erudaSource)
-            append(";if(window.eruda&&window.eruda.init){window.eruda.init();}")
+            append(";if(window.eruda&&window.eruda.init){window.eruda.init();console.log('[eruda] 面板已加载')}else{console.log('[eruda] 加载异常: '+(typeof window.eruda))}")
             append("})();")
         }
     }

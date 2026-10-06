@@ -112,9 +112,8 @@ fun ZhiqueApp(
     val appLock = container.appLockController
     val lockState by appLock.state.collectAsState()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    // M9：eruda 开关（进入运行器前读取一次；重开运行器生效）
-    var erudaEnabled by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { erudaEnabled = container.webPreferences.erudaNow() }
+    // M9：eruda 开关（响应式跟随设置——此前只在启动读一次，改开关后要重启 app 才生效）
+    val erudaEnabled by container.webPreferences.erudaEnabled.collectAsState(initial = false)
 
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
