@@ -152,8 +152,10 @@ fun KeystoreBackupCard(
     }
 
     val s = status
+    // 超期警示态用浅黄底：标题与指纹必须换深琥珀系，浅灰字在黄底上不可读（TV 走查发现）
+    val due = s?.backupDue == true
     Surface(
-        color = if (s?.backupDue == true) Color(0xFFFFF3CD) else MaterialTheme.colorScheme.surfaceVariant,
+        color = if (due) Color(0xFFFFF3CD) else MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth().testTag("$testPrefix-backup"),
     ) {
@@ -166,13 +168,14 @@ fun KeystoreBackupCard(
                     else -> "签名密钥已备份：${backupTimeFormat.format(Date(s.lastBackupAt))}"
                 },
                 style = MaterialTheme.typography.titleSmall,
+                color = if (due) Color(0xFF713F12) else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.testTag("$testPrefix-backup-status"),
             )
             s?.certSha256?.let {
                 Text(
                     "证书指纹 $it",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (due) Color(0xFF8A5A1B) else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
             }

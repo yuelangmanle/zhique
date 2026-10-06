@@ -46,17 +46,37 @@ object ExportDelivery {
         }
     }
 
-    /** 安装结果回执（状态仅 toast 提示；M10 真机验收覆盖安装流）。 */
+    /**
+     * 安装结果回执（状态仅 toast 提示；M10 真机验收覆盖安装流）。
+     * PENDING_USER_ACTION 时系统在 EXTRA_INTENT 里带回确认页——必须 startActivity
+     * 启动它，否则安装确认框永不出现（TV 走查实锤：会话挂起、包永远装不上）。
+     */
     class InstallResultReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
             val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-            val text = when (status) {
-                PackageInstaller.STATUS_PENDING_USER_ACTION -> "请在系统弹窗中确认安装"
-                PackageInstaller.STATUS_SUCCESS -> "安装完成"
-                else -> "安装未完成${msg?.let { "：$it" } ?: ""}"
+            when (status) {
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                    val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                    val launched = confirm != null && runCatching {
+                        context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }.isSuccess
+                    val text = when {
+                        launched -> "请在系统弹窗中确认安装"
+                        confirm != null -> "此设备未提供安装确认界面，请用「存到下载目录」后从文件管理器安装"
+                        else -> "安装需要确认，但系统未返回确认页"
+                    }
+                    android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
+                }
+                PackageInstaller.STATUS_SUCCESS ->
+                    android.widget.Toast.makeText(context, "安装完成", android.widget.Toast.LENGTH_LONG).show()
+                else ->
+                    android.widget.Toast.makeText(
+                        context,
+                        "安装未完成${msg?.let { "：$it" } ?: ""}",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
             }
-            android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
         }
     }
 

@@ -86,6 +86,54 @@ class AxmlPatcherTest {
     }
 
     @Test
+    fun `provider authorities随包名改写-防导出包间CONFLICTING_PROVIDER冲突`() {
+        // TV 实测：authorities 不改写时所有导出包共用 模板包名.androidx-startup，
+        // 第二个导出包安装必撞 INSTALL_FAILED_CONFLICTING_PROVIDER
+        val patched = AxmlPatcher.patch(TemplateFixtures.manifestOf(template), patch)
+        assertEquals(
+            "com.zhique.export.note7.androidx-startup",
+            elementAttr(patched, element = "provider", attr = "authorities"),
+        )
+    }
+
+    @Test
+    fun `receiver动态权限引用随包名改写`() {
+        val manifest = TemplateFixtures.manifestOf(template)
+        // 模板若无引用动态权限的 receiver，则此断言退化为「不抛错」；
+        // 有则必须已改写为新包名前缀（与 permission 定义同步）
+        val before = elementAttr(manifest, element = "receiver", attr = "permission")
+        if (before?.endsWith(".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION") == true) {
+            val after = elementAttr(AxmlPatcher.patch(manifest, patch), element = "receiver", attr = "permission")
+            assertEquals("com.zhique.export.note7.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION", after)
+        }
+    }
+
+    /** 读指定元素的指定字符串属性值（仅 rawValue 字符串型）。 */
+    private fun elementAttr(data: ByteArray, element: String, attr: String): String? {
+        val fileHeaderSize = shortAt(data, 2)
+        val (pool, _, poolSize) = AxmlPatcher.StringPool.read(data, fileHeaderSize)
+        var off = fileHeaderSize + poolSize
+        while (off < data.size) {
+            val chunkType = shortAt(data, off)
+            val chunkSize = intAt(data, off + 4)
+            if (chunkType == 0x0102 && pool.string(intAt(data, off + 20)) == element) {
+                val attributeStart = shortAt(data, off + 24)
+                val attributeSize = shortAt(data, off + 26)
+                val attributeCount = shortAt(data, off + 28)
+                for (i in 0 until attributeCount) {
+                    val attrAt = off + 16 + attributeStart + i * attributeSize
+                    if (pool.string(intAt(data, attrAt + 4)) == attr) {
+                        return pool.string(intAt(data, attrAt + 8))
+                    }
+                }
+            }
+            if (chunkSize <= 0) break
+            off += chunkSize
+        }
+        return null
+    }
+
+    @Test
     fun `补丁幂等-重复补丁结果一致`() {
         val once = AxmlPatcher.patch(TemplateFixtures.manifestOf(template), patch)
         val twice = AxmlPatcher.patch(once, patch)
@@ -125,6 +173,10 @@ class AxmlPatcherTest {
 
     private fun shortAt(data: ByteArray, at: Int): Int =
         (data[at].toInt() and 0xFF) or ((data[at + 1].toInt() and 0xFF) shl 8)
+
+    private fun intAt(data: ByteArray, at: Int): Int =
+        (data[at].toInt() and 0xFF) or ((data[at + 1].toInt() and 0xFF) shl 8) or
+            ((data[at + 2].toInt() and 0xFF) shl 16) or ((data[at + 3].toInt() and 0xFF) shl 24)
 
     // ---- 合成 AXML（覆盖异常路径：style 池 / 属性缺失） ----
 

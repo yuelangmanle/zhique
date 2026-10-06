@@ -44,6 +44,9 @@ object AxmlPatcher {
 
     /** AGP 合并进模板 manifest 的动态接收器权限名后缀（${applicationId}.同后缀）。 */
     private const val DYNAMIC_RECEIVER_PERMISSION_SUFFIX = ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+
+    /** androidx-startup provider 的 authorities 后缀（${applicationId}.androidx-startup）。 */
+    private const val ANDROIDX_STARTUP_AUTHORITIES_SUFFIX = ".androidx-startup"
     private const val RES_STRING_POOL_TYPE = 0x0001
     private const val RES_XML_START_ELEMENT_TYPE = 0x0102
     private const val UTF8_FLAG = 0x100
@@ -91,6 +94,24 @@ object AxmlPatcher {
                     // 会 SecurityException（潜在运行时崩溃，随包名改写一并修）
                     "permission", "uses-permission" -> rewriteNameSuffix(
                         manifest, off, pool, edits,
+                        attrName = "name",
+                        suffix = DYNAMIC_RECEIVER_PERMISSION_SUFFIX,
+                        newValue = patch.packageName + DYNAMIC_RECEIVER_PERMISSION_SUFFIX,
+                    )
+                    // androidx-startup 的 authorities（AGP 合并时 = 模板包名.androidx-startup）
+                    // 不随包名改写时，所有导出 APK 共用同一 authorities——
+                    // 第二个导出包安装必撞 INSTALL_FAILED_CONFLICTING_PROVIDER（TV 实测实锤）
+                    "provider" -> rewriteNameSuffix(
+                        manifest, off, pool, edits,
+                        attrName = "authorities",
+                        suffix = ANDROIDX_STARTUP_AUTHORITIES_SUFFIX,
+                        newValue = patch.packageName + ANDROIDX_STARTUP_AUTHORITIES_SUFFIX,
+                    )
+                    // receiver 上引用动态权限的 permission 属性与 permission 定义是两个
+                    // 字符串槽：只改定义不改引用会让 receiver 挂在未定义权限上（广播丢失）
+                    "receiver" -> rewriteNameSuffix(
+                        manifest, off, pool, edits,
+                        attrName = "permission",
                         suffix = DYNAMIC_RECEIVER_PERMISSION_SUFFIX,
                         newValue = patch.packageName + DYNAMIC_RECEIVER_PERMISSION_SUFFIX,
                     )
@@ -118,7 +139,8 @@ object AxmlPatcher {
     }
 
     /**
-     * 按后缀条件重写 `name` 属性（permission / uses-permission 的包名前缀跟随）。
+     * 按后缀条件重写指定属性（permission 名 / provider authorities /
+     * receiver permission 引用的包名前缀跟随）。
      * 仅当现值以 [suffix] 结尾才改写；找不到不报错（模板差异容忍）。
      */
     private fun rewriteNameSuffix(
@@ -126,6 +148,7 @@ object AxmlPatcher {
         chunkAt: Int,
         pool: StringPool,
         edits: MutableList<Pair<Int, ByteArray>>,
+        attrName: String,
         suffix: String,
         newValue: String,
     ) {
@@ -135,8 +158,7 @@ object AxmlPatcher {
         require(attributeSize >= 20) { "unexpected attribute size: $attributeSize" }
         for (i in 0 until attributeCount) {
             val attrAt = chunkAt + 16 + attributeStart + i * attributeSize
-            val attrName = pool.string(intAt(data, attrAt + 4))
-            if (attrName != "name") continue
+            if (pool.string(intAt(data, attrAt + 4)) != attrName) continue
             val current = pool.string(intAt(data, attrAt + 8))
             if (!current.endsWith(suffix)) continue
             val newIdx = pool.indexOfOrAppend(newValue)
