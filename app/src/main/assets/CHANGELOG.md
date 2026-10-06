@@ -3,6 +3,16 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.4（versionCode 6）· 2026-10-07
+
+**TV 夜循环第五批续：隐私 12+ 补全 + eruda 收束**
+
+- 隐私：`dataExtractionRules` 全域排除云备份/设备迁移——`allowBackup=false`
+  在部分 Android 12+ 设备被忽略，新机制须显式声明（应用锁盐哈希+密钥密文
+  不随备份导出，质量审查 Important-3 的 12+ 侧补全）
+- eruda：面板主题跟随系统深浅色；入口按钮 CSS 上移让位调试抽屉
+  （浮标在 TV WebView 上不渲染记 P3 债务，本体调试抽屉已覆盖三大面板）
+
 ## 0.2.3（versionCode 5）· 2026-10-07
 
 **TV 夜循环第五批：手机端高频损伤修复 + 安全默认**
