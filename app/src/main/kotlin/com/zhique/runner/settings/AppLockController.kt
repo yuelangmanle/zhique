@@ -27,6 +27,7 @@ class AppLockController(
 
     data class State(
         val locked: Boolean = false, // 当前是否拦在锁屏
+        val unknown: Boolean = true, // 读盘前未知：UI 须按「可能上锁」渲染（防内容闪现）
         val pinConfigured: Boolean = false,
         val biometricAvailable: Boolean = false, // 设置页展示用
         val failCount: Int = 0,
@@ -50,6 +51,7 @@ class AppLockController(
         val remaining = (s.cooldownUntilMs - nowMs()).coerceAtLeast(0L)
         _state.update {
             it.copy(
+                unknown = false,
                 pinConfigured = s.enabled && s.pinHash.isNotBlank(),
                 biometricAvailable = s.biometric,
                 failCount = s.failCount,

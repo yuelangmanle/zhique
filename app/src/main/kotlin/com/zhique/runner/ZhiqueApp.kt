@@ -678,12 +678,18 @@ fun ZhiqueApp(
             }
             // 授权卡浮在最上层（M5：zq/W3C 授权路径的唯一 UI 出口）
             com.zhique.runner.permission.PermissionPromptHost(container.permissionPrompt)
-            // M9：应用锁验证门（最顶层，锁住全部内容）
-            if (lockState.locked) {
-                com.zhique.runner.settings.AppLockScreen(
-                    controller = appLock,
-                    state = lockState,
-                )
+            // M9：应用锁验证门（最顶层，锁住全部内容）。
+            // unknown（读盘前）也拦——否则启用应用锁的设备冷启动有 ~2s 内容闪现窗口
+            if (lockState.locked || lockState.unknown) {
+                if (lockState.unknown && !lockState.locked) {
+                    // 未知期渲染空白 Aurora 壳（不渲染 PIN 输入，未配置时避免误导）
+                    Box(Modifier.fillMaxSize())
+                } else {
+                    com.zhique.runner.settings.AppLockScreen(
+                        controller = appLock,
+                        state = lockState,
+                    )
+                }
             }
         }
     }
