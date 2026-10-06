@@ -2,6 +2,7 @@ package com.zhique.runner.runner
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -141,7 +142,8 @@ fun DebugDrawer(
             tonalElevation = 3.dp,
         ) {
             Column(Modifier.fillMaxSize()) {
-                // 拖拽把手：跟手 + 释放吸附
+                // 拖拽把手：跟手 + 释放吸附；点按=展开/收起切换（TV 走查：把手只能拖，
+                // 点一下没反应——收起态唯一显性 affordance 必须可点）
                 var startFraction by remember { mutableFloatStateOf(0f) }
                 Box(
                     modifier = Modifier
@@ -168,6 +170,14 @@ fun DebugDrawer(
                                     }
                                 },
                             )
+                        }
+                        .pointerInput(containerH) {
+                            detectTapGestures {
+                                val open = state.fraction < 0.5f
+                                scope.launch {
+                                    state.settle(if (open) 1f else 0f)
+                                }
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {

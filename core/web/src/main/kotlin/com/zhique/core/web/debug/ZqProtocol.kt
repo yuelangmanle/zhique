@@ -15,12 +15,15 @@ object ZqProtocol {
 
     /**
      * 分级超时（质量审查 Minor #5）：默认 30s；
-     * 长耗时能力（mic.record 录音上限 60s、screen.capture 系统弹窗+抓帧）120s。
-     * 页面侧 JS 表与本表保持一致。
+     * 凡会弹「授权卡 + 系统权限确认框」的调用一律 120s——用户在卡片上停留
+     * 超过 30s 时，30s 兜底会先触发误报 timeout（TV 走查实锤：相机授权卡
+     * 停留 30s+ 后页面显示 timeout 而非拒绝语义）。页面侧 JS 表与本表保持一致。
      */
     fun timeoutMs(ns: String?, fn: String?): Long = when {
-        ns == "mic" && fn == "record" -> TIMEOUT_SLOW_MS
-        ns == "screen" && fn == "capture" -> TIMEOUT_SLOW_MS
+        ns == "camera" -> TIMEOUT_SLOW_MS
+        ns == "mic" -> TIMEOUT_SLOW_MS
+        ns == "screen" -> TIMEOUT_SLOW_MS
+        ns == "file" -> TIMEOUT_SLOW_MS
         else -> TIMEOUT_MS
     }
 

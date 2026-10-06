@@ -44,13 +44,16 @@
   }, 1200));
   // zq.* 桥（M5）：请求-响应走 Proxy → zq_call/__zqResolve；
   // 订阅流（sensor/location）走 zq.on(sub, cb) + native 侧 __zqEvent 推送
-  const ZQ_TIMEOUTS = { 'mic.record': 120000, 'screen.capture': 120000 }; // 分级超时（Minor #5，与 ZqProtocol.timeoutMs 一致）
+  // 分级超时（Minor #5，与 ZqProtocol.timeoutMs 一致）：凡弹「授权卡+系统权限框」
+  // 的能力一律 120s——用户在卡片上停留超 30s 时，30s 兜底会先触发误报
+  // 「timeout: xxx」（TV 实锤：相机授权卡停留 30s+ 后页面显示 timeout 而非拒绝）
+  const SLOW = 120000;
   window.zq = Z.api = new Proxy({}, { get: (_, ns) => ns === 'on'
     ? (sub, cb) => { Z.subs = Z.subs || {}; Z.subs[sub] = cb; return sub; }
     : new Proxy({}, { get: (__, fn) => (...args) =>
     new Promise((res, rej) => {
       const id = ++Z.seq;
-      const timeout = ZQ_TIMEOUTS[ns + '.' + fn] || 30000;
+      const timeout = ['camera', 'mic', 'screen', 'file'].includes(ns) ? SLOW : 30000;
       Z.pending = Z.pending || {}; Z.pending[id] = { res, rej };
       post('zq_call', { id, ns, fn, args: JSON.stringify(args || []), timeout: timeout });
       // 分级超时兜底：native 侧未命中/丢失时 promise 也必须 settle，防 pending 泄漏
