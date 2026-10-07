@@ -53,10 +53,24 @@ fun OnboardingScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("欢迎用织雀", style = MaterialTheme.typography.headlineSmall)
-            Text("90 秒完成接入：粘贴你的 API 配置，或直接跳过玩内置示例。", color = MaterialTheme.colorScheme.secondary)
+            Text("先玩 30 秒：跳过配置直接运行示例；AI 对话随时可补配。", color = MaterialTheme.colorScheme.secondary)
 
-            // 步骤 1：粘贴识别 API 配置
-            Text("步骤 1 · 接入 AI 服务商", style = MaterialTheme.typography.titleMedium)
+            // 步骤 1：先玩（价值前置——核心链路粘贴→运行不需要任何 API Key）
+            Column(Modifier.fillMaxWidth().testTag("onb-play-card")) {
+                Text("步骤 1 · 先玩 30 秒", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "运行内置示例（星空/番茄钟/画板…），感受「代码秒变应用」。",
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                com.zhique.runner.ui.kit.ZqButton(
+                    action = "onb.skip",
+                    onClick = controller::skip,
+                    modifier = Modifier.testTag("onb-skip"),
+                ) { Text("▶ 玩示例") }
+            }
+
+            // 步骤 2：粘贴识别 API 配置（可跳过——首次点「AI」时也会引导）
+            Text("步骤 2 · 接入 AI 对话（可选，随时在设置里补）", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = state.paste,
                 onValueChange = controller::setPaste,
@@ -106,7 +120,7 @@ fun OnboardingScreen(
 
             // 步骤 2：Apilot 接入（M8 §4.9 PICK_API_CONFIG + v2.5.0 GRANT_GATEWAY 一键网关）
             Column(Modifier.fillMaxWidth().testTag("onb-apilot-card")) {
-                Text("步骤 2 · 从 Apilot 导入（可选）", style = MaterialTheme.typography.titleMedium)
+                Text("步骤 3 · 从 Apilot 导入（可选）", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "已装 Apilot？一键授权读取 API 配置（Key 不勾不回传）。" +
                         if (apilotState?.installed == true) "已检测到 Apilot。" else "未检测到 Apilot 时此步可跳过。",
@@ -164,18 +178,11 @@ fun OnboardingScreen(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                com.zhique.runner.ui.kit.ZqButton(
-                    action = "onb.finish",
-                    onClick = controller::finish,
-                    modifier = Modifier.testTag("onb-finish"),
-                ) { Text("完成") }
-                com.zhique.runner.ui.kit.ZqOutlinedButton(
-                    action = "onb.skip",
-                    onClick = controller::skip,
-                    modifier = Modifier.testTag("onb-skip"),
-                ) { Text("跳过，玩示例") }
-            }
+            com.zhique.runner.ui.kit.ZqButton(
+                action = "onb.finish",
+                onClick = controller::finish,
+                modifier = Modifier.testTag("onb-finish"),
+            ) { Text("完成") }
         }
     }
 }

@@ -193,7 +193,6 @@ fun ZhiqueApp(
         wizardMeta0 != null -> "export-wizard"
         publishMeta0 != null -> "publish-wizard"
         settingsPage != null -> "settings:$settingsPage"
-        tab == TAB_EXPORT -> "export"
         tab == TAB_SETTINGS -> "settings"
         else -> "home"
     }
@@ -537,14 +536,25 @@ fun ZhiqueApp(
                             },
                         )
                     }
-                    tab == TAB_EXPORT -> com.zhique.runner.export.ExportCenterScreen(
-                        repo = container.repo,
-                        keystore = container.keystoreManager,
-                        onExport = { wizardProject = it },
-                        onPush = { publishProject = it },
-                        onToast = toast,
-                    )
                     tab == TAB_SETTINGS -> when (settingsPage) {
+                        "exports" -> androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+                            androidx.compose.foundation.layout.Row(
+                                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.IconButton(onClick = { settingsPage = null }, modifier = Modifier.testTag("exports-back")) {
+                                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                                }
+                                androidx.compose.material3.Text("交付与档案", style = MaterialTheme.typography.titleMedium)
+                            }
+                            com.zhique.runner.export.ExportCenterScreen(
+                                repo = container.repo,
+                                keystore = container.keystoreManager,
+                                onExport = { wizardProject = it },
+                                onPush = { publishProject = it },
+                                onToast = toast,
+                            )
+                        }
                         "chat" -> ChatPage(
                             container = container,
                             scope = scope,
@@ -566,7 +576,7 @@ fun ZhiqueApp(
                             container = container,
                             focusProjectId = permFocus,
                             onBack = { settingsPage = null; permFocus = null },
-                            onOpenKeystore = { settingsPage = null; tab = TAB_EXPORT },
+                            onOpenKeystore = { settingsPage = "exports" },
                             keystore = container.keystoreManager,
                         )
                         "publish" -> Box(Modifier.fillMaxSize()) {
@@ -659,6 +669,7 @@ fun ZhiqueApp(
                             onOpenDiagnostics = { settingsPage = "diagnostics" },
                             onOpenPermissionCenter = { settingsPage = "permissions" },
                             onOpenPublishSync = { settingsPage = "publish" },
+                            onOpenExports = { settingsPage = "exports" },
                             onOpenGeneral = { settingsPage = "general" },
                             onOpenPrivacy = { settingsPage = "privacy" },
                             onOpenAbout = { settingsPage = "about" },
@@ -677,6 +688,7 @@ fun ZhiqueApp(
                         },
                         onChat = { chatProject = it },
                         onEdit = { editorProject = it },
+                        onDeliver = { wizardProject = it },
                         onToast = toast,
                         clipboardText = { readClipboardText(context) },
                         onPastePreview = { text ->
@@ -704,7 +716,6 @@ fun ZhiqueApp(
                 ) {
                     Row(Modifier.fillMaxWidth().height(56.dp)) {
                         GlassTabItem("▦", "项目", tab == TAB_PROJECTS, Modifier.weight(1f).testTag("tab-projects")) { tab = TAB_PROJECTS }
-                        GlassTabItem("⬆", "导出中心", tab == TAB_EXPORT, Modifier.weight(1f).testTag("tab-export")) { tab = TAB_EXPORT }
                         GlassTabItem("⚙", "设置", tab == TAB_SETTINGS, Modifier.weight(1f).testTag("tab-settings")) { tab = TAB_SETTINGS }
                     }
                 }
@@ -751,7 +762,6 @@ private fun GlassTabItem(
 }
 
 private const val TAB_PROJECTS = "projects"
-private const val TAB_EXPORT = "export"
 private const val TAB_SETTINGS = "settings"
 
 private fun newGlobalMemory(container: AppContainer): com.zhique.core.agent.Memory =

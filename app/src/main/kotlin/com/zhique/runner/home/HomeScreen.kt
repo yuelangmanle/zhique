@@ -93,6 +93,8 @@ fun HomeScreen(
     onPastePreview: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenPermissions: (ProjectMeta) -> Unit = {},
+    /** 交付安装包（导出向导）：从项目卡菜单直接发起（使用逻辑重构：交付是项目的结局）。 */
+    onDeliver: (ProjectMeta) -> Unit = {},
     /** 剪贴板检测开关（M9 §7「智能粘贴」）：关=不自动检测、不显剪贴板卡与刷新按钮。 */
     clipboardDetection: Boolean = true,
 ) {
@@ -279,6 +281,7 @@ fun HomeScreen(
                             onExportZip = { menuFor = null; controller.exportZip(project.id) },
                             onDelete = { menuFor = null; deleteFor = project },
                             onPermissions = { menuFor = null; onOpenPermissions(project) },
+                            onDeliver = { menuFor = null; onDeliver(project) },
                         )
                     }
                 }
@@ -439,6 +442,7 @@ private fun ProjectCard(
     onExportZip: () -> Unit,
     onDelete: () -> Unit,
     onPermissions: () -> Unit = {},
+    onDeliver: () -> Unit = {},
 ) {
     Card(
         modifier = Modifier
@@ -534,6 +538,11 @@ private fun ProjectCard(
                     )
                     DropdownMenuItem(text = { Text("复制项目") }, onClick = onCopy)
                     DropdownMenuItem(text = { Text("zip 导出") }, onClick = onExportZip)
+                    DropdownMenuItem(
+                        text = { Text("交付安装包…") },
+                        onClick = onDeliver,
+                        modifier = Modifier.testTag("menu-deliver"),
+                    )
                     DropdownMenuItem(text = { Text("删除") }, onClick = onDelete)
                 }
             }

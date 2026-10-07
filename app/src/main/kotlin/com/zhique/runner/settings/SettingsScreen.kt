@@ -41,6 +41,7 @@ fun SettingsScreen(
     onOpenDiagnostics: () -> Unit = {},
     onOpenPermissionCenter: () -> Unit = {},
     onOpenPublishSync: () -> Unit = {},
+    onOpenExports: () -> Unit = {},
     onOpenGeneral: () -> Unit = {},
     onOpenPrivacy: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
@@ -73,6 +74,7 @@ fun SettingsScreen(
                 SettingRow("Token 用量统计", "按服务商 / 按项目", "settings-token-stats", onOpenTokenStats)
             }
             SettingGroup("项目与产出") {
+                SettingRow("交付与档案", "导出安装包 · zip · 已交付记录", "settings-exports", onOpenExports)
                 SettingRow("权限中心", "项目×能力矩阵 · 运行中提醒 · 导出权限建议", "settings-permissions", onOpenPermissionCenter)
                 SettingRow("发布与同步", "GitHub PAT · 推送偏好 · 自更新通道", "settings-publish", onOpenPublishSync)
                 SettingRow("关于织雀", "版本 · 检查更新 · 更新日志 · Apache-2.0", "settings-about", onOpenAbout)
