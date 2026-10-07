@@ -1,6 +1,7 @@
 package com.zhique.runner.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,8 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.zhique.runner.ui.components.AuroraBackground
-import com.zhique.runner.ui.components.AuroraDomain
 
 /**
  * 设置根屏（规格 §7 全集，M9 逐项落地）：AI 服务商族（对话/服务商/路由/输出思考上下文/
@@ -51,7 +50,7 @@ fun SettingsScreen(
     val scroll = rememberSaveable(
         saver = androidx.compose.foundation.ScrollState.Saver,
     ) { androidx.compose.foundation.ScrollState(0) }
-    AuroraBackground(modifier.fillMaxSize(), domain = AuroraDomain.LIGHT) {
+    Box(modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()

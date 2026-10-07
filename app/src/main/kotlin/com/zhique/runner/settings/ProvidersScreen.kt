@@ -25,7 +25,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.zhique.runner.ui.kit.ZqOutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.zhique.runner.ui.kit.ZqOutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -142,7 +145,8 @@ private fun ApilotSection(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 一键网关（Apilot v2.5.0+ 推荐）：不用选配置，直接拿到 baseUrl+model
-                OutlinedButton(
+                ZqOutlinedButton(
+                    action = "apilot.gateway",
                     onClick = {
                         if (controller.launchGatewayViaActivity() != true) {
                             controller.setNotice("无法打开 Apilot，请退出织雀重新进入后重试")
@@ -151,7 +155,8 @@ private fun ApilotSection(
                     enabled = state.installed && !state.busy,
                     modifier = Modifier.weight(1f).testTag("apilot-gateway"),
                 ) { Text("⚡ 网关一键接入") }
-                OutlinedButton(
+                ZqOutlinedButton(
+                    action = "apilot.pick",
                     onClick = {
                         // launch 失败（ActivityNotFound / 宿主未就绪）不允许闪退
                         if (controller.launchPickViaActivity() != true) {
@@ -161,7 +166,8 @@ private fun ApilotSection(
                     enabled = state.installed && !state.busy,
                     modifier = Modifier.weight(1f).testTag("apilot-import"),
                 ) { Text("← 方案授权接入") }
-                OutlinedButton(
+                ZqOutlinedButton(
+                    action = "apilot.sync",
                     onClick = {
                         scope.launch {
                             val plan = controller.buildSync()

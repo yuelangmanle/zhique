@@ -3,6 +3,34 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.6（versionCode 8）· 2026-10-07
+
+**日循环第七批：全链路调试后端（每按钮/流程/反馈可观测）+ 可商用级克制 UI 大改**
+
+- 新增 `:core:telemetry` 模块（零内部依赖，可持续底层设施）：
+  - **DebugHub**：统一事件中枢——环形缓冲 1000 条、JSONL 落盘 1MiB 轮换、
+    崩溃钩子（链式保留原 handler）、schema 带版本（v=1 只加不改）；
+    全 API 不抛异常，调试设施绝不反噬业务
+  - **DebugServer**：仅绑定 127.0.0.1 的极简 HTTP 后端（8791，占用自动 +1）——
+    `GET /debug/health`（会话/版本/当前屏幕）、`GET /debug/events?since=&limit=`
+    （增量拉取）、`POST /debug/mark|toast|clear`；电脑侧 `adb forward` 后即可 curl
+- 三层插桩全覆盖：①根级触摸传感器（每个按钮必产 `ui.tap`，未迁移按钮也有信号）；
+  ②导航状态单点映射（每次屏幕/流程切换记 `flow.screen`）；③中心拦截
+  （toast/notice→`feedback`、导出安装结果→`flow/error`、ZqKit 按钮→`ui.click`
+  带点状动作名 `apilot.gateway` 等）
+- 调试入口：设置→开发者→「后端调试」（HTTP 开关默认跟构建类型、JSONL 落盘
+  开关、事件流入口）+ 新页「调试事件流」（实时滚动、类别过滤、状态行）
+- **UI 大改（克制商用风，去 AI 感）**：重写 ZqTheme——暖白/石墨中性面 +
+  单一「雀青」强调色 + 完整字阶（字重/灰阶建层级）+ 中小圆角；删除 Aurora
+  渐变玻璃三件套（AuroraBackground/GlassCard/GlowButton）；主页示例库/项目卡/
+  剪贴板横幅的彩色渐变全部改平色面+细线；设置页骨架改 56dp 顶栏+分隔线；
+  新增 ZqKit 基建组件（ZqCard/ZqTopBar/ZqButton 系/触摸传感器），动效仍全 spring
+- TV 实证：调试后端 health/events/mark/toast 四端点 curl 全通（health 正确上报
+  当前屏幕）；事件流页实时呈现 ui/flow/feedback/bg 各类事件；深色主题新视觉
+  （石墨面+雀青+细线）截图验证；示例库/剪贴板渐变已收敛为中性面
+- 测试：telemetry 模块 11 项（环形封顶/增量/落盘轮换/崩溃链/HTTP 四端点）+
+  主题守卫测试改造（AuroraGlassUiTest→ThemeKitUiTest）；全量 build 绿
+
 ## 0.2.5（versionCode 7）· 2026-10-07
 
 **TV 夜循环第六批：Apilot 真机崩溃根治（16 位 requestCode）+ 三向流转全流程 TV 实证**

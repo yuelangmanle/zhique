@@ -66,11 +66,11 @@ import java.util.Locale
 
 private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-/** 把 #RRGGBB 字符串安全解析为颜色，失败回退语义靛蓝。 */
+/** 把 #RRGGBB 字符串安全解析为颜色，失败回退雀青强调色。 */
 internal fun parseIconColor(hex: String): Color =
     runCatching {
         Color(android.graphics.Color.parseColor(hex))
-    }.getOrDefault(Color(0xFF46509F))
+    }.getOrDefault(Color(0xFF2F6D5F))
 
 /**
  * 首页项目列表（规格 §5.3 屏 2 的 M1 版）：名称/时间/▶ 运行，
@@ -137,23 +137,20 @@ fun HomeScreen(
     var regroupFor by remember { mutableStateOf<ProjectMeta?>(null) }
     var deleteFor by remember { mutableStateOf<ProjectMeta?>(null) }
 
-    // Aurora Glass（M9）：管理域晨光底，双光斑低饱和漂移
-    com.zhique.runner.ui.components.AuroraBackground(
-        modifier = Modifier.fillMaxSize(),
-        domain = com.zhique.runner.ui.components.AuroraDomain.LIGHT,
-    ) {
+    // 克制视觉：平色中性底（原 Aurora 渐变已移除，层级交给灰阶与细线）
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
         modifier = modifier.testTag("home-screen"),
         containerColor = Color.Transparent,
         floatingActionButton = {
-            // Aurora Glass：FAB 换 GlowButton（靛蓝外发光 + 按压光晕收拢，§5.1 发光交互）
-            com.zhique.runner.ui.components.GlowButton(
+            androidx.compose.material3.FloatingActionButton(
                 onClick = { controller.createEmpty() },
-                fab = true,
-                icon = Icons.Filled.Add,
-                iconContentDescription = "新建项目",
-                testTag = "fab-new",
-            )
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.testTag("fab-new"),
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "新建项目")
+            }
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -381,27 +378,25 @@ private fun SampleStrip(onPick: (SampleEntry) -> Unit) {
 /** 单个示例卡：渐变底 + emoji + 名称 + 描述。 */
 @Composable
 private fun SampleTile(entry: SampleEntry, modifier: Modifier, onPick: (SampleEntry) -> Unit) {
-    val accent = parseIconColor(entry.accent)
     androidx.compose.material3.Card(
         modifier = modifier
             .testTag("sample-${entry.asset}")
             .clickable { onPick(entry) },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
-            Modifier
-                .background(gradientFor(accent))
-                .padding(13.dp),
+            Modifier.padding(13.dp),
         ) {
             Text(entry.emoji, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.size(8.dp))
             Text(
                 entry.name,
                 style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -409,7 +404,7 @@ private fun SampleTile(entry: SampleEntry, modifier: Modifier, onPick: (SampleEn
             Text(
                 entry.desc,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.82f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -448,18 +443,18 @@ private fun ProjectCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 渐变缩略图（Aurora Glass：项目色双停渐变 + 顶部高光，远看有质感）
+            // 克制缩略图：强调色容器面 + 首字（原渐变已移除）
             Box(
                 Modifier
                     .size(54.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(gradientFor(parseIconColor(project.iconColor))),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     project.name.take(1),
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -534,27 +529,6 @@ private fun ProjectCard(
     }
 }
 
-/** 项目色 → 双停渐变（亮→深，视觉厚度；纯 JVM 可测）。 */
-internal fun gradientFor(base: Color): androidx.compose.ui.graphics.Brush {
-    val light = Color(
-        red = (base.red * 1.25f + 0.05f).coerceAtMost(1f),
-        green = (base.green * 1.25f + 0.05f).coerceAtMost(1f),
-        blue = (base.blue * 1.25f + 0.05f).coerceAtMost(1f),
-        alpha = 1f,
-    )
-    val deep = Color(
-        red = base.red * 0.62f,
-        green = base.green * 0.66f,
-        blue = base.blue * 0.92f,
-        alpha = 1f,
-    )
-    return androidx.compose.ui.graphics.Brush.linearGradient(
-        listOf(light, base, deep),
-        start = androidx.compose.ui.geometry.Offset.Zero,
-        end = androidx.compose.ui.geometry.Offset(180f, 180f),
-    )
-}
-
 /** 相对时间（今天=HH:mm，昨天=昨天，7 天内=N 天前，更早=MM-dd）。 */
 internal fun relativeTime(at: Long): String {
     val now = System.currentTimeMillis()
@@ -573,7 +547,7 @@ internal fun relativeTime(at: Long): String {
     }
 }
 
-/** 剪贴板横幅（视觉升级：靛蓝渐变 + 外发光 + 白字，发现即可点）。 */
+/** 剪贴板横幅（克制视觉：次级容器面 + 细线，发现即可点）。 */
 @Composable
 private fun ClipboardBanner(
     text: String,
@@ -585,16 +559,14 @@ private fun ClipboardBanner(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .testTag("clipboard-card"),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             Modifier
-                .background(
-                    androidx.compose.ui.graphics.Brush.linearGradient(
-                        listOf(Color(0xFF5A64C4), Color(0xFF7A5AD6)),
-                    ),
-                )
+                .background(MaterialTheme.colorScheme.secondaryContainer)
                 .clickable(onClick = onPreview)
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -605,14 +577,14 @@ private fun ClipboardBanner(
                 Text(
                     "剪贴板里有代码",
                     style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.size(2.dp))
                 Text(
                     text.lineSequence().firstOrNull { it.isNotBlank() }?.take(48) ?: "",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -620,11 +592,16 @@ private fun ClipboardBanner(
             Spacer(Modifier.width(8.dp))
             Box(
                 Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White.copy(alpha = 0.22f))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primary)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
             ) {
-                Text("粘贴", color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "粘贴",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             IconButton(
                 onClick = onDismiss,

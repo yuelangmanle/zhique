@@ -47,7 +47,7 @@ import com.zhique.runner.paste.PastePreferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** 通用设置页骨架：标题栏 + 可滚动内容。 */
+/** 通用设置页骨架：顶栏（标题左对齐 + 细线分隔）+ 可滚动内容（克制视觉基调）。 */
 @Composable
 internal fun SettingsPageScaffold(
     title: String,
@@ -56,14 +56,23 @@ internal fun SettingsPageScaffold(
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize()) {
-            Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("settings-page-back")) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                    Text(title, style = MaterialTheme.typography.titleMedium)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack, modifier = Modifier.testTag("settings-page-back")) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                 }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
             }
+            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
                 content()
             }
@@ -802,12 +811,13 @@ fun PrivacyScreen(
 
 // ================= 开发者（预留空壳） =================
 
-/** 「开发者」设置页（规格 §5.3 屏 14 预留空壳）：调试开关/日志导出/协议文档/意图测试器占位。 */
+/** 「开发者」设置页：调试开关 / 后端调试 / 日志导出 / 协议文档 / 意图测试器占位。 */
 @Composable
 fun DeveloperScreen(
     web: WebPreferences,
     onBack: () -> Unit,
     onToast: (String) -> Unit = {},
+    debug: (@Composable () -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -879,6 +889,11 @@ fun DeveloperScreen(
             modifier = Modifier.testTag("dev-log-export"),
         ) { Text("导出诊断日志") }
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        // ---- 后端调试（DebugHub + 本机 HTTP）：开关/端口/事件流入口 ----
+        debug?.invoke()
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
         Text("zq.* 协议文档", style = MaterialTheme.typography.titleMedium)
         val docs = remember { ZqDocs.list() }
         docs.forEach { name ->

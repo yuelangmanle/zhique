@@ -209,6 +209,9 @@ class ApilotController(
     }
 
     fun setNotice(text: String?) {
+        com.zhique.core.telemetry.DebugHub.event(
+            "feedback", "apilot.notice", detail = mapOf("text" to (text ?: "cleared")),
+        )
         _state.value = _state.value.copy(notice = text)
     }
 

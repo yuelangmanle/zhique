@@ -68,14 +68,20 @@ object ExportDelivery {
                     }
                     android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
                 }
-                PackageInstaller.STATUS_SUCCESS ->
+                PackageInstaller.STATUS_SUCCESS -> {
                     android.widget.Toast.makeText(context, "安装完成", android.widget.Toast.LENGTH_LONG).show()
-                else ->
+                    com.zhique.core.telemetry.DebugHub.event("flow", "export.install", detail = mapOf("result" to "success"))
+                }
+                else -> {
+                    com.zhique.core.telemetry.DebugHub.event(
+                        "error", "export.install", detail = mapOf("result" to "fail", "message" to (msg ?: "")),
+                    )
                     android.widget.Toast.makeText(
                         context,
                         "安装未完成${msg?.let { "：$it" } ?: ""}",
                         android.widget.Toast.LENGTH_LONG,
                     ).show()
+                }
             }
         }
     }

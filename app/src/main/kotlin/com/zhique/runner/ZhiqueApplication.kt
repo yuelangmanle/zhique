@@ -226,6 +226,10 @@ class AppContainer(
     /** 导出管线工作目录（Release 附件按 包名-版本码 定位最新导出 APK）。 */
     val exportWorkDir: File = File(context.cacheDir, "exports")
 
+    /** 调试后端（本机回环 HTTP）+ 其开关（设置→开发者）。 */
+    val debugServer = com.zhique.core.telemetry.DebugServer()
+    val debugPreferences = com.zhique.runner.settings.DebugPreferences(settingsDataStore)
+
     /** 项目最新一次导出的 APK（无导出记录或文件已被系统清理→null）。 */
     fun exportedApk(projectId: String): File? {
         val record = runCatching { repo.meta(projectId) }.getOrNull()?.export ?: return null
@@ -244,10 +248,40 @@ class AppContainer(
 class ZhiqueApplication : Application() {
     val container: AppContainer by lazy { AppContainer(this) }
 
+    private var debugServerWired = false
+
     override fun onCreate() {
         super.onCreate()
         // M9：通知三事件渠道注册（幂等）
         com.zhique.runner.notify.ZhiqueNotifications.ensureChannels(this)
+        // 调试中枢初始化（只装内存/文件汇，不碰 DataStore——测试环境会多容器）
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" }.getOrDefault("?")
+        com.zhique.core.telemetry.DebugHub.init(
+            appVersion = version,
+            device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (api ${android.os.Build.VERSION.SDK_INT})",
+            sinkDir = java.io.File(filesDir, "debug"),
+            sinkEnabled = debuggable,
+        )
+    }
+
+    /**
+     * 本机调试后端一次性接线（MainActivity.onCreate 调，Application 级单次）：
+     * 开关存 DataStore（AppContainer.debugPreferences），默认跟随构建类型。
+     */
+    fun startDebugBackendOnce() {
+        if (debugServerWired) return
+        debugServerWired = true
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        container.debugServer.onToast = { msg ->
+            runCatching { android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show() }
+        }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val on = runCatching {
+                container.debugPreferences.serverEnabled(debuggable).first()
+            }.getOrDefault(debuggable)
+            if (on) container.debugServer.start()
+        }
     }
 }
 

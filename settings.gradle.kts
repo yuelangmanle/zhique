@@ -5,4 +5,4 @@ dependencyResolutionManagement {
 rootProject.name = "zhique"
 include(":app", ":core:common", ":core:project", ":core:paste", ":core:web",
         ":core:ai", ":core:agent", ":core:permission", ":core:export",
-        ":core:publish", ":core:apilot", ":template-min", ":template-full")
+        ":core:publish", ":core:apilot", ":core:telemetry", ":template-min", ":template-full")

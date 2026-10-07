@@ -16,8 +16,8 @@ android {
         minSdk = 31
         targetSdk = 36
         // 版本号迭代纪律：每次改动交付都 bump（versionCode 单调 +1，覆盖安装依赖它）
-        versionCode = 7
-        versionName = "0.2.5"
+        versionCode = 8
+        versionName = "0.2.6"
     }
     // 织雀本体的发布签名：密钥库在开发者本机（默认 ~/zhique-keystore/，密码同目录
     // password.txt），仓库零凭据字面量。CI/他人构建用环境变量覆盖路径与口令。
@@ -109,6 +109,7 @@ dependencies {
     implementation(project(":core:export"))
     implementation(project(":core:publish"))
     implementation(project(":core:apilot"))
+    implementation(project(":core:telemetry"))
 
     implementation(libs.sora.editor)
     implementation(libs.sora.editor.language.textmate)

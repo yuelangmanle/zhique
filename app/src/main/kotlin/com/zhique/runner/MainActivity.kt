@@ -40,6 +40,7 @@ class MainActivity : FragmentActivity() {
         intent?.replaceExtras(Bundle())
         val app = application as ZhiqueApplication
         app.container.apilotController.attachActivity(this)
+        app.startDebugBackendOnce()
         setContent {
             ZqTheme {
                 ZhiqueApp(app.container, sharedText)

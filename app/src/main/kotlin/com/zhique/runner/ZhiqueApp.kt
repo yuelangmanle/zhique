@@ -1,5 +1,7 @@
 package com.zhique.runner
 
+import com.zhique.runner.ui.kit.zqTapSensor
+
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -136,6 +138,9 @@ fun ZhiqueApp(
     }
 
     val toast: (String) -> Unit = { msg ->
+        com.zhique.core.telemetry.DebugHub.event(
+            "feedback", "toast", detail = mapOf("text" to msg),
+        )
         scope.launch { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
     }
 
@@ -171,6 +176,26 @@ fun ZhiqueApp(
         agentMeta0 != null || editorMeta0 != null || chatMeta0 != null || pasteDraft != null ||
         wizardMeta0 != null || publishMeta0 != null
 
+    // 调试：导航状态 → 屏幕名（单点覆盖全部屏幕/流程切换；DebugHub 去重）
+    val currentScreenName = when {
+        onboardingNeeded == true -> "onboarding"
+        onboardingNeeded == null -> "loading"
+        runnerProject != null -> "runner"
+        agentMeta0 != null -> "agent"
+        editorMeta0 != null -> "editor"
+        chatMeta0 != null -> "chat"
+        pasteDraft != null -> "paste"
+        wizardMeta0 != null -> "export-wizard"
+        publishMeta0 != null -> "publish-wizard"
+        settingsPage != null -> "settings:$settingsPage"
+        tab == TAB_EXPORT -> "export"
+        tab == TAB_SETTINGS -> "settings"
+        else -> "home"
+    }
+    LaunchedEffect(currentScreenName) {
+        com.zhique.core.telemetry.DebugHub.screen(currentScreenName)
+    }
+
     // 系统返回键按「当前最深层界面」逐级回退（质量修复：此前无 BackHandler，
     // 二级页按返回直接 finish Activity 退出应用）。回退语义与 when 分支优先级一致。
     // 引导页吞掉返回（防误触退出）；首页根允许系统默认行为（退出应用）。
@@ -201,7 +226,7 @@ fun ZhiqueApp(
             .systemBarsPadding(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().zqTapSensor()) {
             Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 val meta = runnerProject
@@ -606,6 +631,19 @@ fun ZhiqueApp(
                             web = container.webPreferences,
                             onBack = { settingsPage = null },
                             onToast = toast,
+                            debug = {
+                                com.zhique.runner.settings.DebugBackendCard(
+                                    prefs = container.debugPreferences,
+                                    server = container.debugServer,
+                                    debuggableDefault = (context.applicationInfo.flags and
+                                        android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+                                    onOpenEvents = { settingsPage = "devents" },
+                                )
+                            },
+                        )
+                        "devents" -> com.zhique.runner.settings.DebugEventsScreen(
+                            serverPort = { container.debugServer.port },
+                            onBack = { settingsPage = null },
                         )
                         else -> SettingsScreen(
                             onOpenChat = { settingsPage = "chat" },

@@ -101,12 +101,9 @@ fun AgentContent(
     modifier: Modifier = Modifier,
 ) {
     var showSnapshots by remember { mutableStateOf(false) }
-    // Aurora Glass（M9，质量审查 Important-2）：运行域强制深空主题 + 深空光斑
+    // 克制视觉：运行域强制深色主题（原深空光斑已移除）
     com.zhique.runner.ui.theme.ZqTheme(darkTheme = true) {
-    com.zhique.runner.ui.components.AuroraBackground(
-        modifier = modifier.fillMaxSize(),
-        domain = com.zhique.runner.ui.components.AuroraDomain.DARK,
-    ) {
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
     Surface(modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Transparent) {
         Column {
             // 顶栏：返回 / 项目名 / 能力徽章 / 上下文环真值
