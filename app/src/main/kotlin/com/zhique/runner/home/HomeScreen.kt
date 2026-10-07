@@ -1,5 +1,7 @@
 package com.zhique.runner.home
 
+import com.zhique.runner.ui.kit.LiquidGlass
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -143,13 +145,23 @@ fun HomeScreen(
         modifier = modifier.testTag("home-screen"),
         containerColor = Color.Transparent,
         floatingActionButton = {
-            androidx.compose.material3.FloatingActionButton(
-                onClick = { controller.createEmpty() },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("fab-new"),
+            // 液态玻璃圆形新建钮（iOS 风格：材质浮层替代彩色 FAB）
+            LiquidGlass(
+                modifier = Modifier
+                    .clickable { controller.createEmpty() }
+                    .testTag("fab-new"),
+                shape = androidx.compose.foundation.shape.CircleShape,
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "新建项目")
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(56.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = "新建项目",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         },
     ) { padding ->

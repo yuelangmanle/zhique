@@ -327,6 +327,18 @@ fun RunnerScreen(
             } else {
                 buffer.append(e)
                 timelineVersion = buffer.version
+                // 调试桥：运行器 WebView 事件镜像进 DebugHub（web 类全量可观测，
+                // 文本截断防日志洪水；zq_call 走能力分发不进时间线，同样不镜像）
+                com.zhique.core.telemetry.DebugHub.event(
+                    "web", "web.${e.type}",
+                    detail = buildMap {
+                        e.level?.let { put("level", it) }
+                        e.text?.let { put("text", it.take(120)) }
+                        e.message?.let { put("message", it.take(120)) }
+                        e.url?.let { put("url", it) }
+                        e.status?.let { put("status", "$it") }
+                    },
+                )
             }
         }
     }

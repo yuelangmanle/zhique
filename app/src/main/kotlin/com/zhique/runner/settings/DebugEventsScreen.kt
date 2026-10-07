@@ -46,6 +46,7 @@ private fun catColor(cat: String): Color = when (cat) {
     "flow" -> Color(0xFF5470B8)
     "feedback" -> Color(0xFF8A6A2F)
     "error" -> Color(0xFFB3402E)
+    "web" -> Color(0xFF7A5AA8)
     "net" -> Color(0xFF6E6E68)
     "bg" -> Color(0xFF8A8A84)
     else -> Color(0xFF6E6E68)
@@ -176,7 +177,7 @@ fun DebugEventsScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            listOf(null, "ui", "flow", "feedback", "error", "net", "bg").forEach { c ->
+            listOf(null, "ui", "flow", "feedback", "error", "web", "net", "bg").forEach { c ->
                 val selected = filter == c
                 Surface(
                     onClick = { filter = c },

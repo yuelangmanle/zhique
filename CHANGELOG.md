@@ -3,6 +3,31 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.7（versionCode 9）· 2026-10-07
+
+**日循环第八批：iOS 设计语言 + 液态玻璃材质 + 调试桥接补齐**
+
+- **iOS 设计语言落地**：重写 ZqTheme——分栏底（systemGroupedBackground 浅灰/
+  纯黑）+ 卡片面（白/#1C1C1E）+ iOS 系统语义色（红 FF3B30/绿 34C759/橙）
+  + HIG 字阶（largeTitle 34 → caption2 11，字重建层级）+ 12dp 卡圆角；
+  强调色保留品牌「雀青」
+- **液态玻璃（Liquid Glass）材质**：新 `LiquidGlass` 组件——半透明填充 +
+  镜面高光描边（左上亮→右下弱）+ 顶部内高光（lensing），浮于 `ZqAmbient`
+  环境底（分栏底 + 两团极低饱和品牌色晕，静态）之上；落地于底部标签栏
+  （玻璃浮层胶囊）与主页新建钮（玻璃圆钮）。内容区保持 iOS 分栏不透明卡
+  （Android 无公开 backdrop-blur API，玻璃观感由环境底透出逼近，注释说明）
+- **设置页 iOS 化**：inset grouped 分组卡（灰标题 + 圆角卡包行 + chevron）
+- **调试桥接补齐（0.2.6 遗留债务）**：
+  - 运行器 WebView 事件镜像进 DebugHub（`web.web.console/metrics/js_error…`，
+    文本截断 120 防日志洪水；zq_call 走能力分发不镜像）——curl 实证：
+    进运行器即见「WebGL 就绪：WebGL2」等事件
+  - 调试事件流页新增 web 类别过滤；Onboarding 四按钮迁 ZqKit 带
+    `onb.recognize/test/finish/skip` 语义动作
+- 修复：根 Surface 改透明导致无显式色文字变黑不可见（LocalContentColor
+  失效）——恢复 Surface 底色、环境底画其上
+- TV 实证：主页/设置页截图验证（大标题 + 玻璃浮层标签栏 + 玻璃 FAB +
+  iOS 分组卡）；全量 build 绿
+
 ## 0.2.6（versionCode 8）· 2026-10-07
 
 **日循环第七批：全链路调试后端（每按钮/流程/反馈可观测）+ 可商用级克制 UI 大改**

@@ -62,7 +62,6 @@ fun SettingsScreen(
                 "设置",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                letterSpacing = 1.sp,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
             )
             SettingGroup("AI 服务商") {
@@ -87,16 +86,25 @@ fun SettingsScreen(
     }
 }
 
-/** 分组标题（M9 §7 信息架构：三段折叠分组）。 */
+/** iOS 分组卡：小灰标题（大写感）+ 圆角白/深灰卡包住行（inset grouped）。 */
 @Composable
 private fun SettingGroup(title: String, content: @Composable () -> Unit) {
     Text(
         title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
     )
-    content()
+    androidx.compose.material3.Card(
+        modifier = Modifier.padding(horizontal = 12.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        androidx.compose.foundation.layout.Column { content() }
+    }
 }
 
 @Composable

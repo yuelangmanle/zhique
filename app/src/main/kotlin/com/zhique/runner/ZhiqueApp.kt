@@ -1,8 +1,14 @@
 package com.zhique.runner
 
+import com.zhique.runner.ui.kit.LiquidGlass
+import com.zhique.runner.ui.kit.ZqAmbient
 import com.zhique.runner.ui.kit.zqTapSensor
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -222,10 +227,10 @@ fun ZhiqueApp(
     // 的单独 statusBarsPadding 已移除避免双重留白）
     Surface(
         Modifier
-            .fillMaxSize()
-            .systemBarsPadding(),
+            .fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
+        ZqAmbient(Modifier.fillMaxSize().systemBarsPadding()) {
         Box(Modifier.fillMaxSize().zqTapSensor()) {
             Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
@@ -689,28 +694,19 @@ fun ZhiqueApp(
             }
 
             if (!fullScreen && onboardingNeeded == false) {
-                NavigationBar(modifier = Modifier.fillMaxWidth().testTag("bottom-nav")) {
-                    NavigationBarItem(
-                        selected = tab == TAB_PROJECTS,
-                        onClick = { tab = TAB_PROJECTS },
-                        icon = { Text("▦") },
-                        label = { Text("项目") },
-                        modifier = Modifier.testTag("tab-projects"),
-                    )
-                    NavigationBarItem(
-                        selected = tab == TAB_EXPORT,
-                        onClick = { tab = TAB_EXPORT },
-                        icon = { Text("⬆") },
-                        label = { Text("导出中心") },
-                        modifier = Modifier.testTag("tab-export"),
-                    )
-                    NavigationBarItem(
-                        selected = tab == TAB_SETTINGS,
-                        onClick = { tab = TAB_SETTINGS },
-                        icon = { Text("⚙") },
-                        label = { Text("设置") },
-                        modifier = Modifier.testTag("tab-settings"),
-                    )
+                // iOS 液态玻璃浮层标签栏：半透明材质 + 高光描边，环境底从中透出
+                LiquidGlass(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("bottom-nav"),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().height(56.dp)) {
+                        GlassTabItem("▦", "项目", tab == TAB_PROJECTS, Modifier.weight(1f).testTag("tab-projects")) { tab = TAB_PROJECTS }
+                        GlassTabItem("⬆", "导出中心", tab == TAB_EXPORT, Modifier.weight(1f).testTag("tab-export")) { tab = TAB_EXPORT }
+                        GlassTabItem("⚙", "设置", tab == TAB_SETTINGS, Modifier.weight(1f).testTag("tab-settings")) { tab = TAB_SETTINGS }
+                    }
                 }
             }
             }
@@ -720,7 +716,7 @@ fun ZhiqueApp(
             // unknown（读盘前）也拦——否则启用应用锁的设备冷启动有 ~2s 内容闪现窗口
             if (lockState.locked || lockState.unknown) {
                 if (lockState.unknown && !lockState.locked) {
-                    // 未知期渲染空白 Aurora 壳（不渲染 PIN 输入，未配置时避免误导）
+                    // 未知期渲染空白壳（不渲染 PIN 输入，未配置时避免误导）
                     Box(Modifier.fillMaxSize())
                 } else {
                     com.zhique.runner.settings.AppLockScreen(
@@ -730,6 +726,27 @@ fun ZhiqueApp(
                 }
             }
         }
+        }
+    }
+}
+
+/** 玻璃标签项：选中 tint + 半粗字，未选中灰阶（iOS 标签栏语义）。 */
+@Composable
+private fun GlassTabItem(
+    glyph: String,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(glyph, style = MaterialTheme.typography.titleMedium, color = tint)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
     }
 }
 

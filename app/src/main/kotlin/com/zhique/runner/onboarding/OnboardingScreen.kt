@@ -65,10 +65,13 @@ fun OnboardingScreen(
                 minLines = 2,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = controller::recognize, modifier = Modifier.testTag("onb-recognize")) {
-                    Text("识别并预填")
-                }
-                OutlinedButton(
+                com.zhique.runner.ui.kit.ZqButton(
+                    action = "onb.recognize",
+                    onClick = controller::recognize,
+                    modifier = Modifier.testTag("onb-recognize"),
+                ) { Text("识别并预填") }
+                com.zhique.runner.ui.kit.ZqOutlinedButton(
+                    action = "onb.test",
                     onClick = controller::testConnection,
                     enabled = !state.busy && state.recognized,
                     modifier = Modifier.testTag("onb-test"),
@@ -162,13 +165,16 @@ fun OnboardingScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                com.zhique.runner.ui.kit.ZqButton(
+                    action = "onb.finish",
                     onClick = controller::finish,
                     modifier = Modifier.testTag("onb-finish"),
                 ) { Text("完成") }
-                OutlinedButton(onClick = controller::skip, modifier = Modifier.testTag("onb-skip")) {
-                    Text("跳过，玩示例")
-                }
+                com.zhique.runner.ui.kit.ZqOutlinedButton(
+                    action = "onb.skip",
+                    onClick = controller::skip,
+                    modifier = Modifier.testTag("onb-skip"),
+                ) { Text("跳过，玩示例") }
             }
         }
     }
