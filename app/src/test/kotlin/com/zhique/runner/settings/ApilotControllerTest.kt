@@ -263,11 +263,18 @@ class ApilotControllerTest {
     fun refresh暴露安装状态与数量() = runTest {
         val p = Parts(tmp.root)
         val controller = p.controller(checkInstalled = { installed })
-        assertTrue(controller.state.value.installed)
+        // init 的 refresh 异步等 DataStore 首读（Unconfined 只同步到首个挂起点），
+        // 轮询等待消除全量跑时的调度竞态
+        suspend fun waitState(cond: (ApilotController.UiState) -> Boolean) {
+            kotlinx.coroutines.withTimeout(5_000) {
+                while (!cond(controller.state.value)) kotlinx.coroutines.delay(10)
+            }
+        }
+        waitState { it.installed }
         assertEquals(0, controller.state.value.providerCount)
         installed = false
         controller.refresh()
-        assertFalse(controller.state.value.installed)
+        waitState { !it.installed }
     }
 
     @Test

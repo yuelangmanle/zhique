@@ -53,29 +53,43 @@ class AiWiring(private val container: AppContainer) {
         val config = providers.firstOrNull { it.id == ref.providerId } ?: defaultProvider
         val fastConfig = providers.firstOrNull { it.id == fastRef.providerId } ?: defaultProvider
 
+        // 预设推荐回落（QA 实测两连坑：预设硬编码 gpt-4o ①魔搭直连报 Invalid model
+        // id；②经 Apilot 网关转发同样被下游拒绝）。未手动绑定的槽一律用该服务商的
+        // 默认模型（添加服务商时必填，一定有效）——预设推荐只作 UI 展示语义；
+        // 用户在角色路由手动绑定的模型不受影响。
+        fun effective(r: ModelRef, cfg: ProviderConfig, presetOnly: Boolean): ModelRef {
+            if (!presetOnly) return r
+            return ModelRef(cfg.id, cfg.model.ifBlank { r.model })
+        }
+        val refE = effective(ref, config, !roles.containsKey(role) && !overrides.containsKey(role))
+        val fastRefE = effective(
+            fastRef, fastConfig,
+            !roles.containsKey(AgentRole.FAST_LOOP) && !overrides.containsKey(AgentRole.FAST_LOOP),
+        )
+
         val modality = config.modalityManual?.let { manual ->
             if (manual == "vision") Modality.VISION else Modality.TEXT
-        } ?: ModelCatalog.modality(ref.model)
-        if (role == AgentRole.VISION && modality != Modality.VISION) throw VisionRoleError(ref)
+        } ?: ModelCatalog.modality(refE.model)
+        if (role == AgentRole.VISION && modality != Modality.VISION) throw VisionRoleError(refE)
 
         val template = ChatRequest(
             baseUrl = config.baseUrl,
             apiKey = container.providerStore.decryptKey(config),
-            model = ref.model,
+            model = refE.model,
             messages = emptyList(),
-            maxTokens = ModelCatalog.resolveMaxOutput(ref.model, config.maxOutputManual),
+            maxTokens = ModelCatalog.resolveMaxOutput(refE.model, config.maxOutputManual),
         )
         val fastTemplate = ChatRequest(
             baseUrl = fastConfig.baseUrl,
             apiKey = container.providerStore.decryptKey(fastConfig),
-            model = fastRef.model,
+            model = fastRefE.model,
             messages = emptyList(),
             maxTokens = ModelCatalog.FAST_LOOP_MAX_OUTPUT, // 快循环 4096（规格 §4.4.1）
         )
 
         return Wired(
             providerId = config.id,
-            model = ref.model,
+            model = refE.model,
             vision = modality == Modality.VISION,
             contextWindow = ModelCatalog.resolveContextWindow(ref.model, config.contextManual),
             template = template,

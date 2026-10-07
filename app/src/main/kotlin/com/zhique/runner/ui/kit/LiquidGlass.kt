@@ -36,7 +36,10 @@ fun LiquidGlass(
 ) {
     val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
     val semantic = zqSemantic()
-    val fill = if (dark) Color(0xFF1C1C1E).copy(alpha = 0.74f) else Color.White.copy(alpha = 0.74f)
+    // QA 巡检（深浅两域实测）：0.74 透明度下玻璃浮层与底层按钮/文字视觉混浊
+    // （FAB 压在列表播放键上像叠影）。提到 0.9+ 保留高光描边的玻璃质感，
+    // 但不再透出干扰性内容。
+    val fill = if (dark) Color(0xFF1C1C1E).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.94f)
     Box(
         modifier
             .clip(shape)

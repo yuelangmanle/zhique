@@ -184,6 +184,7 @@ fun AgentContent(
                 ) { Text("快照") }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("agent-auto-row")) {
                     Text("全自动", style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.width(6.dp))
                     androidx.compose.material3.Switch(
                         checked = state.autoApproved,
                         onCheckedChange = onAutoChange,

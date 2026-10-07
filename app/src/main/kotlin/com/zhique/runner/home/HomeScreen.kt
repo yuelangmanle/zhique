@@ -420,7 +420,7 @@ private fun SampleTile(entry: SampleEntry, modifier: Modifier, onPick: (SampleEn
                 entry.desc,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }

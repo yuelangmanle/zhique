@@ -829,7 +829,7 @@ fun DeveloperScreen(
 
     SettingsPageScaffold("开发者", onBack) {
         Text(
-            "预留空壳（v0.1）：正式调试台随 M10 开放。",
+            "调试台：eruda / 远程调试 / 日志导出 / 后端调试事件流。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

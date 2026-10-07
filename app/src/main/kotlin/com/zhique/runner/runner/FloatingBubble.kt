@@ -129,7 +129,7 @@ fun FloatingBubble(
             Text("雀", color = MaterialTheme.colorScheme.onPrimary)
         }
 
-        // 半透明浮层面板
+        // 浮层面板（QA 修复：0.92 透明度让底层 WebView 文字透出混浊，改不透明）
         if (open) {
             Surface(
                 modifier = Modifier
@@ -137,7 +137,7 @@ fun FloatingBubble(
                     .widthIn(max = 320.dp)
                     .testTag("bubble-panel"),
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 4.dp,
             ) {
                 Column(Modifier.padding(20.dp)) {
