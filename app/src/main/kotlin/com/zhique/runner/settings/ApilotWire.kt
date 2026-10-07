@@ -104,6 +104,94 @@ class ApilotController(
     /** launch 前记住的网关授权 REQUEST_ID（防串话；进程死亡 → 安全侧失败）。 */
     private var pendingGatewayRequestId: String? = null
 
+    /**
+     * Activity 结果分发通道：MainActivity.onCreate → [attachActivity]；
+     * [launchViaActivity] 用传统 startActivityForResult（固定低 16 位 requestCode）
+     * 发起，结果经 MainActivity.onActivityResult 转回 [onActivityResult]。
+     *
+     * 为什么不用 Activity Result API：androidx.activity 1.11.0 起 registry 随机生成
+     * 高位 requestCode（nextInt(0x7FFF0000)+0x10000），而 framework 的
+     * Activity.startActivityForResult 强校验 requestCode 只能低 16 位 → launch
+     * 必抛 "Can only use lower 16 bits for requestCode"（TV 实测实锤，即用户
+     * 真机反馈的同款错误）。传统固定 requestCode 完全绕开该冲突。
+     */
+    private var hostActivity: android.app.Activity? = null
+    private var hostResolver: ContentResolver? = null
+
+    fun attachActivity(activity: android.app.Activity) {
+        hostActivity = activity
+        hostResolver = activity.contentResolver
+    }
+
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        val resolver = hostResolver
+        when (requestCode) {
+            com.zhique.runner.MainActivity.APILOT_RC_PICK -> {
+                if (resolver == null) {
+                    setNotice("宿主未就绪：请重新进入后重试")
+                } else {
+                    handleActivityResult(resultCode, data, resolver)
+                }
+            }
+            com.zhique.runner.MainActivity.APILOT_RC_GATEWAY ->
+                handleGatewayResult(resultCode, data)
+        }
+    }
+
+    /** 传统通道发起 PICK；宿主 Activity 缺失 → false（UI 提示重新进入）。 */
+    fun launchPickViaActivity(): Boolean {
+        val activity = hostActivity ?: return false
+        pendingPickRequestId = null
+        val intent = pickIntent()
+        return runCatching {
+            activity.startActivityForResult(intent, com.zhique.runner.MainActivity.APILOT_RC_PICK)
+        }.isSuccess
+    }
+
+    /** 传统通道发起网关授权。 */
+    fun launchGatewayViaActivity(): Boolean {
+        val activity = hostActivity ?: return false
+        pendingGatewayRequestId = null
+        val intent = gatewayIntent()
+        return runCatching {
+            activity.startActivityForResult(intent, com.zhique.runner.MainActivity.APILOT_RC_GATEWAY)
+        }.isSuccess
+    }
+
+    /**
+     * 发起同步：Apilot 的 IMPORT 协议是「发起后无回传」（官方文档示例即普通
+     * startActivity，确认导入全在 Apilot 侧完成），所以这里成功拉起即记账——
+     * 不用 startActivityForResult（永远只会等到默认 CANCELED，误导用户）。
+     * 大负载经一次性 content URI 交付，Apilot 的读取窗口由用户审查节奏决定
+     * （可达数分钟），清理延迟 15 分钟兜底。
+     */
+    fun launchSync(plan: SyncPlan): Boolean {
+        val activity = hostActivity ?: return false
+        val launched = runCatching {
+            activity.startActivity(plan.intent)
+        }.isSuccess
+        if (!launched) return false
+        scope.launch(io) {
+            sync.setLastExport(now())
+            audit.record("write", "推送 ${plan.providerCount} 个服务商", hasKey = plan.hasKey)
+            _state.value = _state.value.copy(
+                lastExportAt = now(),
+                notice = "已发起推送（${plan.providerCount} 个）：到 Apilot 确认「导入」完成",
+            )
+            tempFileCleanup?.let { cleanup ->
+                kotlinx.coroutines.delay(java.util.concurrent.TimeUnit.MINUTES.toMillis(15))
+                runCatching { cleanup() }
+            }
+        }
+        return true
+    }
+
+    /**
+     * 旧说明（已被上方的传统通道取代）：此前用 Activity Result API + 稳定 key
+     * 注册，androidx.activity 1.11.0 起 registry 随机生成高位 requestCode 与
+     * framework 校验冲突，详见上方传统通道注释。
+     */
+
     init {
         refresh()
     }
@@ -237,29 +325,6 @@ class ApilotController(
                 providerCount = store.list().size,
                 notice = "已从 Apilot 导入「${mapped.name}」" + if (mapped.hasKey) "（含 Key）" else "（无 Key）",
             )
-    }
-
-    /** 同步已发起（Intent 已交给系统）：立即记审计（方向/数量/真实是否含 Key，不含 payload）。 */
-    fun markSyncLaunched(hasKey: Boolean, providerCount: Int) {
-        scope.launch(io) {
-            audit.record("write", "推送 $providerCount 个服务商", hasKey = hasKey)
-        }
-    }
-
-    /** 同步返回：RESULT_OK 记上次导出时间；取消=中性提示；无论结果都清掉负载缓存（finally）。 */
-    fun handleSyncResult(resultCode: Int) {
-        scope.launch(io) {
-            try {
-                if (resultCode == android.app.Activity.RESULT_OK) {
-                    sync.setLastExport(now())
-                    _state.value = _state.value.copy(lastExportAt = now(), notice = "已交给 Apilot 处理同步")
-                } else {
-                    _state.value = _state.value.copy(notice = "同步已取消：未做任何更改")
-                }
-            } finally {
-                runCatching { tempFileCleanup?.invoke() }
-            }
-        }
     }
 
     /** 清除本 App 的桥接审计记录（对齐「审计可清」）。 */

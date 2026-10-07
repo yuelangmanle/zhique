@@ -232,6 +232,10 @@ class ApilotBridge(
                 setDataAndType(provider!!.invoke(payloadJson), ApilotProtocol.MIME_IMPORT)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } else {
+                // Apilot 的 IMPORT intent-filter 带 mimeType 约束：extra 分支也必须带
+                // type，否则 ActivityStarter 解析不到组件直接中止（TV 实测 START 后
+                // 无 UI、立即回 RESULT_CANCELED）
+                setType(ApilotProtocol.MIME_IMPORT)
                 putExtra(ApilotProtocol.EXTRA_CONFIGS_JSON, payloadJson)
             }
         }

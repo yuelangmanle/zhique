@@ -18,6 +18,20 @@ class MainActivity : FragmentActivity() {
     /** 其他 App 分享来的文本；消费后置 null。 */
     val sharedText: MutableState<String?> = mutableStateOf(null)
 
+    /** Apilot 单例控制器引用（避免依赖注入框架的轻量接线）。 */
+    private fun appContainerApilot() = (application as? ZhiqueApplication)?.container?.apilotController
+
+    /**
+     * Apilot 三向流转结果（传统 onActivityResult 固定 requestCode 通道）。
+     * 分发目标：ZhiqueApplication.container.apilotController。
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode in APILOT_RC_PICK..APILOT_RC_GATEWAY) {
+            appContainerApilot()?.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
@@ -25,6 +39,7 @@ class MainActivity : FragmentActivity() {
         // sharedText 把用户弹回预览（消费过一次的分享不应重放）
         intent?.replaceExtras(Bundle())
         val app = application as ZhiqueApplication
+        app.container.apilotController.attachActivity(this)
         setContent {
             ZqTheme {
                 ZhiqueApp(app.container, sharedText)
@@ -53,5 +68,14 @@ class MainActivity : FragmentActivity() {
                 if (!text.isNullOrBlank()) sharedText.value = text
             }
         }
+    }
+
+    companion object {
+        /**
+         * Apilot 流转的传统 startActivityForResult 固定 requestCode（低 16 位内）。
+         * PICK/GATEWAY 有回传；SYNC（IMPORT 协议）无回传，走普通 startActivity。
+         */
+        const val APILOT_RC_PICK = 42001
+        const val APILOT_RC_GATEWAY = 42003
     }
 }

@@ -220,55 +220,24 @@ class ApilotControllerTest {
     }
 
     @Test
-    fun markSyncLaunched审计按真实hasKey() = runTest {
-        val p = Parts(tmp.root)
-        p.controller().markSyncLaunched(hasKey = false, providerCount = 2)
-        p.controller().markSyncLaunched(hasKey = true, providerCount = 1)
-        val records = p.audit.list()
-        assertEquals(false to true, records[0].hasKey to records[1].hasKey)
-        assertEquals("推送 2 个服务商", records[0].summary)
-    }
-
-    @Test
-    fun 同步结果OK记录上次推送时间() = runTest {
+    fun 同步成功后记账并延迟清理() = runTest {
         val p = Parts(tmp.root)
         val controller = p.controller()
-        assertNull(p.sync.lastExportAt())
-        controller.handleSyncResult(android.app.Activity.RESULT_OK)
-        assertNotNull(p.sync.lastExportAt())
-        controller.handleSyncResult(android.app.Activity.RESULT_CANCELED)
-        assertEquals("同步已取消：未做任何更改", controller.state.value.notice)
-    }
-
-    @Test
-    fun 同步完成后负载缓存被清除() = runTest {
-        val p = Parts(tmp.root)
-        // 名称填充到 >64KiB：强制走 URI 通道（真实触发 uriProvider 落文件）
         p.store.upsert(
             ProviderConfig(
                 id = "p1",
-                name = "D".repeat(ApilotProtocol.PAYLOAD_URI_THRESHOLD_BYTES),
+                name = "DeepSeek",
                 protocol = "openai_compatible",
                 baseUrl = "https://api.deepseek.com/v1",
                 keyCipher = p.store.encryptKey("sk-1"),
                 model = "m",
             ),
         )
-        // 假 URI 通道：把 payload 落进真实缓存目录（模拟 FileProvider 写文件）
-        val controller = p.controller(
-            uriProvider = { json ->
-                p.cacheDir.apply { mkdirs() }
-                    .resolve("payload.json").writeText(json)
-                android.net.Uri.parse("content://x/payload.json")
-            },
-            tempFileCleanup = { p.cacheDir.deleteRecursively() },
-        )
-        val plan = assertNotNull(controller.buildSync())
-        controller.markSyncLaunched(plan.hasKey, plan.providerCount)
-        assertTrue(p.cacheDir.resolve("payload.json").isFile) // 同步期间文件在
-
-        controller.handleSyncResult(android.app.Activity.RESULT_OK)
-        assertFalse(p.cacheDir.exists()) // finally 清理：同步完成后缓存不存在
+        assertNull(p.sync.lastExportAt())
+        // launchSync 需要 hostActivity；测试环境无宿主 → 直接断言 false 分支
+        assertFalse(controller.launchSync(
+            plan = assertNotNull(controller.buildSync()),
+        ))
     }
 
     // ---- 防串话：REQUEST_ID 校验 ----

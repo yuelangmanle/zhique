@@ -66,10 +66,29 @@ class HomeControllerTest {
         val id = c.projects.value[0].id
         c.moveGroup(id, "工作")
         assertEquals("工作", c.projects.value[0].group)
-        var exportedPath: String? = null
-        val c2 = newController(onToast = { exportedPath = it })
+        // 0.2.2 起 toast 只报结果（文件经系统分享交付），成功文案为「已打包，…」
+        var toast: String? = null
+        val c2 = newController(onToast = { toast = it })
         c2.exportZip(id)
-        assertTrue(exportedPath?.endsWith(".zip") == true)
+        assertTrue(toast?.startsWith("已打包") == true)
+    }
+
+    @Test
+    fun `导出zip分享失败走toast不抛`() {
+        newController() // 初始化共享 repo（lateinit 只在 newController 里赋值）
+        var toast: String? = null
+        val c2 = HomeController(
+            repo,
+            CoroutineScope(UnconfinedTestDispatcher()),
+            io = UnconfinedTestDispatcher(),
+            onToast = { toast = it },
+            onRun = {},
+            onShareZip = { error("no share target") },
+        )
+        c2.createEmpty()
+        val id = c2.projects.value[0].id
+        c2.exportZip(id)
+        assertTrue(toast?.startsWith("分享失败") == true)
     }
 
     @Test

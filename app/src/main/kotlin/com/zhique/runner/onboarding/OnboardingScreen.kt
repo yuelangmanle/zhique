@@ -17,7 +17,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -40,37 +39,10 @@ fun OnboardingScreen(
     apilot: com.zhique.runner.settings.ApilotController? = null,
 ) {
     val state by controller.state.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
     val apilotState: com.zhique.runner.settings.ApilotController.UiState? = apilot?.state?.collectAsState()?.value
-    // 稳定 key 显式注册（真机 B7 回归修复：引导页这里仍是旧式 rememberLauncher——
-    // 随机 key 累积触发 FragmentActivity "Can only use lower 16 bits" 崩溃）
-    val registry = androidx.activity.compose.LocalActivityResultRegistryOwner.current
-        ?.activityResultRegistry ?: error("宿主非 ComponentActivity")
-    val apilotLauncher = remember {
-        registry.register(
-            "zhique-onboarding-apilot-pick",
-            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-        ) { result ->
-            apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
-        }
-    }
-    val apilotLauncherLaunch: (android.content.Intent) -> Unit = { intent ->
-        runCatching { apilotLauncher.launch(intent) }
-            .onFailure { apilot?.setNotice("无法打开 Apilot（${it.message}）") }
-    }
-    // 网关一键授权（独立稳定 key；回传走 handleGatewayResult 落 Provider）
-    val apilotGatewayLauncher = remember {
-        registry.register(
-            "zhique-onboarding-apilot-gateway",
-            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-        ) { result ->
-            apilot?.handleGatewayResult(result.resultCode, result.data)
-        }
-    }
-    val apilotGatewayLauncherLaunch: (android.content.Intent) -> Unit = { intent ->
-        runCatching { apilotGatewayLauncher.launch(intent) }
-            .onFailure { apilot?.setNotice("无法打开 Apilot（${it.message}）——网关功能需 Apilot v2.5.0+") }
-    }
+    // Apilot 流转走 MainActivity 的传统 onActivityResult 通道（固定低 16 位
+    // requestCode）：androidx.activity 1.11.0 registry 随机高位 requestCode 与
+    // framework 校验冲突，详见 ApilotController 注释。
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
@@ -138,15 +110,23 @@ fun OnboardingScreen(
                     color = MaterialTheme.colorScheme.secondary,
                 )
                 OutlinedButton(
-                    onClick = { apilot?.let { apilotLauncherLaunch(it.pickIntent()) } },
+                    onClick = {
+                        if (apilot?.launchPickViaActivity() != true) {
+                            apilot?.setNotice("无法打开 Apilot，请退出织雀重新进入后重试")
+                        }
+                    },
                     enabled = apilot != null && apilotState?.installed == true,
                     modifier = Modifier.testTag("onb-apilot"),
                 ) {
                     Text("从 Apilot 接入")
                 }
-                // 一键网关（Apilot v2.5.0+）：免选配置，直接拿 baseUrl+model（独立 launcher 走网关回传）
+                // 一键网关（Apilot v2.5.0+）：免选配置，直接拿 baseUrl+model
                 OutlinedButton(
-                    onClick = { apilot?.let { apilotGatewayLauncherLaunch(it.gatewayIntent()) } },
+                    onClick = {
+                        if (apilot?.launchGatewayViaActivity() != true) {
+                            apilot?.setNotice("无法打开 Apilot——网关功能需 Apilot v2.5.0+，请重新进入后重试")
+                        }
+                    },
                     enabled = apilot != null && apilotState?.installed == true,
                     modifier = Modifier.testTag("onb-apilot-gateway"),
                 ) {

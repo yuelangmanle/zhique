@@ -3,6 +3,34 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.5（versionCode 7）· 2026-10-07
+
+**TV 夜循环第六批：Apilot 真机崩溃根治（16 位 requestCode）+ 三向流转全流程 TV 实证**
+
+- 修复：**「Can only use lower 16 bits for requestCode」真机+TV 双复现**——
+  androidx.activity 1.11.0 起 ActivityResultRegistry 用随机高位 requestCode
+  （反编译证实 `Random.nextInt(2147418112)+65536`，恒 >0xFFFF），与设备框架层
+  对 startActivityForResult requestCode 的低 16 位校验必然冲突。Apilot 流转
+  （方案授权 PICK / 网关一键 GRANT_GATEWAY）整体迁移到 MainActivity 传统
+  onActivityResult 通道，固定 requestCode 42001/42003
+- 修复：**「同步到 Apilot」静默失效**——Apilot 的 IMPORT intent-filter 带
+  mimeType 约束，我们小负载走 extras 分支时缺 type，系统解析不到组件直接
+  中止（START 后无 UI、立即回 CANCELED）。补 `setType(MIME_IMPORT)`（回归
+  测试固化）；并按 Apilot 官方协议（导入本就无回传，文档示例即普通
+  startActivity）把同步改为「发起即记账 + 15 分钟延迟清理负载缓存」，
+  不再依赖永不到来的 RESULT_OK
+- 涉及 `ProvidersScreen`（删除 3 个 registry launcher）与 `OnboardingScreen`
+  （删除 2 个）共 5 处注册点；启动失败（宿主未就绪/ActivityNotFound）改为
+  提示文案不闪退
+- TV 模拟器全流程实证（Apilot 2.8.4+70）：①网关一键接入→Apilot 授权页→
+  「授权并启动网关」→回跳落 Provider（http://127.0.0.1:8787/v1 · mock-mini）
+  且列表即时刷新；②方案授权接入→PICK V2 scope 页→默认档授权→「（无 Key）」
+  导入（密钥不出 Apilot 的安全语义正确）；③同步到 Apilot→审查页→「导入
+  完成：3 个」→织雀推送时间记账
+- 修复：滞留测试 `HomeControllerTest.移动分组与导出zip`（0.2.2 起 toast
+  文案已改「已打包…」），补分享失败兜底用例；服务商列表在 Apilot 接入落库后
+  即时刷新（LaunchedEffect 以接入时间为信号）
+
 ## 0.2.4（versionCode 6）· 2026-10-07
 
 **TV 夜循环第五批续：隐私 12+ 补全 + eruda 收束**

@@ -92,6 +92,9 @@ class ApilotBridgeTest {
         assertEquals(ApilotProtocol.ACTION_IMPORT, plan.intent.action)
         assertEquals("com.example.api_manager", plan.intent.`package`)
         assertEquals("AA:BB", plan.intent.getStringExtra(ApilotProtocol.EXTRA_SOURCE_SIGNATURE_SHA256))
+        // Apilot 的 IMPORT filter 带 mimeType 约束：extra 分支缺 type 会被
+        // ActivityStarter 直接中止（TV 实证「同步已取消」根因）
+        assertEquals(ApilotProtocol.MIME_IMPORT, plan.intent.type)
     }
 
     @Test

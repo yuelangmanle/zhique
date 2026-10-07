@@ -1,8 +1,5 @@
 package com.zhique.runner.settings
 
-import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.result.ActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +33,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,40 +54,16 @@ fun ProvidersScreen(
 ) {
     val providers by controller.providers.collectAsState()
     val form by controller.form.collectAsState()
-    val context = LocalContext.current
     val apilotState: ApilotController.UiState? = apilot?.state?.collectAsState()?.value
-    // 显式稳定 key 注册（真机 B7：rememberLauncherForActivityResult 默认 key 含
-    // 随机成分，MIUI 上 FragmentActivity 校验 requestCode 只取低 16 位，重复
-    // 注册累积后越界崩溃 "Can only use lower 16 bits for requestCode"）
-    val registry = requireNotNull(androidx.activity.compose.LocalActivityResultRegistryOwner.current) {
-        "Activity Result registry 不可用（宿主必须是 ComponentActivity）"
-    }.activityResultRegistry
-    val pickLauncher = remember {
-        registry.register(
-            "zhique-apilot-pick",
-            ActivityResultContracts.StartActivityForResult(),
-        ) { result: ActivityResult ->
-            apilot?.handleActivityResult(result.resultCode, result.data, context.contentResolver)
-        }
-    }
-    val syncLauncher = remember {
-        registry.register(
-            "zhique-apilot-sync",
-            ActivityResultContracts.StartActivityForResult(),
-        ) { result: ActivityResult ->
-            apilot?.handleSyncResult(result.resultCode)
-        }
-    }
-    // 网关一键授权（Apilot v2.5.0+ GRANT_GATEWAY）：回传 baseUrl/model 直接落 Provider
-    val gatewayLauncher = remember {
-        registry.register(
-            "zhique-apilot-gateway",
-            ActivityResultContracts.StartActivityForResult(),
-        ) { result: ActivityResult ->
-            apilot?.handleGatewayResult(result.resultCode, result.data)
-        }
-    }
+    // Apilot 三向流转走 MainActivity 的传统 onActivityResult 通道（固定低 16 位
+    // requestCode）：androidx.activity 1.11.0 的 registry 随机高位 requestCode 与
+    // framework 校验冲突（"Can only use lower 16 bits"），详见 ApilotController 注释。
     val scope = rememberCoroutineScope()
+    // Apilot 网关/方案接入落库走 ApilotController 的 ProviderStore 写入（与
+    // ProvidersController 同仓不同流），以接入时间戳为信号刷新本屏列表
+    androidx.compose.runtime.LaunchedEffect(apilotState?.lastImportAt) {
+        if (apilotState?.lastImportAt != null) controller.refresh()
+    }
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -138,7 +110,7 @@ fun ProvidersScreen(
                     }
                 }
                 if (apilot != null && apilotState != null) {
-                    ApilotSection(apilot, apilotState!!, pickLauncher, syncLauncher, gatewayLauncher, scope)
+                    ApilotSection(apilot, apilotState!!, scope)
                 }
             } else {
                 ProviderFormView(controller, form!!)
@@ -155,9 +127,6 @@ fun ProvidersScreen(
 private fun ApilotSection(
     controller: ApilotController,
     state: ApilotController.UiState,
-    pickLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?,
-    syncLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?,
-    gatewayLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
     Card(Modifier.fillMaxWidth().testTag("apilot-section")) {
@@ -175,20 +144,21 @@ private fun ApilotSection(
                 // 一键网关（Apilot v2.5.0+ 推荐）：不用选配置，直接拿到 baseUrl+model
                 OutlinedButton(
                     onClick = {
-                        runCatching { gatewayLauncher?.launch(controller.gatewayIntent()) }
-                            .onFailure { controller.setNotice("无法打开 Apilot（${it.message}），请确认已安装 v2.5.0+ 并启动网关") }
+                        if (controller.launchGatewayViaActivity() != true) {
+                            controller.setNotice("无法打开 Apilot，请退出织雀重新进入后重试")
+                        }
                     },
-                    enabled = state.installed && !state.busy && gatewayLauncher != null,
+                    enabled = state.installed && !state.busy,
                     modifier = Modifier.weight(1f).testTag("apilot-gateway"),
                 ) { Text("⚡ 网关一键接入") }
                 OutlinedButton(
                     onClick = {
-                        // 真机修复：launch 全包 runCatching——ActivityNotFound / 包名解析失败
-                        // 等场景不允许闪退（真机反馈"点从 Apilot 接入闪退"）
-                        runCatching { pickLauncher?.launch(controller.pickIntent()) }
-                            .onFailure { controller.setNotice("无法打开 Apilot（${it.message}），请确认已安装最新版") }
+                        // launch 失败（ActivityNotFound / 宿主未就绪）不允许闪退
+                        if (controller.launchPickViaActivity() != true) {
+                            controller.setNotice("无法打开 Apilot，请退出织雀重新进入后重试")
+                        }
                     },
-                    enabled = state.installed && !state.busy && pickLauncher != null,
+                    enabled = state.installed && !state.busy,
                     modifier = Modifier.weight(1f).testTag("apilot-import"),
                 ) { Text("← 方案授权接入") }
                 OutlinedButton(
@@ -197,14 +167,12 @@ private fun ApilotSection(
                             val plan = controller.buildSync()
                             if (plan == null) {
                                 controller.setNotice("还没有可推送的服务商，先添加一个")
-                            } else {
-                                controller.markSyncLaunched(plan.hasKey, plan.providerCount)
-                                runCatching { syncLauncher?.launch(plan.intent) }
-                                    .onFailure { controller.setNotice("无法打开 Apilot（${it.message}），请确认已安装最新版") }
+                            } else if (controller.launchSync(plan) != true) {
+                                controller.setNotice("无法打开 Apilot，请退出织雀重新进入后重试")
                             }
                         }
                     },
-                    enabled = state.installed && !state.busy && syncLauncher != null,
+                    enabled = state.installed && !state.busy,
                     modifier = Modifier.weight(1f).testTag("apilot-sync"),
                 ) { Text("→ 同步到 Apilot") }
             }
