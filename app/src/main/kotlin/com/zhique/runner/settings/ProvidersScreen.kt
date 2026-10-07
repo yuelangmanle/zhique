@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -68,7 +69,7 @@ fun ProvidersScreen(
         if (apilotState?.lastImportAt != null) controller.refresh()
     }
     Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.fillMaxSize().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("AI 服务商", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 if (form == null) {
@@ -116,7 +117,9 @@ fun ProvidersScreen(
                     ApilotSection(apilot, apilotState!!, scope)
                 }
             } else {
-                ProviderFormView(controller, form!!)
+                // weight(1f)：表单占满剩余高度，verticalScroll 才有固定视口——
+                // 否则内容直接超出屏被裁（TV 实测「保存」按钮滚不出来点不到）
+                ProviderFormView(controller, form!!, Modifier.weight(1f))
             }
         }
     }
@@ -226,9 +229,9 @@ private fun modalityBadgeOf(p: ProviderConfig): String = when (p.modalityManual)
 }
 
 @Composable
-private fun ProviderFormView(controller: ProvidersController, form: ProviderForm) {
+private fun ProviderFormView(controller: ProvidersController, form: ProviderForm, modifier: Modifier = Modifier) {
     Column(
-        Modifier
+        modifier
             .verticalScroll(rememberScrollState())
             .testTag("provider-form"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -287,9 +290,26 @@ private fun ProviderFormView(controller: ProvidersController, form: ProviderForm
                 modifier = Modifier.fillMaxWidth().testTag("provider-notice"))
         }
         if (form.modelOptions.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                form.modelOptions.take(6).forEach { m ->
-                    AssistChip(onClick = { controller.updateForm { it.copy(model = m) } }, label = { Text(m) })
+            // FlowRow 换行展示全部模型（修复：Row 不换行——长模型名把后面的 chip
+            // 挤成逐字竖条、超出 6 个的完全不可见）；名字单行截断保持 chip 紧凑
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().testTag("model-options"),
+            ) {
+                form.modelOptions.forEach { m ->
+                    AssistChip(
+                        onClick = { controller.updateForm { it.copy(model = m) } },
+                        label = {
+                            Text(
+                                m,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 240.dp),
+                            )
+                        },
+                    )
                 }
             }
         }

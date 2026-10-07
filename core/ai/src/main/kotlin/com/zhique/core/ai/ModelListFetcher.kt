@@ -81,8 +81,67 @@ class ModelListFetcher(private val client: OkHttpClient = defaultHttpClient()) {
          */
         fun modelsUrl(baseUrl: String, versionSegment: String): String =
             ApiUrls.join(baseUrl, versionSegment, "/models")
+
+        private val verifyClient: OkHttpClient = defaultHttpClient()
+
+        /**
+         * 最小 chat 探测（Key 有效性真值）：POST /chat/completions max_tokens=1 流式，
+         * 读首事件——流内 `{"error":…}` → [AiError.Auth]（部分网关如魔搭对坏 Key 的
+         * /models 也回 200，只测 models 会把坏 Key 误报「连通」）；HTTP 非 2xx →
+         * [HttpErrors] 分类。仅 openai_compatible 需要（其余协议 /models 本身严格）。
+         * 模型名不存在等非认证错误按服务错误抛出，好 Key 不被误判。
+         */
+        fun verifyChatKey(protocol: String, baseUrl: String, apiKey: String, model: String) {
+            if (protocol != Protocol.OPENAI_COMPATIBLE) return
+            val url = ApiUrls.join(baseUrl, "/v1", "/chat/completions")
+            val body = kotlinx.serialization.json.buildJsonObject {
+                put("model", JsonPrimitive(model.ifBlank { "default" }))
+                put("stream", JsonPrimitive(true))
+                put("max_tokens", JsonPrimitive(1))
+                put("messages", kotlinx.serialization.json.buildJsonArray {
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("role", JsonPrimitive("user"))
+                        put("content", JsonPrimitive("ping"))
+                    })
+                })
+            }.toString()
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $apiKey")
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            val response = try {
+                verifyClient.newCall(request).execute()
+            } catch (e: IOException) {
+                throw AiError.Network("连接失败：${e.message}", e)
+            }
+            response.use { r ->
+                if (!r.isSuccessful) throw HttpErrors.fromCode(r.code, r.body?.string())
+                val source = r.body?.source() ?: return
+                // 只读 SSE 前几行拿到首条事件即可判定，不消费整个流
+                repeat(20) {
+                    val line = runCatching { source.readUtf8Line() }.getOrNull() ?: return
+                    if (line.startsWith("data:")) {
+                        val payload = line.removePrefix("data:").trim()
+                        if (payload.contains("\"error\"")) {
+                            throw AiError.Auth("Key 被拒绝（最小对话探测）")
+                        }
+                        return // 正常首事件：Key 有效
+                    }
+                }
+            }
+        }
     }
 }
+
+private fun String.toRequestBody(media: okhttp3.MediaType): okhttp3.RequestBody =
+    okhttp3.RequestBody.create(media, this)
+
+private fun String.toMediaType(): okhttp3.MediaType =
+    okhttp3.MediaType.Companion.run { this@toMediaType.toMediaTypeOrNull() }
+        ?: okhttp3.MediaType.Companion.run { "application/json".toMediaTypeOrNull() }!!
 
 /**
  * 端点 URL 智能拼接（对话流修复）：baseUrl 已含版本段（/v1、/v1beta）时只补

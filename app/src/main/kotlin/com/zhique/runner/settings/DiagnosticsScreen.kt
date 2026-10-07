@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zhique.core.ai.AiError
+import com.zhique.core.ai.HttpErrors
 import com.zhique.core.ai.ModelListFetcher
 import com.zhique.core.ai.ModelCatalog
 import com.zhique.core.ai.ChatMessage
@@ -98,7 +99,11 @@ class DiagnosticsController(
         update(providerId) { it.copy(busy = true, ok = null, detail = "测试中…") }
         val started = System.currentTimeMillis()
         val result = runCatching {
-            probe(config.protocol, config.baseUrl, store.decryptKey(config))
+            val models = probe(config.protocol, config.baseUrl, store.decryptKey(config))
+            // Key 有效性验证：部分网关（实测魔搭）的 /models 对任意 token 返回 200，
+            // 只测 models 会把坏 Key 误报「连通」——追加一次最小 chat 探测兜底。
+            ModelListFetcher.verifyChatKey(config.protocol, config.baseUrl, store.decryptKey(config), config.model)
+            models
         }
         val latency = System.currentTimeMillis() - started
         update(providerId) { row ->
@@ -108,7 +113,7 @@ class DiagnosticsController(
                         busy = false,
                         ok = true,
                         latencyMs = latency,
-                        detail = "连通 · /models ${models.size} 个模型",
+                        detail = "连通 · Key 已验证 · /models ${models.size} 个模型",
                     )
                 },
                 onFailure = { e ->

@@ -3,6 +3,31 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.2.9（versionCode 11）· 2026-10-07
+
+**日循环第十批：API 管理体检修复（魔搭 ModelScope 真实方案端到端打通）**
+
+用户以魔搭真实方案（api-inference.modelscope.cn/v1）实测暴露的一批问题：
+
+- 修复：**服务商表单「拉取模型列表」布局混乱**——35 个长模型名（`deepseek-ai/…`）
+  塞在不换行的 Row 里只显示 6 个，超宽 chip 被挤成逐字竖排；改 FlowRow
+  全量换行展示 + 单行截断（截图验证）
+- 修复：**表单「保存/取消」永远点不到**——表单缺固定视口，内容超出屏幕被裁
+  且滚动到底也露不出按钮行（TV 实测复现）；ProviderFormView 加 weight(1f)
+  占满剩余高度，verticalScroll 在固定视口内滚动
+- 新增：**角色路由「从列表选」快捷选模型**——此前五槽绑定只能手抄长模型名；
+  现在每槽可选服务商（多服务商 chips）+ 从该服务商的模型列表弹层点选即绑定
+  （无缓存一键现场拉取）
+- 新增：**ProviderModelCatalog 模型目录**——拉一次全局可用（内存+磁盘缓存，
+  按 providerId 互斥防重复请求）；服务商表单拉取成功自动入目录
+- 修复：**连接诊断误报「✓ 连通」**——实测魔搭 /models 对任意 token（含坏 Key）
+  都返回 200，坏 Key 被判连通、对话才暴露「Authentication failed」；诊断在
+  /models 后追加最小 chat 探测（1 token 流式读首事件，流内 error → 认证失败），
+  文案改「连通 · Key 已验证」；验证好 Key 通过、诊断不再误导
+- 魔搭端到端实证：添加 Provider → 拉取 35 模型（FlowRow 布局）→ 角色路由
+  点选 DeepSeek-V4-Flash 绑定对话伙伴 → 项目对话真实流式回复「MS-OK」
+  （推理思考折叠 + token 计量正常）；连接诊断「✓ 连通 · Key 已验证」
+
 ## 0.2.8（versionCode 10）· 2026-10-07
 
 **日循环第九批：使用逻辑重构第一步——交付回归项目、引导价值前置**

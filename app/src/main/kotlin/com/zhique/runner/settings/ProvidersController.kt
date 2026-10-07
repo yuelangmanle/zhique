@@ -67,6 +67,7 @@ class ProvidersController(
     private val fetcher: ModelListFetcher,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val catalog: ProviderModelCatalog? = null,
 ) {
     private val _providers = MutableStateFlow<List<ProviderConfig>>(emptyList())
     val providers: StateFlow<List<ProviderConfig>> = _providers.asStateFlow()
@@ -142,6 +143,7 @@ class ProvidersController(
     fun delete(id: String) {
         scope.launch(io) {
             store.remove(id)
+            catalog?.remove(id)
             _providers.value = store.list()
         }
     }
@@ -162,6 +164,9 @@ class ProvidersController(
                 }
                 .getOrNull()
             if (models != null) {
+                // 目录缓存：拉一次全局可用（角色路由/对话的模型选择弹层消费）
+                // 新建未保存（无 id）时不入目录；保存后重新拉取即入
+                f.id?.let { pid -> catalog?.put(pid, models) }
                 _form.update {
                     it?.copy(
                         busy = false,
@@ -172,6 +177,9 @@ class ProvidersController(
             }
         }
     }
+
+    /** 解密指定服务商的 Key（角色路由现场拉取用；零日志零 URL）。 */
+    fun decryptKeyOf(providerId: String): String = store.decryptKeyById(providerId)
 
     /** 视觉能力探测：发最小图片请求（成功 true / 参数错 false / 未知 null）。 */
     fun probeVision() {

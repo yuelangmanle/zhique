@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.zhique.core.common.crypto.CryptoStore
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -38,6 +39,17 @@ class ProviderStore(
 ) {
     val providers: Flow<List<ProviderConfig>> = store.data.map { prefs -> decode(prefs) }
 
+    /** 同步缓存（init 即开始收集）：UI 同步解密/查找用，启动后毫秒级就绪。 */
+    private val cachedFlow = kotlinx.coroutines.flow.MutableStateFlow<List<ProviderConfig>>(emptyList())
+    val cached: List<ProviderConfig> get() = cachedFlow.value
+
+    init {
+        // 独立作用域收集（进程级 DataStore，生命周期同 App）
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            providers.collect { cachedFlow.value = it }
+        }
+    }
+
     suspend fun list(): List<ProviderConfig> = providers.first()
 
     suspend fun upsert(config: ProviderConfig) {
@@ -52,6 +64,9 @@ class ProviderStore(
 
     /** 保存明文 Key → 密文。返回可落库的配置。 */
     fun encryptKey(plainKey: String): String = crypto.encrypt(plainKey)
+
+    /** 按 id 解密（模型目录现场拉取用；同步缓存，未命中返回空串）。 */
+    fun decryptKeyById(id: String): String = cached.firstOrNull { it.id == id }?.let { decryptKey(it) } ?: ""
 
     fun decryptKey(config: ProviderConfig): String =
         runCatching { crypto.decrypt(config.keyCipher) }.getOrDefault("")

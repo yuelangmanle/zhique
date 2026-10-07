@@ -230,6 +230,12 @@ class AppContainer(
     val debugServer = com.zhique.core.telemetry.DebugServer()
     val debugPreferences = com.zhique.runner.settings.DebugPreferences(settingsDataStore)
 
+    /** 服务商模型目录（拉一次全局可用：角色路由/对话的快捷选模型消费）。 */
+    val modelCatalog: com.zhique.runner.settings.ProviderModelCatalog by lazy {
+        com.zhique.runner.settings.ProviderModelCatalog(File(context.filesDir, "model_catalog.json"))
+    }
+    val modelListFetcher = com.zhique.core.ai.ModelListFetcher()
+
     /** 项目最新一次导出的 APK（无导出记录或文件已被系统清理→null）。 */
     fun exportedApk(projectId: String): File? {
         val record = runCatching { repo.meta(projectId) }.getOrNull()?.export ?: return null

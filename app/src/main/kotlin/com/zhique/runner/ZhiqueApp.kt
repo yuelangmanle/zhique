@@ -565,7 +565,7 @@ fun ZhiqueApp(
                         )
                         "providers" -> ProvidersScreen(
                             controller = remember {
-                                ProvidersController(container.providerStore, ModelListFetcher(), scope)
+                                ProvidersController(container.providerStore, ModelListFetcher(), scope, catalog = container.modelCatalog)
                             },
                             apilot = container.apilotController,
                             onBack = { settingsPage = null },
@@ -853,14 +853,22 @@ private fun RoleRouterPage(
     onBack: () -> Unit,
 ) {
     var defaultProviderId by remember { mutableStateOf("") }
+    var providers by remember { mutableStateOf<List<com.zhique.runner.settings.ProviderConfig>>(emptyList()) }
     LaunchedEffect(Unit) {
-        defaultProviderId = container.providerStore.list().firstOrNull()?.id ?: ""
+        container.modelCatalog.load()
+        val list = container.providerStore.list()
+        defaultProviderId = list.firstOrNull()?.id ?: ""
+        providers = list
     }
     Box(Modifier.fillMaxSize()) {
         RoleRouterScreen(
             store = container.roleBindingStore,
             defaultProviderId = defaultProviderId,
             scope = scope,
+            providers = providers,
+            catalog = container.modelCatalog,
+            fetcher = container.modelListFetcher,
+            keyDecrypt = container.providerStore::decryptKeyById,
         )
         androidx.compose.material3.IconButton(
             onClick = onBack,
