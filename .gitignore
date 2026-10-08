@@ -10,3 +10,4 @@ local.properties
 out/
 core/export/src/main/assets/templates/
 core/web/build/
+dist/
