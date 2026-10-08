@@ -138,8 +138,8 @@ open class UpdateChecker(
         const val CHANNEL_STABLE = "stable"
         const val CHANNEL_BETA = "beta"
 
-        /** 织雀自身的开源仓库（X6 自更新演练口径；M10 发布件对齐）。 */
-        const val ZHIQUE_OWNER = "zhique-app"
+        /** 织雀自身的真实仓库（自更新与更新日志的拉取源；公开仓库匿名可读）。 */
+        const val ZHIQUE_OWNER = "yuelangmanle"
         const val ZHIQUE_REPO = "zhique"
     }
 }
