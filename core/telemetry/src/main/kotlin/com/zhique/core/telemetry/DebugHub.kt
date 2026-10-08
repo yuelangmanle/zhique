@@ -96,15 +96,28 @@ object DebugHub {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
-                // 崩溃记录同步写透（进程将亡，协程/队列不可靠）
-                event(
-                    "error", "crash", detail = mapOf(
+                // 崩溃记录同步写透：绕过 sinkExecutor（进程将亡时 daemon 队列
+                // 不会被消费），直接锁内落盘 + flush
+                val e = DebugEvent(
+                    id = idSeq.incrementAndGet(),
+                    v = SCHEMA_VERSION,
+                    ts = System.currentTimeMillis(),
+                    session = session,
+                    cat = "error",
+                    action = "crash",
+                    screen = currentScreen,
+                    detail = mapOf(
                         "thread" to thread.name,
                         "type" to throwable.javaClass.name,
                         "message" to (throwable.message ?: ""),
                     ),
                 )
-                synchronized(lock) { runCatching { sinkWriter?.flush() } }
+                synchronized(lock) {
+                    ring.addLast(e)
+                    while (ring.size > RING_CAPACITY) ring.removeFirst()
+                    _events.tryEmit(ring.toList())
+                    appendSinkLocked(e, json.encodeToString(e))
+                }
             }
             previous?.uncaughtException(thread, throwable)
         }
@@ -196,23 +209,30 @@ object DebugHub {
 
     private fun appendSink(e: DebugEvent) {
         if (!sinkEnabled) return
-        val dir = sinkDir ?: return
         val line = json.encodeToString(e) // 只序列化一次（此前每事件两次）
         sinkExecutor.execute {
             runCatching {
                 synchronized(lock) {
-                    if (!sinkEnabled) return@execute
-                    if (!dir.exists()) dir.mkdirs()
-                    if (sinkWriter == null) openSinkLocked()
-                    if (sinkBytes > SINK_ROTATE_BYTES) rotateSinkLocked()
-                    val w = sinkWriter ?: return@execute
-                    w.write(line)
-                    w.write("\n")
-                    w.flush() // 异步任务边界必须落盘（队列空≠缓冲落盘）
-                    sinkBytes += line.toByteArray(Charsets.UTF_8).size + 1 // 字节数而非字符数（中文 3B/字）
+                    appendSinkLocked(e, line)
                 }
             }.onFailure { synchronized(lock) { closeSinkLocked() } }
         }
+    }
+
+    /** 须持 [lock] 调用（crash 路径同步写透复用）。 */
+    private fun appendSinkLocked(e: DebugEvent, line: String) {
+        if (!sinkEnabled) return
+        val dir = sinkDir ?: return
+        runCatching {
+            if (!dir.exists()) dir.mkdirs()
+            if (sinkWriter == null) openSinkLocked()
+            if (sinkBytes > SINK_ROTATE_BYTES) rotateSinkLocked()
+            val w = sinkWriter ?: return
+            w.write(line)
+            w.write("\n")
+            w.flush() // 异步任务边界必须落盘（队列空≠缓冲落盘）
+            sinkBytes += line.toByteArray(Charsets.UTF_8).size + 1 // 字节数而非字符数（中文 3B/字）
+        }.onFailure { closeSinkLocked() }
     }
 
     private fun openSinkLocked() {

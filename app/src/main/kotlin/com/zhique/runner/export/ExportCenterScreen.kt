@@ -55,6 +55,7 @@ fun ExportCenterScreen(
     onToast: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    exportedApk: (String) -> java.io.File? = { null },
 ) {
     var projects by remember { mutableStateOf<List<ProjectMeta>>(emptyList()) }
     val backupController = remember(ioDispatcher) {
@@ -111,6 +112,7 @@ fun ExportCenterScreen(
             }
             items(exported, key = { it.id }) { p ->
                 val record = p.export!!
+                val ctx = androidx.compose.ui.platform.LocalContext.current
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -127,6 +129,19 @@ fun ExportCenterScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    OutlinedButton(
+                        onClick = {
+                            val apk = exportedApk(p.id)
+                            if (apk != null) {
+                                // 直接重装上次产物（重度用户：卸载/换机后免走三步向导）
+                                com.zhique.core.telemetry.DebugHub.event(
+                                    "flow", "export.reinstall", detail = mapOf("pkg" to record.packageName),
+                                )
+                                ExportDelivery.installApk(ctx!!, apk)
+                            } else onToast("上次产物已被系统清理，请重新导出")
+                        },
+                        modifier = Modifier.testTag("center-reinstall-${p.id}"),
+                    ) { Text("重装") }
                     Button(
                         onClick = { onExport(p) },
                         modifier = Modifier.testTag("center-export-${p.id}"),

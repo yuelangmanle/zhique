@@ -122,6 +122,15 @@ class ChatController(
         _state.update { it.copy(input = text) }
     }
 
+    /** 当前流式回复的 Job（停止按钮取消用）。 */
+    private var currentJob: kotlinx.coroutines.Job? = null
+
+    /** 停止当前流式回复（保留已生成部分，标记取消语义）。 */
+    fun stop() {
+        currentJob?.cancel()
+        currentJob = null
+    }
+
     fun send(text: String) {
         val body = text.trim()
         if (body.isEmpty() || _state.value.busy) return
@@ -140,7 +149,7 @@ class ChatController(
                 error = null,
             )
         }
-        scope.launch(io) {
+        currentJob = scope.launch(io) {
             thinkingStartMs = 0L
             try {
                 val req = newRequest(history.toList())

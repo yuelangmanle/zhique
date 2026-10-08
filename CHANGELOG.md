@@ -3,6 +3,28 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.3.2（versionCode 14）· 2026-10-08
+
+**四视角评估 + 二轮代理审查修复 + 重度用户功能**
+
+四视角（资深/新人 × 全栈/PM + 重度用户）评估落 docs/产品评估-四视角.md。
+
+- 二轮代理审查抓到 2 个上轮修复未达成声明目标：GitTools 的 runCatching 仍吞
+  CancellationException（外层 catch 不可达，取消照样被吞）；Memory 空分支
+  removeAll(空集) 是 no-op（pending 无限累积）。均已重写（try/catch 显式放行、
+  removeAll(notes.toSet())）
+- 修复：visibleProjects 冷流首帧闪「还没有项目」空态（50 个项目也闪）→
+  stateIn 热流；搜索框可见性与过滤态脱钩（删项目到 <6 个后卡死过滤视图）→
+  条件补 query 非空；decryptKeyById runBlocking 主线程阻塞 → suspend 化
+  （keyDecrypt 链路同步改挂起）；DebugHub crash 写透实际走异步队列临终可能
+  丢 → 绕过 executor 锁内直写；PermissionRegistry mtime 同毫秒盲区 →
+  mtime+length 指纹；文件选择取消传空数组违反契约 → null
+- 新功能（重度用户）：**对话流式「停止」按钮**（busy 时发送钮变停止，取消
+  保留已生成部分）；**导出历史一键重装**（交付与档案的记录行「重装」直接装
+  上次产物，产物被系统清理时如实提示）
+- 测试：DebugServer token 鉴权用例（403/通过/health 免鉴权脱敏）
+- 全量 build 绿；双包重建
+
 ## 0.3.1（versionCode 13）· 2026-10-08
 
 **商用级工程品质审查（4 路并行深审全部模块，55 项确认问题，本轮修复 28 项）**

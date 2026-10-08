@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -120,11 +121,17 @@ fun ChatScreen(
                     enabled = !state.busy,
                 )
                 IconButton(
-                    onClick = { controller.send(state.input) },
-                    enabled = !state.busy && state.input.isNotBlank(),
+                    onClick = {
+                        if (state.busy) controller.stop() else controller.send(state.input)
+                    },
+                    enabled = !state.busy || true, // busy 时作为停止钮仍可点
                     modifier = Modifier.testTag("chat-send"),
                 ) {
-                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "发送")
+                    if (state.busy) {
+                        Icon(Icons.Filled.Close, contentDescription = "停止")
+                    } else {
+                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "发送")
+                    }
                 }
             }
         }

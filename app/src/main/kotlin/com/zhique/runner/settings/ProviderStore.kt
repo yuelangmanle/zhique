@@ -68,12 +68,12 @@ class ProviderStore(
     fun encryptKey(plainKey: String): String = crypto.encrypt(plainKey)
 
     /**
-     * 按 id 解密（模型目录现场拉取用）。缓存 miss（启动首帧未收集完/新写入
-     * 尚未传播）时同步兜底读一次磁盘——返回空串会让调用方拿空 Key 发请求必 401。
+     * 按 id 解密（模型目录现场拉取用）。缓存 miss 时挂起读磁盘（不做 runBlocking：
+     * 调用方在主线程协程里，同步等 DataStore 会 StrictMode 违例/掉帧/慢盘 ANR）。
      */
-    fun decryptKeyById(id: String): String {
+    suspend fun decryptKeyById(id: String): String {
         cached.firstOrNull { it.id == id }?.let { return decryptKey(it) }
-        val config = kotlinx.coroutines.runBlocking { get(id) } ?: return ""
+        val config = get(id) ?: return ""
         cachedFlow.value += config
         return decryptKey(config)
     }

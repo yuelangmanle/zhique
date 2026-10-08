@@ -8,7 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -38,12 +40,13 @@ class HomeController(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    /** 搜索过滤视图：名称不区分大小写包含；空 query 返回原列表。 */
-    val visibleProjects: kotlinx.coroutines.flow.Flow<List<ProjectMeta>> =
+    /** 搜索过滤视图：名称不区分大小写包含；空 query 返回原列表。
+     *  stateIn 热流（初始值=当前列表）：冷流 + initial=emptyList 会让首帧闪空态。 */
+    val visibleProjects: kotlinx.coroutines.flow.StateFlow<List<ProjectMeta>> =
         kotlinx.coroutines.flow.combine(_projects, _query) { list, q ->
             if (q.isBlank()) list
             else list.filter { it.name.contains(q.trim(), ignoreCase = true) }
-        }
+        }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, _projects.value)
 
     fun setQuery(q: String) {
         _query.value = q

@@ -553,6 +553,7 @@ fun ZhiqueApp(
                                 onExport = { wizardProject = it },
                                 onPush = { publishProject = it },
                                 onToast = toast,
+                                exportedApk = container::exportedApk,
                             )
                         }
                         "chat" -> ChatPage(
@@ -885,7 +886,7 @@ private fun RoleRouterPage(
             providers = providers,
             catalog = container.modelCatalog,
             fetcher = container.modelListFetcher,
-            keyDecrypt = container.providerStore::decryptKeyById,
+            keyDecrypt = { pid -> container.providerStore.decryptKeyById(pid) },
         )
         androidx.compose.material3.IconButton(
             onClick = onBack,

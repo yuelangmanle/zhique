@@ -209,7 +209,7 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                 Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
             } ?: data.data?.let { arrayOf(it) }
         } else null
-        callback?.onReceiveValue(uris ?: arrayOf())
+        callback?.onReceiveValue(uris) // null=取消（契约），空数组=「选中0个」语义不同
         return true
     }
 

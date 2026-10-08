@@ -148,13 +148,14 @@ class PermissionRegistry(
     // 读缓存（QA 审查 P1：sensor/location/camera 高频回调每次 readState 都全量读
     // project.json 落主线程——60Hz sensor 下每秒几十次磁盘读）。persist 写时更新；
     // meta 文件 mtime 变化（导入/外部修改）即失效重读。
-    private val stateCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, PState>>()
+    private val stateCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Pair<Long, Long>, PState>>()
 
     private fun readState(projectId: String, capability: String): PState {
         val k = key(projectId, capability)
         val metaFile = repo.metaFile(projectId)
-        val mtime = metaFile?.lastModified() ?: 0L
-        stateCache[k]?.let { (mtime0, st) -> if (mtime0 == mtime) return st }
+        // 指纹 = mtime + 文件长度：同毫秒双写 length 几乎必变（导入覆盖 vs set 连写）
+        val fingerprint = (metaFile?.lastModified() ?: 0L) to (metaFile?.length() ?: 0L)
+        stateCache[k]?.let { (fp0, st) -> if (fp0 == fingerprint) return st }
         val record = runCatching { repo.meta(projectId).permissions[capability] }.getOrNull()
         val stored = runCatching { PState.valueOf(record?.state ?: "") }.getOrDefault(PState.NOT_ASKED)
         // 审查修复 I4：进程死亡可能把 ASKING 留在盘上——无在途授权卡的 ASKING
@@ -166,14 +167,15 @@ class PermissionRegistry(
                 PState.NOT_ASKED
             } else stored
         } else stored
-        stateCache[k] = mtime to resolved
+        stateCache[k] = fingerprint to resolved
         return resolved
     }
 
     private fun persist(projectId: String, capability: String, state: PState) {
         repo.setPermission(projectId, capability, state.name, now())
         val metaFile = repo.metaFile(projectId)
-        stateCache[key(projectId, capability)] = (metaFile?.lastModified() ?: 0L) to state
+        val fingerprint = (metaFile?.lastModified() ?: 0L) to (metaFile?.length() ?: 0L)
+        stateCache[key(projectId, capability)] = fingerprint to state
     }
 
     private fun projectName(projectId: String): String =

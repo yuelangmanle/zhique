@@ -43,7 +43,8 @@ class Memory(
         val existingLines = existing.lines().map { it.trim().removePrefix("- ").trim() }.toSet()
         val addition = notes.filter { it !in existingLines }
         if (addition.isEmpty()) {
-            synchronized(lock) { pendingNotes.removeAll(addition.toSet()) }
+            // 全部已存在：pending 也要清（removeAll(空集) 是 no-op，内存会无限累积）
+            synchronized(lock) { pendingNotes.removeAll(notes.toSet()) }
             return
         }
         val merged = buildString {

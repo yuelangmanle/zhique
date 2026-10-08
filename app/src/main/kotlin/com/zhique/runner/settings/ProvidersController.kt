@@ -179,7 +179,7 @@ class ProvidersController(
     }
 
     /** 解密指定服务商的 Key（角色路由现场拉取用；零日志零 URL）。 */
-    fun decryptKeyOf(providerId: String): String = store.decryptKeyById(providerId)
+    suspend fun decryptKeyOf(providerId: String): String = store.decryptKeyById(providerId)
 
     /** 视觉能力探测：发最小图片请求（成功 true / 参数错 false / 未知 null）。 */
     fun probeVision() {

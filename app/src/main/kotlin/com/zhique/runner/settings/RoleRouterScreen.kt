@@ -61,7 +61,7 @@ fun RoleRouterScreen(
     providers: List<ProviderConfig> = emptyList(),
     catalog: ProviderModelCatalog? = null,
     fetcher: ModelListFetcher? = null,
-    keyDecrypt: (String) -> String = { "" },
+    keyDecrypt: suspend (String) -> String = { "" },
 ) {
     val router = RoleRouter(defaultProviderId)
     val bindings by store.bindings.collectAsState(initial = RoleBindings())

@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -122,7 +121,7 @@ fun HomeScreen(
             onShareZip = { f -> com.zhique.runner.export.ExportDelivery.shareZip(context, f) },
         )
     }
-    val projects by controller.visibleProjects.collectAsState(initial = emptyList())
+    val projects by controller.visibleProjects.collectAsState()
     val rawProjects by controller.projects.collectAsState()
     val searchQuery by controller.query.collectAsState()
     val historyIds by controller.historyIds.collectAsState()
@@ -211,7 +210,7 @@ fun HomeScreen(
                 }
             }
             // 搜索（重度用户）：项目多时按名称过滤；少于 6 个不占空间
-            if (rawProjects.size >= 6) {
+            if (rawProjects.size >= 6 || searchQuery.isNotBlank()) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = controller::setQuery,
