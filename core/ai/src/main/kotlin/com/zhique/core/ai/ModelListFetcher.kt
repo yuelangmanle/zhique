@@ -120,9 +120,14 @@ class ModelListFetcher(private val client: OkHttpClient = defaultHttpClient()) {
             response.use { r ->
                 if (!r.isSuccessful) throw HttpErrors.fromCode(r.code, r.body?.string())
                 val source = r.body?.source() ?: return
-                // 只读 SSE 前几行拿到首条事件即可判定，不消费整个流
+                // 只读 SSE 前几行拿到首条事件即可判定，不消费整个流；
+                // EOF/读异常 ≠ 验证通过——中断的连接不得误报「Key 已验证」
                 repeat(20) {
-                    val line = runCatching { source.readUtf8Line() }.getOrNull() ?: return
+                    val line = try {
+                        source.readUtf8Line()
+                    } catch (e: IOException) {
+                        throw AiError.Network("探测流中断：${e.message}", e)
+                    } ?: throw AiError.Network("探测流提前结束（连接中断）")
                     if (line.startsWith("data:")) {
                         val payload = line.removePrefix("data:").trim()
                         if (payload.contains("\"error\"")) {
@@ -131,6 +136,7 @@ class ModelListFetcher(private val client: OkHttpClient = defaultHttpClient()) {
                         return // 正常首事件：Key 有效
                     }
                 }
+                throw AiError.Network("探测无响应事件（无法判定 Key 有效性）")
             }
         }
     }

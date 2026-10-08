@@ -29,13 +29,14 @@ class ZqFile : ZqCapability {
     }
 
     override suspend fun call(fn: String, args: JsonObject, env: ZqEnv): JsonElement = when (fn) {
-        "read" -> {
+        // 大文件读写切 IO 调度器（审查：env.scope 是主线程，8MB readText 落主线程必卡顿）
+        "read" -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val f = ZqPaths.resolveInSandbox(env.projectDir, args.zqText("path"))
             // 内联回传大小上限（审查修复 Minor #7）：超出回 rejected "too large"
             require(f.length() <= ZqLimits.MAX_INLINE_BYTES) { "too large" }
             buildJsonObject { put("content", f.readText()) }
         }
-        "write" -> {
+        "write" -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val rel = args.zqText("path")
             val content = args.zqOptText("content") ?: ""
             val f = ZqPaths.resolveInSandbox(env.projectDir, rel)

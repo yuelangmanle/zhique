@@ -3,6 +3,7 @@ package com.zhique.core.agent
 import com.zhique.core.ai.ChatMessage
 import com.zhique.core.ai.ChatRequest
 import com.zhique.core.ai.ModelCatalog
+import com.zhique.core.ai.StopReason
 import com.zhique.core.ai.StreamEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -56,6 +57,9 @@ class Compactor(
 
         val before = session.estimateTokens()
         val summary = summarize(session.goal, starred, toSummarize)
+        // 摘要失败（空流/流内错误/截断）→ 放弃本次压缩：真实历史轮次不可用占位文本
+        // 替换（数据丢失不可逆），下次用量再触发重试
+        if (summary.isBlank()) return null
         val dropped = toSummarize.map { "${it.role}: ${it.content.take(40)}…" }
         session.applyCompaction(summary)
         return CompressionReport(
@@ -75,7 +79,10 @@ class Compactor(
     /** 自动触发：用量 ≥ 阈值 → [scope] 后台执行（当前轮不被打断）。返回是否触发。 */
     fun maybeAuto(assembler: MemoryContextAssembler, scope: CoroutineScope): Boolean {
         if (assembler.usage() < assembler.budget.autoThreshold) return false
-        scope.launch { compactNow(assembler, manual = false) }
+        // 网络抖动/流错误不允许成为未处理协程异常（默认 handler 直接崩 App）
+        scope.launch {
+            runCatching { compactNow(assembler, manual = false) }
+        }
         return true
     }
 
@@ -102,10 +109,16 @@ class Compactor(
             tools = emptyList(),
         )
         var content = ""
+        var failed = false
         fastChat(req).collect { e ->
-            if (e is StreamEvent.ContentDelta) content += e.text
+            when {
+                e is StreamEvent.ContentDelta -> content += e.text
+                e is StreamEvent.Done && e.stopReason is StopReason.ERROR -> failed = true
+                e is StreamEvent.Done && e.stopReason is StopReason.LENGTH -> failed = true // 截断摘要不可靠
+                else -> Unit
+            }
         }
-        return content.ifBlank { "（摘要生成失败，早期轮次已并入要点占位）" }
+        return if (failed) "" else content
     }
 
     companion object {

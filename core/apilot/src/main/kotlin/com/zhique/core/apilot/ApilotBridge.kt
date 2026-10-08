@@ -97,8 +97,16 @@ class ApilotBridge(
      * 解析网关授权回传。RESULT_OK 但 JSON 缺 baseUrl/model → Invalid；
      * token 只在 lan 模式存在；apiKey（本机模式占位 Key）按文档可直接使用。
      */
-    fun parseGatewayGrant(resultCode: Int, intent: Intent?): GatewayGrant? {
+    fun parseGatewayGrant(
+        resultCode: Int,
+        intent: Intent?,
+        expectedRequestId: String? = null,
+    ): GatewayGrant? {
         if (resultCode != android.app.Activity.RESULT_OK) return null
+        // REQUEST_ID 防串话（与 PICK 同口径）：滞后/错投的旧回传按无效处理
+        if (expectedRequestId != null &&
+            intent?.getStringExtra(ApilotProtocol.EXTRA_REQUEST_ID) != expectedRequestId
+        ) return null
         val grantJson = intent?.getStringExtra(ApilotProtocol.EXTRA_GATEWAY_GRANT_JSON) ?: return null
         return runCatching {
             val obj = this@ApilotBridge.json.parseToJsonElement(grantJson) as? JsonObject ?: return null

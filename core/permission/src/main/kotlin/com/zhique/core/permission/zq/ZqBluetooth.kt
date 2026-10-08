@@ -93,7 +93,8 @@ class ZqBluetooth : ZqCapability {
     companion object {
         const val DEFAULT_SECONDS = 5
         const val MIN_SECONDS = 1
-        const val MAX_SECONDS = 30
+        // 29s 而非 30s：bluetooth 走标准超时档（30s），满档扫描撞线必报 timeout
+        const val MAX_SECONDS = 25
     }
 }
 

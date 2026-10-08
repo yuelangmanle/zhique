@@ -62,6 +62,7 @@ object DebugHub {
 
     @Volatile private var currentScreen: String? = null
     @Volatile private var lastScreenEventTs: Long = 0
+    @Volatile private var lastScreenEventName: String? = null
 
     private val _events = MutableStateFlow<List<DebugEvent>>(emptyList())
     val events: StateFlow<List<DebugEvent>> = _events.asStateFlow()
@@ -136,11 +137,11 @@ object DebugHub {
     /** 屏幕切换（去重：同名不重复记）。导航单点调用即可覆盖全部屏幕。 */
     fun screen(name: String) {
         if (name == currentScreen) return
-        val prev = currentScreen
         currentScreen = name
-        // 防抖：50ms 内的同名闪烁（重组抖动）不记
+        // 防抖：50ms 内的同目标闪烁（重组抖动）不记；异屏快速切换是合法事件照记
         val now = System.currentTimeMillis()
-        if (now - lastScreenEventTs < 50 && prev == null) return
+        if (name == lastScreenEventName && now - lastScreenEventTs < 50) return
+        lastScreenEventName = name
         lastScreenEventTs = now
         event("flow", "screen", detail = mapOf("to" to name))
     }
@@ -182,19 +183,36 @@ object DebugHub {
 
     fun isSinkEnabled(): Boolean = sinkEnabled
 
+    /** 等待异步写队列清空（测试断言前同步化；返回即代表文件已落盘）。 */
+    fun flushSink() {
+        runCatching { sinkExecutor.submit { }.get() }
+    }
+
+    // 单线程串行写盘：事件源全在主线程（tap/screen/web 镜像），同步写+flush
+    // 在低端机 render loop 里必掉帧。崩溃路径的 flush 在 uncaught hook 里保留同步兜底。
+    private val sinkExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "zq-debug-sink").apply { isDaemon = true }
+    }
+
     private fun appendSink(e: DebugEvent) {
         if (!sinkEnabled) return
         val dir = sinkDir ?: return
-        runCatching {
-            if (!dir.exists()) dir.mkdirs()
-            if (sinkWriter == null) openSinkLocked()
-            if (sinkBytes > SINK_ROTATE_BYTES) rotateSinkLocked()
-            val w = sinkWriter ?: return
-            w.write(json.encodeToString(e))
-            w.write("\n")
-            w.flush()
-            sinkBytes += json.encodeToString(e).length + 1
-        }.onFailure { closeSinkLocked() }
+        val line = json.encodeToString(e) // 只序列化一次（此前每事件两次）
+        sinkExecutor.execute {
+            runCatching {
+                synchronized(lock) {
+                    if (!sinkEnabled) return@execute
+                    if (!dir.exists()) dir.mkdirs()
+                    if (sinkWriter == null) openSinkLocked()
+                    if (sinkBytes > SINK_ROTATE_BYTES) rotateSinkLocked()
+                    val w = sinkWriter ?: return@execute
+                    w.write(line)
+                    w.write("\n")
+                    w.flush() // 异步任务边界必须落盘（队列空≠缓冲落盘）
+                    sinkBytes += line.toByteArray(Charsets.UTF_8).size + 1 // 字节数而非字符数（中文 3B/字）
+                }
+            }.onFailure { synchronized(lock) { closeSinkLocked() } }
+        }
     }
 
     private fun openSinkLocked() {

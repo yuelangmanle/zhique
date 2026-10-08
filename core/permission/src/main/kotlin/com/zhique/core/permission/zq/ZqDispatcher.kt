@@ -78,7 +78,11 @@ class ZqDispatcher(private val env: ZqEnv) {
                 return
             }
             // native 侧同表分级超时（页面侧只做兜底）：超时回 rejected 防 pending 泄漏
-            val budget = event.timeout?.takeIf { it > 0 } ?: ZqProtocol.timeoutMs(event.ns, event.fn)
+            // native 分级表是上限：页面侧声明的 timeout 只能缩短不能拉长
+            // （否则任意正值即可绕过兜底，授权卡/SAF 等待无限悬挂）
+            val budget = event.timeout?.takeIf { it > 0 }
+                ?.coerceAtMost(ZqProtocol.timeoutMs(event.ns, event.fn))
+                ?: ZqProtocol.timeoutMs(event.ns, event.fn)
             val result = try {
                 kotlinx.coroutines.withTimeout(budget) { cap.call(fn, args, env) }
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {

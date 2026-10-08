@@ -135,7 +135,7 @@ class ContextAssemblerTest {
         }
         assertTrue(a.usage() < 0.8f, "工具结果不计入长期预算，usage=${a.usage()}")
         val req = a.build("目标", round = 1)
-        val toolMsgs = req.messages.filter { it.role == "tool" }
+        val toolMsgs = req.messages.filter { it.role == "user" && it.content.startsWith("[工具回执] ") }
         assertTrue(toolMsgs.size <= MemoryContextAssembler.TOOL_WINDOW, "滚动窗口限量")
         assertTrue(toolMsgs.first().content.length < 3000, "单条工具结果截断")
         assertTrue(toolMsgs.last().content.contains("#9"), "保留最近一条")

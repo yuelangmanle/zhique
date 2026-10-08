@@ -3,6 +3,34 @@
 本项目每次迭代交付都递增版本号（`app/build.gradle.kts` 的 versionCode +1 / versionName 语义化）
 并在本文件记录变更。versionCode 单调递增是 APK 覆盖安装的前提（决策 29）。
 
+## 0.3.1（versionCode 13）· 2026-10-08
+
+**商用级工程品质审查（4 路并行深审全部模块，55 项确认问题，本轮修复 28 项）**
+
+- P1 Agent 引擎：工具结果轮 `role:"tool"` 无 tool_call_id 三协议必 400 + 原生
+  tool_use 无人消费被静默丢弃——改纯文本 fence 协议（不下发 tools schema，
+  工具回执以 user 角色包装），三协议行为一致且合规
+- P1 压缩丢数据：摘要空流/流内错误/截断时占位文本永久替换真实轮次——失败放弃
+  压缩，自动压缩协程补 runCatching（网络抖动不再崩 App）
+- P1 安全：WebView 外跳/下载对任意 scheme 直接 Intent(Uri)（intent:// 可注入
+  任意组件）——仅放行 http/https
+- P1 主线程 IO：sensor/location/camera 高频回调每次全量读 project.json——
+  PermissionRegistry 读缓存（persist 更新 + mtime 失效）；zq.file 8MB 读写切
+  IO 调度器
+- P1 授权取消语义：离开运行器（协程取消）被当用户拒绝写 DENIED 终态（永久
+  不重弹）——取消回 NOT_ASKED，CancellationException 放行
+- P1 密钥库备份死锁：口令随机生成且绑定本机安全区，备份产物电脑上永久打不开
+  ——备份分享后一次性明文展示口令（抄写保存）；secret.bin 原子写；import
+  双文件替换 .old 回滚 + 全程持锁
+- P2 批：vision 探测 thinking 冲突 400 误判 / verifyChatKey EOF 误报已验证 /
+  evaluateJs 10s 兜底 / 蓝牙满档扫描必超时 / 页面 timeout 只能缩短 / Apilot
+  载荷清理竞态 / 网关 REQUEST_ID 防串话真校验 / 模板缓存截断永久命中 / 存下载
+  0 字节成功 / openSession 泄漏 abandon / grabFrame VirtualDisplay 泄漏 /
+  FGS null 回收 / ChatPage 组合期读盘崩溃 / ProviderStore 崩溃面 + miss 兜底 /
+  DebugHub 主线程写盘异步化（单次序列化 + 字节计数）/ welcome 异步化
+- 测试：工具回执契约同步、DebugHub 防抖与 flush 修正、Apilot 竞态轮询化
+- 全量 build 绿；双包重建
+
 ## 0.3.0（versionCode 12）· 2026-10-08
 
 **QA 全场景巡检（全按钮遍历）+ 七项修复**

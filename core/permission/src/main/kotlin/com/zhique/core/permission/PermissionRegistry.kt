@@ -73,9 +73,21 @@ class PermissionRegistry(
         }
         // 共乘：已有在途授权卡 → 等它的结果，不重弹
         if (!entry.isNew) return entry.deferred.await()
-        val granted = runCatching {
-            prompt?.ask(PermissionAsk(projectId, projectName(projectId), capability, why))
-        }.getOrNull() ?: false
+        // 取消 ≠ 拒绝：用户在授权卡停留时离开运行器（协程被取消）不得把
+        // DENIED 写成终态落盘（该能力此后永不重弹）。取消路径回 NOT_ASKED。
+        val granted = try {
+            runCatching {
+                prompt?.ask(PermissionAsk(projectId, projectName(projectId), capability, why))
+            }.getOrNull() ?: false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            synchronized(lock) {
+                if (pending.remove(key) != null) {
+                    persist(projectId, capability, PState.NOT_ASKED)
+                    entry.deferred.complete(PState.NOT_ASKED)
+                }
+            }
+            throw e
+        }
         val result = if (granted) PState.GRANTED else PState.DENIED
         synchronized(lock) {
             // revoke/set 已把在途卡结算掉时：丢弃迟到的卡答案，不覆盖吊销结果
@@ -133,24 +145,35 @@ class PermissionRegistry(
 
     // ---- internals ----
 
+    // 读缓存（QA 审查 P1：sensor/location/camera 高频回调每次 readState 都全量读
+    // project.json 落主线程——60Hz sensor 下每秒几十次磁盘读）。persist 写时更新；
+    // meta 文件 mtime 变化（导入/外部修改）即失效重读。
+    private val stateCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, PState>>()
+
     private fun readState(projectId: String, capability: String): PState {
+        val k = key(projectId, capability)
+        val metaFile = repo.metaFile(projectId)
+        val mtime = metaFile?.lastModified() ?: 0L
+        stateCache[k]?.let { (mtime0, st) -> if (mtime0 == mtime) return st }
         val record = runCatching { repo.meta(projectId).permissions[capability] }.getOrNull()
-            ?: return PState.NOT_ASKED
-        val stored = runCatching { PState.valueOf(record.state) }.getOrDefault(PState.NOT_ASKED)
+        val stored = runCatching { PState.valueOf(record?.state ?: "") }.getOrDefault(PState.NOT_ASKED)
         // 审查修复 I4：进程死亡可能把 ASKING 留在盘上——无在途授权卡的 ASKING
         // 是未完成请求，按 NOT_ASKED 对外并写回复原（下次 request 正常重弹）
-        if (stored == PState.ASKING) {
-            val hasPending = synchronized(lock) { pending.containsKey(key(projectId, capability)) }
+        val resolved = if (stored == PState.ASKING) {
+            val hasPending = synchronized(lock) { pending.containsKey(k) }
             if (!hasPending) {
                 persist(projectId, capability, PState.NOT_ASKED)
-                return PState.NOT_ASKED
-            }
-        }
-        return stored
+                PState.NOT_ASKED
+            } else stored
+        } else stored
+        stateCache[k] = mtime to resolved
+        return resolved
     }
 
     private fun persist(projectId: String, capability: String, state: PState) {
         repo.setPermission(projectId, capability, state.name, now())
+        val metaFile = repo.metaFile(projectId)
+        stateCache[key(projectId, capability)] = (metaFile?.lastModified() ?: 0L) to state
     }
 
     private fun projectName(projectId: String): String =

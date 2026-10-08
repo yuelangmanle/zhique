@@ -197,6 +197,9 @@ class ProvidersController(
                 messages = listOf(ChatMessage("user", "回复 ok", images = listOf(ModelCatalog.PROBE_IMAGE_DATA_URL))),
                 maxTokens = 16,
                 temperature = 0.0,
+                // 探测请求关思考：Anthropic thinkingBudget 与 maxTokens=16 冲突
+                // （budget 硬下限 1024）必 400，会被误判为「非 vision 模型」
+                thinkingEnabled = false,
             )
             val result = runCatching {
                 ModelCatalog.probeVision({ providerFor(f.protocol).chatStream(it) }, req)

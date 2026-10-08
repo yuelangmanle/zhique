@@ -130,8 +130,11 @@ class MemoryContextAssembler(
             kept.forEachIndexed { idx, t ->
                 when {
                     t.kind == Turn.Kind.TOOL_RESULT && idx !in toolSlots -> Unit
+                    // 无 tools schema 的纯文本协议下 role:"tool" 不合规
+                    // （OpenAI 要求 tool 消息必须响应 tool_calls，其余协议同理 400），
+                    // 工具回执以 user 角色包装，模型可正常读
                     t.kind == Turn.Kind.TOOL_RESULT -> add(
-                        ChatMessage("tool", t.content.take(TOOL_RESULT_CLIP)),
+                        ChatMessage("user", "[工具回执] " + t.content.take(TOOL_RESULT_CLIP)),
                     )
                     else -> add(ChatMessage(t.role, t.content))
                 }

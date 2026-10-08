@@ -824,10 +824,16 @@ private fun ChatPage(
             initialAsk?.let { ask -> c.sendWithContext(ask.selection, ask.language, ask.question) }
         }
         // 空历史欢迎语：项目对话直接打招呼（空屏对话区让用户不知道能干什么）；
-        // 无项目自由对话同样给引导（QA 巡检：空黑屏无任何提示）
-        val welcome = projectId?.let { pid ->
-            container.repo.meta(pid)?.name?.let { name -> "这是「$name」的对话。可以直接问我怎么改这个页面。" }
-        } ?: "自由对话（未绑定项目）。想让我修改某个作品，回到主页点项目卡上的「AI」即可带上页面上下文。"
+        // 无项目自由对话同样给引导。项目名读盘走 IO（QA 审查：组合期阻塞读 +
+        // meta() 对已删项目直接 throw——对话停留期间项目被删即组合期崩溃）
+        var welcome by remember { mutableStateOf("自由对话（未绑定项目）。想让我修改某个作品，回到主页点项目卡上的「AI」即可带上页面上下文。") }
+        LaunchedEffect(projectId) {
+            val pid = projectId ?: return@LaunchedEffect
+            val name = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { container.repo.meta(pid).name }.getOrNull()
+            }
+            if (name != null) welcome = "这是「$name」的对话。可以直接问我怎么改这个页面。"
+        }
         ChatScreen(controller = c, onBack = onBack, welcomeText = welcome)
     } else {
         // 无 Provider 空态（真机夜间循环：只有一行提示无处可去——补引导按钮）

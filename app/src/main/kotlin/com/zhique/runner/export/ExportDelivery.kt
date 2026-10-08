@@ -30,7 +30,14 @@ object ExportDelivery {
         val installer = packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
+        val session = try {
+            installer.openSession(sessionId)
+        } catch (t: Throwable) {
+            // openSession 失败时无 Session 可 close——sessionId 会变孤儿累积
+            runCatching { installer.abandonSession(sessionId) }
+            throw t
+        }
+        session.use { session ->
             session.openWrite("zhique-export", 0, apk.length()).use { out ->
                 apk.inputStream().use { it.copyTo(out) }
                 session.fsync(out)
@@ -97,8 +104,18 @@ object ExportDelivery {
         }
         val resolver = context.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-        resolver.openOutputStream(uri)?.use { out -> apk.inputStream().use { it.copyTo(out) } }
-        uri
+        // 写失败/写半截不留 0 字节与残行（此前 stream=null 或中途异常仍报成功）
+        try {
+            resolver.openOutputStream(uri)?.use { out -> apk.inputStream().use { it.copyTo(out) } }
+                ?: run {
+                    resolver.delete(uri, null, null)
+                    return null
+                }
+            uri
+        } catch (t: Throwable) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw t
+        }
     }.getOrNull()
 
     // ---- 分享 ----

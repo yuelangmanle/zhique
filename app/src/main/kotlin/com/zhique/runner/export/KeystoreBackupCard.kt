@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +77,9 @@ class KeystoreBackupController(
         keystore.exportTo(File(File(cacheDir, "exports").apply { mkdirs() }, "zhique-release.jks"))
     }.onFailure { onToast("备份副本产出失败：${it.message}") }.getOrNull()
 
+    /** 备份口令明文（备份时一次性展示给用户抄写；商用级修复：随附恢复材料）。 */
+    fun backupPassword(): String = keystore.password()
+
     fun markBackedUp() {
         scope.launch(ioDispatcher) {
             runCatching { keystore.markBackedUp() }
@@ -141,6 +145,7 @@ fun KeystoreBackupCard(
     val context = LocalContext.current
     var pendingRestore by remember { mutableStateOf<android.net.Uri?>(null) }
     var restorePass by remember { mutableStateOf("") }
+    var backupPassToShow by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { controller.refresh() }
 
@@ -195,6 +200,10 @@ fun KeystoreBackupCard(
                         val copy = controller.prepareBackup(context.cacheDir) ?: return@OutlinedButton
                         ExportDelivery.shareKeystore(context, copy)
                         controller.markBackedUp()
+                        // 备份必须随附恢复材料（QA 审查 P1：口令随机生成且密文绑定
+                        // 本机安全区——电脑上没口令打不开，换机后 secret.bin 也解不开，
+                        // 这份备份将永久不可用）。口令只在此刻明文展示一次。
+                        backupPassToShow = controller.backupPassword()
                     },
                     modifier = Modifier.testTag("$testPrefix-backup-btn"),
                 ) { Text("备份到电脑") }
@@ -205,6 +214,37 @@ fun KeystoreBackupCard(
                 ) { Text("恢复密钥库") }
             }
         }
+    }
+
+    // 备份口令一次性展示（分享成功后）：电脑侧恢复必需，抄写后无再查入口
+    if (backupPassToShow != null) {
+        AlertDialog(
+            onDismissRequest = { backupPassToShow = null },
+            title = { Text("请抄写备份口令") },
+            text = {
+                Column {
+                    Text(
+                        "这份 .jks 用下面的口令加密。纸上抄写并妥善保存——" +
+                            "换手机或重装后本机口令不可再查，没有它备份无法恢复。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        backupPassToShow!!,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { backupPassToShow = null }) { Text("我已抄写") }
+            },
+            modifier = Modifier.testTag("$testPrefix-backup-pass-dialog"),
+        )
     }
 
     // 恢复口令弹层：URI 立即读、不存（读入缓存副本后即释放授权）

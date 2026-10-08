@@ -62,6 +62,9 @@ class ProjectRepository(private val root: File) {
         return readMetaOrRebuild(d) ?: throw IllegalStateException("project not found: $id")
     }
 
+    /** 项目 meta 文件（存在性/ mtime 探测用，缓存失效判据；不存在返回 null）。 */
+    fun metaFile(id: String): File? = File(dir(id), "project.json").takeIf { it.isFile }
+
     /**
      * 读 meta；损坏/缺失时自动重建（用户数据永不消失——真机反馈"退出再进数据没了"
      * 的根因是旧版崩溃窗口期写坏的 project.json 被静默跳过）。

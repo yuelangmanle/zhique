@@ -166,8 +166,11 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
      */
     suspend fun evaluateJs(js: String): String? = withContext(Dispatchers.Main) {
         runCatching {
-            suspendCancellableCoroutine { cont ->
-                webView.evaluateJavascript(js) { result -> cont.resume(result) }
+            // 渲染进程崩溃窗口期回调可能永不到达——10s 兜底，防 Agent domSummary 挂死
+            kotlinx.coroutines.withTimeout(10_000) {
+                suspendCancellableCoroutine { cont ->
+                    webView.evaluateJavascript(js) { result -> cont.resume(result) }
+                }
             }
         }.getOrNull()
     }
@@ -182,7 +185,11 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
 
     fun pause() = webView.onPause()
 
-    fun destroy() = webView.destroy()
+    fun destroy() {
+        // 平台指引：销毁前摘掉 JS 接口，防销毁窗口期页面残余脚本继续触桥
+        runCatching { webView.removeJavascriptInterface("ZhiqueNative") }
+        webView.destroy()
+    }
 
     // ---- internals ----
 
@@ -229,7 +236,11 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                     url.startsWith("blob:") || url.startsWith("javascript:") ||
                     url.contains(ASSET_DOMAIN)
                 if (inApp) return false
-                // http/https 外链 → 系统浏览器；其余 scheme 尝试外部应用，失败则吞掉
+                // 仅 http/https 允许外跳系统浏览器；其余 scheme 一律吞掉——
+                // Intent(Uri) 会解析 intent:// 的 component/extras，导入项目页的
+                // 任意链接可借此拉起设备上任意组件（安全审计：intent 注入面）
+                val scheme = request.url.scheme?.lowercase()
+                if (scheme != "http" && scheme != "https") return true
                 return runCatching {
                     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, request.url)
                     intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -347,10 +358,14 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                 return true
             }
         }
-        // 网页触发的下载 → 系统下载器/浏览器（PM 审计：此前无反应）
+        // 网页触发的下载 → 系统下载器/浏览器（PM 审计：此前无反应）；同外链跳转
+        // 仅 http/https（intent:// 经 Uri 解析可注入任意组件）
         wv.setDownloadListener { url, _, _, _, _ ->
             runCatching {
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                val uri = android.net.Uri.parse(url)
+                val scheme = uri.scheme?.lowercase()
+                if (scheme != "http" && scheme != "https") return@runCatching
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 appContext.startActivity(intent)
             }
@@ -392,6 +407,7 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
             ),
         )
         (view.parent as? ViewGroup)?.removeView(view)
+        runCatching { view.removeJavascriptInterface("ZhiqueNative") }
         view.destroy()
         if (crashCount <= MAX_CRASH_RECOVERY) {
             webView = buildWebView()

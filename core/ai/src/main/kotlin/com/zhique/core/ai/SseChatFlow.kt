@@ -40,13 +40,16 @@ internal fun sseChatFlow(
         val parse = newParser()
         val parser = SseParser()
         var stopReading = false
+        var sawIoError = false
         suspend fun handle(frames: List<SseParser.Frame>) {
+            if (stopReading) return // Done 是最后一事件：终态后的残余帧/finish 不再发出
             for (frame in frames) {
                 when (frame) {
                     SseParser.Frame.DoneSentinel -> stopReading = true
                     is SseParser.Frame.Data -> for (e in parse(frame.payload)) {
                         if (e is StreamEvent.Done) stopReading = true
                         emit(e)
+                        if (stopReading) return
                     }
                 }
             }
@@ -57,13 +60,15 @@ internal fun sseChatFlow(
                 readCappedLine(reader)
             } catch (e: IOException) {
                 currentCoroutineContext().ensureActive() // 取消竞态：以 CancellationException 为准
-                throw e
+                sawIoError = true
+                // 与连接阶段同口径：中段断流也分类为网络错误（退避/UI 文案可识别）
+                throw AiError.Network("流中断：${e.message}", e)
             } ?: break
             handle(parser.feed(line + "\n"))
             if (stopReading) break
         }
         handle(parser.finish())
-        if (!stopReading) emit(StreamEvent.Done(StopReason.STOP))
+        if (!stopReading && !sawIoError) emit(StreamEvent.Done(StopReason.STOP))
     } finally {
         runCatching { response.close() }
         call.cancel()

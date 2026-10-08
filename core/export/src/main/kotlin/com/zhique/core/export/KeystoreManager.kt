@@ -110,7 +110,13 @@ class KeystoreManager(
         SecureRandom().nextBytes(bytes)
         val pass = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
         keystoreDir.mkdirs()
-        secretFile.writeText(crypto.encrypt(pass))
+        // 原子写：进程死在写中间会把 base64 截断 → decrypt 永久失败 → 签名瘫痪
+        val tmp = File(keystoreDir, "secret.bin.tmp")
+        tmp.writeText(crypto.encrypt(pass))
+        if (!tmp.renameTo(secretFile)) {
+            tmp.copyTo(secretFile, overwrite = true)
+            tmp.delete()
+        }
         return pass
     }
 
@@ -185,16 +191,29 @@ class KeystoreManager(
         if (existingFingerprints.isNotEmpty() && fp !in existingFingerprints) {
             return ImportResult.Rejected(fp, existingFingerprints)
         }
-        // 先把两份 tmp 全部就绪，再带检查地原子替换（质量审查 Minor-4）
-        keystoreDir.mkdirs()
-        val tmp = File(keystoreDir, "${KEYSTORE_FILE}.tmp")
-        val tmpSecret = File(keystoreDir, "${PASSWORD_FILE}.tmp")
-        src.copyTo(tmp, overwrite = true)
-        // 口令按导入值重存（密文），保证 signingKey() 可直接解出
-        tmpSecret.writeText(crypto.encrypt(pass))
-        if (!tmp.renameTo(keystoreFile) || !tmpSecret.renameTo(secretFile)) {
-            tmp.delete(); tmpSecret.delete()
-            throw KeystoreImportException("密钥库替换失败（.tmp 改名被拒绝）")
+        // 先把两份 tmp 全部就绪，再带检查地原子替换（质量审查 Minor-4）。
+        // 全程持锁（并发导出不得在交换窗口读到错配对）；.old 回滚——第二刀
+        // rename 失败/进程被杀时旧库旧口令可恢复，避免签名永久瘫痪。
+        synchronized(lock) {
+            keystoreDir.mkdirs()
+            val tmp = File(keystoreDir, "${KEYSTORE_FILE}.tmp")
+            val tmpSecret = File(keystoreDir, "${PASSWORD_FILE}.tmp")
+            src.copyTo(tmp, overwrite = true)
+            // 口令按导入值重存（密文），保证 signingKey() 可直接解出
+            tmpSecret.writeText(crypto.encrypt(pass))
+            val oldKs = File(keystoreDir, "${KEYSTORE_FILE}.old")
+            val oldSecret = File(keystoreDir, "${PASSWORD_FILE}.old")
+            if (keystoreFile.isFile) keystoreFile.renameTo(oldKs)
+            if (secretFile.isFile) secretFile.renameTo(oldSecret)
+            if (!tmp.renameTo(keystoreFile) || !tmpSecret.renameTo(secretFile)) {
+                // 回滚旧对；两刀都成则旧文件仅留 .old 兜底
+                if (!keystoreFile.isFile && oldKs.isFile) oldKs.renameTo(keystoreFile)
+                if (!secretFile.isFile && oldSecret.isFile) oldSecret.renameTo(secretFile)
+                tmp.delete(); tmpSecret.delete()
+                oldKs.delete(); oldSecret.delete()
+                throw KeystoreImportException("密钥库替换失败（.tmp 改名被拒绝）")
+            }
+            oldKs.delete(); oldSecret.delete()
         }
         return ImportResult.Accepted(fp)
     }

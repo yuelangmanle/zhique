@@ -81,6 +81,7 @@ class DebugHubTest {
         DebugHub.init(appVersion = "t", device = "t", sinkDir = dir, sinkEnabled = true)
         DebugHub.clear() // 只清内存：init 行已落盘
         repeat(5) { DebugHub.event("ui", "j$it") }
+        DebugHub.flushSink()
         val f = File(dir, "debug-events.jsonl")
         assertTrue(f.isFile)
         val lines = f.readLines()
@@ -116,6 +117,7 @@ class DebugHubTest {
         val dir = tmp.newFolder("debug2")
         DebugHub.init(appVersion = "t", device = "t", sinkDir = dir, sinkEnabled = true)
         DebugHub.event("ui", "keep")
+        DebugHub.flushSink()
         DebugHub.clear()
         assertEquals(0, DebugHub.count())
         assertEquals(2, File(dir, "debug-events.jsonl").readLines().size) // hub.init + keep

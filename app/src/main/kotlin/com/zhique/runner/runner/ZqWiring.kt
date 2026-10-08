@@ -219,7 +219,11 @@ class ActivityProjectionGateway(private val activity: ComponentActivity) : Proje
         if (code != android.app.Activity.RESULT_OK || data == null) return null
         // API34+：getMediaProjection/createVirtualDisplay 前必须先起 mediaProjection 前台服务
         com.zhique.runner.screen.ZqScreenServiceController.start(activity)
-        val projection = mpm.getMediaProjection(code, data) ?: return null
+        val projection = mpm.getMediaProjection(code, data) ?: run {
+            // 拿不到投影必须收掉前台服务（否则常驻通知泄漏）
+            com.zhique.runner.screen.ZqScreenServiceController.stop(activity)
+            return null
+        }
         return MediaProjectionSession(activity, projection)
     }
 }
@@ -262,21 +266,31 @@ private class MediaProjectionSession(
             newReader.surface, null, null,
         )
         display = newDisplay
-        val image = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine<android.media.Image> { cont ->
-                newReader.setOnImageAvailableListener({ r ->
-                    val img = r.acquireLatestImage()
-                    if (img != null && cont.isActive) cont.resume(img)
-                }, handler)
+        // 单帧截屏即用即弃：finally 里立即释放本次 display/reader（此前只覆盖
+        // 引用直到 stop()，页面循环截屏会累积 VirtualDisplay 直到系统上限）
+        val bitmap = try {
+            val image = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                suspendCancellableCoroutine<android.media.Image> { cont ->
+                    newReader.setOnImageAvailableListener({ r ->
+                        val img = r.acquireLatestImage()
+                        if (img != null && cont.isActive) cont.resume(img)
+                    }, handler)
+                }
+            } ?: return null
+            try {
+                val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                bitmap.copyPixelsFromBuffer(image.planes[0].buffer)
+                bitmap
+            } finally {
+                image.close()
             }
-        } ?: return null
-        return try {
-            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-            bitmap.copyPixelsFromBuffer(image.planes[0].buffer)
-            bitmap
         } finally {
-            image.close()
+            runCatching { newDisplay?.release() }
+            runCatching { newReader.close() }
+            display = null
+            reader = null
         }
+        return bitmap
     }
 
     override fun stop() {

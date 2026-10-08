@@ -80,7 +80,7 @@ class AppContainer(
                 com.zhique.core.apilot.ApilotBridge().ownSignatureSha256(appContext)
             },
             uriProvider = { json -> apilotPayloadUri(appContext, json) },
-            tempFileCleanup = { apilotCacheDir(appContext).deleteRecursively() },
+            tempFileCleanup = { apilotCacheDir(appContext).listFiles()?.forEach { it.delete() } },
             selfPackageName = context.packageName,
             scope = appScope,
         )
@@ -88,11 +88,11 @@ class AppContainer(
 
     private fun apilotCacheDir(appContext: android.content.Context): File = File(appContext.cacheDir, "apilot")
 
-    /** 把导入 payload 落成一次性只读 content URI（Apilot 10 分钟后删缓存，本方同步结束后亦清理）。 */
+    /** 把导入 payload 落成一次性只读 content URI。清目录逻辑已移除（QA 审查：
+     *  连续两次同步时会把 Apilot 10 分钟读取窗口内的上一份 payload 删掉）；
+     *  滞留文件由 launchSync 的 15 分钟延迟清理（带 mtime 阈值）兜底。 */
     private fun apilotPayloadUri(appContext: android.content.Context, json: String): android.net.Uri {
         val dir = apilotCacheDir(appContext).apply { mkdirs() }
-        // 清掉上一轮残留（上次授权的临时文件）
-        dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, "payload-${System.currentTimeMillis()}.json").apply { writeText(json) }
         return androidx.core.content.FileProvider.getUriForFile(appContext, "${appContext.packageName}.zqfile", file)
     }

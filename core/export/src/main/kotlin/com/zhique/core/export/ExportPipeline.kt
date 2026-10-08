@@ -21,9 +21,15 @@ class AssetTemplateProvider(
         val cached = File(cacheDir, "$variant.apk")
         if (cached.isFile && cached.length() > 0) return cached
         cacheDir.mkdirs()
-        // 资产名与 harvestTemplates 拷贝产物一致：template-min.apk / template-full.apk
+        // .tmp + rename 原子落位：直写中途被杀会留下截断 APK——length>0 的
+        // 命中判定会让此后每次导出在 zipflinger 打开时失败且永不自愈
+        val tmp = File(cacheDir, "$variant.apk.tmp")
         context.assets.open(templateAssetPath(variant)).use { input ->
-            cached.outputStream().use { input.copyTo(it) }
+            tmp.outputStream().use { input.copyTo(it) }
+        }
+        if (!tmp.renameTo(cached)) {
+            tmp.copyTo(cached, overwrite = true)
+            tmp.delete()
         }
         return cached
     }

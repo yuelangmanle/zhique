@@ -56,7 +56,11 @@ class Orchestrator(
                 val round = budget.beginRound()
                 val template = ctx.assembler.build(goal, round)
                 latestTemplate = template
-                val req = template.withTools(tools.schemas(ctx.toolCtx.vision))
+                // 不下发原生 tools schema：本产品的工具协议是正文 fence JSON
+                // （parseToolCalls）。声明 tools 会让支持原生 function calling 的
+                // 模型回 tool_use（无人消费 → 工具调用被静默丢弃），纯文本协议
+                // 三协议行为一致。
+                val req = template
                 val out = try {
                     continuer.generate(req)
                 } catch (e: AiErrorException) {

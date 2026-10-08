@@ -44,9 +44,11 @@ class ProviderStore(
     val cached: List<ProviderConfig> get() = cachedFlow.value
 
     init {
-        // 独立作用域收集（进程级 DataStore，生命周期同 App）
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            providers.collect { cachedFlow.value = it }
+        // 进程级 scope：SupervisorJob 防 DataStore 损坏异常直达线程默认 handler 崩 App
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            runCatching {
+                providers.collect { cachedFlow.value = it }
+            }
         }
     }
 
@@ -65,8 +67,16 @@ class ProviderStore(
     /** 保存明文 Key → 密文。返回可落库的配置。 */
     fun encryptKey(plainKey: String): String = crypto.encrypt(plainKey)
 
-    /** 按 id 解密（模型目录现场拉取用；同步缓存，未命中返回空串）。 */
-    fun decryptKeyById(id: String): String = cached.firstOrNull { it.id == id }?.let { decryptKey(it) } ?: ""
+    /**
+     * 按 id 解密（模型目录现场拉取用）。缓存 miss（启动首帧未收集完/新写入
+     * 尚未传播）时同步兜底读一次磁盘——返回空串会让调用方拿空 Key 发请求必 401。
+     */
+    fun decryptKeyById(id: String): String {
+        cached.firstOrNull { it.id == id }?.let { return decryptKey(it) }
+        val config = kotlinx.coroutines.runBlocking { get(id) } ?: return ""
+        cachedFlow.value += config
+        return decryptKey(config)
+    }
 
     fun decryptKey(config: ProviderConfig): String =
         runCatching { crypto.decrypt(config.keyCipher) }.getOrDefault("")

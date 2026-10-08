@@ -126,7 +126,7 @@ class OrchestratorReviewFixTest {
         assertTrue(asm.usage() < 0.1f, "usage=${asm.usage()}")
         // 组装时只带滚动窗口、单条截断
         val req = asm.build("看大文件", round = 2)
-        val toolMsg = req.messages.first { it.role == "tool" }
+        val toolMsg = req.messages.first { it.role == "user" && it.content.startsWith("[工具回执] ") }
         assertTrue(toolMsg.content.length < 3000, "截断后 ${toolMsg.content.length}")
         assertTrue(events.filterIsInstance<AgentEvent.StepResult>().single().ok)
     }

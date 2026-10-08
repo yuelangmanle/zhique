@@ -151,8 +151,8 @@ class ApilotController(
     /** 传统通道发起网关授权。 */
     fun launchGatewayViaActivity(): Boolean {
         val activity = hostActivity ?: return false
-        pendingGatewayRequestId = null
         val intent = gatewayIntent()
+        pendingGatewayRequestId = intent.getStringExtra(ApilotProtocol.EXTRA_REQUEST_ID)
         return runCatching {
             activity.startActivityForResult(intent, com.zhique.runner.MainActivity.APILOT_RC_GATEWAY)
         }.isSuccess
@@ -180,6 +180,7 @@ class ApilotController(
             )
             tempFileCleanup?.let { cleanup ->
                 kotlinx.coroutines.delay(java.util.concurrent.TimeUnit.MINUTES.toMillis(15))
+                // Apilot 读取窗口 10 分钟已过：只删旧文件，绝不动新 payload
                 runCatching { cleanup() }
             }
         }
@@ -234,7 +235,7 @@ class ApilotController(
         scope.launch(io) {
             val expected = pendingGatewayRequestId
             pendingGatewayRequestId = null
-            val grant = bridge.parseGatewayGrant(resultCode, data)
+            val grant = bridge.parseGatewayGrant(resultCode, data, expectedRequestId = expected)
             if (grant == null) {
                 setNotice("网关授权已取消或无效")
                 return@launch
