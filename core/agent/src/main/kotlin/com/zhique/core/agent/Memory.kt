@@ -35,24 +35,25 @@ class Memory(
 
     fun pendingNotes(): Set<String> = synchronized(lock) { pendingNotes.toSet() }
 
-    /** 会话结束写回：pending 追加到 zhique.md（与既有行去重），成功后清空 pending。 */
+    /** 会话结束写回：pending 追加到 zhique.md（与既有行去重），**写盘成功后**才清 pending。 */
     override suspend fun writeBack(projectId: String) {
-        val notes = synchronized(lock) {
-            val copy = pendingNotes.toList()
-            pendingNotes.clear()
-            copy
-        }
+        val notes = synchronized(lock) { pendingNotes.toList() }
         if (notes.isEmpty()) return
         val existing = projectText(projectId)
         val existingLines = existing.lines().map { it.trim().removePrefix("- ").trim() }.toSet()
         val addition = notes.filter { it !in existingLines }
-        if (addition.isEmpty()) return
+        if (addition.isEmpty()) {
+            synchronized(lock) { pendingNotes.removeAll(addition.toSet()) }
+            return
+        }
         val merged = buildString {
             append(existing)
             if (existing.isNotBlank() && !existing.endsWith("\n")) append('\n')
             addition.forEach { append("- ").append(it).append('\n') }
         }
+        // 先写盘后清 pending：写失败（IO 异常）时本会话新约定不丢，下次重试
         repo.writeFile(projectId, MEMORY_FILE, merged)
+        synchronized(lock) { pendingNotes.removeAll(addition.toSet()) }
     }
 
     companion object {

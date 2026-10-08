@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -120,7 +122,9 @@ fun HomeScreen(
             onShareZip = { f -> com.zhique.runner.export.ExportDelivery.shareZip(context, f) },
         )
     }
-    val projects by controller.projects.collectAsState()
+    val projects by controller.visibleProjects.collectAsState(initial = emptyList())
+    val rawProjects by controller.projects.collectAsState()
+    val searchQuery by controller.query.collectAsState()
     val historyIds by controller.historyIds.collectAsState()
     val clipboardCandidate by controller.clipboardCandidate.collectAsState()
 
@@ -206,6 +210,27 @@ fun HomeScreen(
                     Icon(Icons.Filled.Settings, contentDescription = "设置")
                 }
             }
+            // 搜索（重度用户）：项目多时按名称过滤；少于 6 个不占空间
+            if (rawProjects.size >= 6) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = controller::setQuery,
+                    singleLine = true,
+                    placeholder = { Text("搜索项目…", style = MaterialTheme.typography.bodySmall) },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { controller.setQuery("") }) {
+                                Icon(Icons.Filled.Close, contentDescription = "清除搜索")
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .testTag("project-search"),
+                )
+            }
             val candidate = clipboardCandidate
             if (clipboardDetection && candidate != null) {
                 ClipboardBanner(
@@ -217,7 +242,18 @@ fun HomeScreen(
                     onDismiss = { controller.dismissClipboard() },
                 )
             }
-            if (projects.isEmpty()) {
+            if (projects.isEmpty() && searchQuery.isNotBlank()) {
+                // 搜索无匹配（区别于「还没有项目」空态）
+                Column(
+                    Modifier.fillMaxSize().padding(horizontal = 32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("没有匹配「$searchQuery」的项目", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.size(8.dp))
+                    TextButton(onClick = { controller.setQuery("") }) { Text("清除搜索") }
+                }
+            } else if (projects.isEmpty()) {
                 Column(
                     Modifier
                         .fillMaxSize()

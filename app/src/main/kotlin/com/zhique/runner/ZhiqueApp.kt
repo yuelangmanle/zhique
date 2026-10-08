@@ -618,16 +618,26 @@ fun ZhiqueApp(
                             onBack = { settingsPage = null },
                             onToast = toast,
                         )
-                        "tokens" -> com.zhique.runner.settings.TokenStatsScreen(
-                            usageMeter = container.usageMeter,
-                            onBack = { settingsPage = null },
-                            resolveProvider = { id ->
-                                container.providerStore.list().firstOrNull { it.id == id }?.name
-                            },
-                            resolveProject = { id ->
-                                container.repo.list().firstOrNull { it.id == id }?.name
-                            },
-                        )
+                        "tokens" -> {
+                            // 一次性预解析名称表（QA 审查：逐 id 全量扫盘落在主线程）
+                            val nameMap = kotlinx.coroutines.runBlocking {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    runCatching {
+                                        val providers = container.providerStore.list().associate { it.id to it.name }
+                                        val projects = container.repo.list().associate { it.id to it.name }
+                                        providers to projects
+                                    }.getOrDefault(
+                                        emptyMap<String, String>() to emptyMap<String, String>(),
+                                    )
+                                }
+                            }
+                            com.zhique.runner.settings.TokenStatsScreen(
+                                usageMeter = container.usageMeter,
+                                onBack = { settingsPage = null },
+                                resolveProvider = { id -> nameMap.first[id] },
+                                resolveProject = { id -> nameMap.second[id] },
+                            )
+                        }
                         "general" -> com.zhique.runner.settings.GeneralScreen(
                             general = container.generalPreferences,
                             paste = container.pastePreferences,

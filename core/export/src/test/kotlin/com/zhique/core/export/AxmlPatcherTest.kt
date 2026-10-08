@@ -154,8 +154,9 @@ class AxmlPatcherTest {
     }
 
     @Test
-    fun `UTF-16长串len超过0x8000经转义回写可读回`() {
-        // M6 债务收敛：label ≥0x8000 字符时 UTF-16 长度须走高位标记 + u32 转义
+    fun `UTF-16长串超过0x8000显式拒绝不产出不可移植包`() {
+        // 平台 ResourceTypes 的续长约定与本实现不一致（跨端互读会错位）——
+        // v0.3.2 起显式拒绝（label 实际远达不到 32768 字符），不再产出不可移植包
         val longLabel = "雀".repeat(0x8100)
         val p = AxmlPatcher.ManifestPatch("com.zhique.export.long", 1, "1.0", longLabel)
         val synthetic = syntheticManifest(
@@ -166,9 +167,8 @@ class AxmlPatcherTest {
             ),
             appAttrs = listOf(Triple("label", longLabel, false)),
         )
-        val patched = AxmlPatcher.patch(synthetic, p)
-        val info = AxmlReader.readManifest(patched)
-        assertEquals(longLabel, info.label, "超长 label 经转义重编码后须原样读回")
+        val e = assertFailsWith<IllegalArgumentException> { AxmlPatcher.patch(synthetic, p) }
+        assertTrue(e.message!!.contains("0x8000"), "拒绝信息须说明原因")
     }
 
     private fun shortAt(data: ByteArray, at: Int): Int =

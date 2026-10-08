@@ -4,6 +4,7 @@ import com.zhique.core.ai.AiErrorException
 import com.zhique.core.ai.ChatMessage
 import com.zhique.core.ai.ChatRequest
 import com.zhique.core.ai.ModelCatalog
+import com.zhique.core.ai.StopReason
 import com.zhique.core.ai.StreamEvent
 import com.zhique.core.ai.ToolCall
 import com.zhique.core.ai.ToolSchema
@@ -223,10 +224,16 @@ class Orchestrator(
         )
         return try {
             var content = ""
+            var errored = false
             llm(fixReq).collect { e ->
-                if (e is StreamEvent.ContentDelta) content += e.text
+                when {
+                    e is StreamEvent.ContentDelta -> content += e.text
+                    // 流内错误不得当纯文本收束（会以坏输出假完成）
+                    e is StreamEvent.Done && e.stopReason is StopReason.ERROR -> errored = true
+                    else -> Unit
+                }
             }
-            content
+            if (errored) null else content
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

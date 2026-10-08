@@ -71,13 +71,17 @@ internal abstract class GitToolBase(
 
     final override suspend fun invoke(ctx: ToolContext, args: JsonElement): JsonObject {
         val g = GitTools.current() ?: return GitTools.notReady()
-        return runCatching { execute(g, ctx, args) }
-            .getOrElse { e ->
-                buildJsonObject {
-                    put("status", "error")
-                    put("detail", e.message ?: e.javaClass.simpleName)
+        return try {
+            runCatching { execute(g, ctx, args) }
+                .getOrElse { e ->
+                    buildJsonObject {
+                        put("status", "error")
+                        put("detail", e.message ?: e.javaClass.simpleName)
+                    }
                 }
-            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // 协作取消不得被吞成 error JSON（取消后编排器还多跑一步）
+        }
     }
 
     protected abstract suspend fun execute(g: GitTools.Gateway, ctx: ToolContext, args: JsonElement): JsonObject

@@ -337,14 +337,15 @@ object AxmlPatcher {
                 out.write((v shr 8) and 0xFF)
             }
 
-            /** UTF-16 字符串长度：≥0x8000 时写高位标记 + u32 实长（aapt 转义约定）。 */
+            /**
+             * UTF-16 字符串长度。平台 ResourceTypes 的约定是 ≥0x8000 写
+             * u16(0x8000|len shr 16) + u16(len & 0xFFFF)（两字节续长）；本实现
+             * 与之不一致（跨端互读会错位），故显式拒绝超长串——应用名/权限名
+             * 实际远达不到 32768 字符。
+             */
             private fun writeU16Len(out: ByteArrayOutputStream, len: Int) {
-                if (len >= 0x8000) {
-                    writeU16(out, 0x8000)
-                    writeInt(out, len)
-                } else {
-                    writeU16(out, len)
-                }
+                require(len < 0x8000) { "字符串超长（$len ≥ 0x8000）：平台转义约定未实现，拒绝产出不可移植包" }
+                writeU16(out, len)
             }
 
             private fun writeInt(out: ByteArrayOutputStream, v: Int) {

@@ -1,6 +1,7 @@
 package com.zhique.runner.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,11 +74,29 @@ fun DebugBackendCard(
     Column(Modifier.fillMaxWidth()) {
         Text("后端调试", style = MaterialTheme.typography.titleMedium)
         Text(
-            "事件全覆盖（按钮/流程/反馈）+ 本机回环 HTTP 后端（仅 127.0.0.1 可达）。" +
+            "事件全覆盖（按钮/流程/反馈）+ 本机回环 HTTP 后端（仅 127.0.0.1 可达，需 token）。" +
                 "电脑侧：adb forward tcp:${server.port.takeIf { it > 0 } ?: 8791} tcp:${server.port.takeIf { it > 0 } ?: 8791}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // 鉴权 token（除 health 外必带）：点击复制
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        val token = server.token
+        if (token.isNotEmpty()) {
+            Text(
+                "调试 token（点按复制）：$token",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(token))
+                        android.widget.Toast.makeText(context, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(top = 4.dp)
+                    .testTag("debug-token"),
+            )
+        }
         Row(
             Modifier.fillMaxWidth().padding(top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,

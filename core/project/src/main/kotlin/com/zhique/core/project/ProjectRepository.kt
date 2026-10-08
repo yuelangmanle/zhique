@@ -12,6 +12,9 @@ class ProjectRepository(private val root: File) {
 
     private val projectsDir = File(root, "projects")
 
+    /** zip 导出暂存目录（java.io.tmpdir 在 Android 不可靠；产物用后即删/下次导出清理）。 */
+    private val zipTmpDir = File(root, "tmp/zip")
+
     /** 唯一 HistoryStore 实例：单实例约定——消费方一律从仓库取用，禁止自行构造（避免多实例锁失效竞态）。 */
     val history: HistoryStore = HistoryStore(root)
     private val json = Json {
@@ -182,7 +185,10 @@ class ProjectRepository(private val root: File) {
                 put(rel, f.readBytes())
             }
         }
-        val out = File.createTempFile("zhique-", ".zip")
+        zipTmpDir.mkdirs()
+        // 清掉上一次的暂存产物（分享完成后调用方无删除点，这里兜底）
+        zipTmpDir.listFiles()?.forEach { it.delete() }
+        val out = File.createTempFile("zhique-", ".zip", zipTmpDir)
         ZipIO.write(out, entries)
         return out
     }

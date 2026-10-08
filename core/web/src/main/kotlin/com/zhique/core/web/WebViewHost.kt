@@ -188,7 +188,29 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
     fun destroy() {
         // 平台指引：销毁前摘掉 JS 接口，防销毁窗口期页面残余脚本继续触桥
         runCatching { webView.removeJavascriptInterface("ZhiqueNative") }
+        pendingFileChooser = null
         webView.destroy()
+    }
+
+    /** 兜底文件选择的未决回调（launcher 注入路径不经此）。 */
+    private var pendingFileChooser: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
+
+    /**
+     * 壳 Activity 的 onActivityResult 转发进来（FILE_CHOOSER_REQUEST）。
+     * 取消也必须以 null 结算——否则 WebView 的未决 chooser 阻塞后续所有文件选择。
+     * 返回 true 表示该 requestCode 由本宿主消费。
+     */
+    fun consumeFileChooserResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean {
+        if (requestCode != FILE_CHOOSER_REQUEST) return false
+        val callback = pendingFileChooser
+        pendingFileChooser = null
+        val uris = if (resultCode == android.app.Activity.RESULT_OK && data != null) {
+            data.clipData?.let { clip ->
+                Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
+            } ?: data.data?.let { arrayOf(it) }
+        } else null
+        callback?.onReceiveValue(uris ?: arrayOf())
+        return true
     }
 
     // ---- internals ----
@@ -333,16 +355,26 @@ class WebViewHost(private val context: Context, source: ProjectSource) {
                     launcher(fileChooserParams.acceptTypes ?: arrayOf("*/*"), filePathCallback)
                     return true
                 }
-                return runCatching {
-                    val intent = (context as? android.app.Activity)?.let { act ->
-                        android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
-                            addCategory(android.content.Intent.CATEGORY_OPENABLE)
-                            type = fileChooserParams.acceptTypes?.firstOrNull() ?: "*/*"
-                            putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
-                        }.let { i -> act.startActivityForResult(android.content.Intent.createChooser(i, "选择文件"), FILE_CHOOSER_REQUEST) }
+                val started = runCatching {
+                    val act = context as? android.app.Activity ?: return@runCatching false
+                    pendingFileChooser = filePathCallback
+                    val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        type = fileChooserParams.acceptTypes?.firstOrNull() ?: "*/*"
+                        putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
                     }
-                    intent != null
+                    act.startActivityForResult(
+                        android.content.Intent.createChooser(intent, "选择文件"),
+                        FILE_CHOOSER_REQUEST,
+                    )
+                    true
                 }.getOrDefault(false)
+                if (!started) {
+                    // 兜底未启动：必须结算 callback，否则 WebView 认为有未决 chooser，
+                    // 后续 onShowFileChooser 全部静默失效
+                    filePathCallback.onReceiveValue(null)
+                }
+                return started
             }
 
             // window.open / target=_blank（PM 审计：此前点击无反应）→ 同一 WebView 承载

@@ -155,7 +155,7 @@ object DebugHub {
     fun count(): Int = synchronized(lock) { ring.size }
 
     fun snapshot(): Map<String, String> = mapOf(
-        "session" to session,
+        "session" to session.take(4) + "…", // health 免鉴权可达：session 只露前 4 位
         "version" to appVersion,
         "device" to device,
         "screen" to (currentScreen ?: ""),

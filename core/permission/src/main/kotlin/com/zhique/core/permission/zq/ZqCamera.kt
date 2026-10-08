@@ -226,9 +226,10 @@ class ZqCamera : ZqCapability {
 
     private fun unbind(context: Context?) {
         if (context == null) return
-        runCatching {
-            ProcessCameraProvider.getInstance(context).get().unbindAll()
-        }
+        // ListenableFuture.get() 在主线程会阻塞等初始化——isDone 才取，未就绪跳过
+        // （unbindAll 是幂等清理，下次 stop/shutdown 再补）
+        val future = ProcessCameraProvider.getInstance(context)
+        if (future.isDone) runCatching { future.get().unbindAll() }
     }
 
     /** 运行器销毁（dispatcher.shutdown）：解绑相机 + 清浮层 + 停吊销自检。 */

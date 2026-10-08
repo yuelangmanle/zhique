@@ -80,7 +80,8 @@ internal fun buildAnthropicRequestJson(req: ChatRequest): JsonObject {
                             })
                         })
                         m.toolCallsJson != null -> put("content", buildJsonArray {
-                            add(buildJsonObject {
+                            // 空 text 块 Anthropic 400（同 images 分支已有 isNotEmpty 防护）
+                            if (m.content.isNotEmpty()) add(buildJsonObject {
                                 put("type", "text")
                                 put("text", m.content)
                             })

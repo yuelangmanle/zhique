@@ -185,9 +185,11 @@ class ActivitySafGateway(private val activity: ComponentActivity) : SafGateway {
             "zq-saf-save-${seq.incrementAndGet()}",
         )
         if (uri == null) return buildJsonObject { put("code", "canceled") }
-        runCatching {
-            activity.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
-        }
+        // 磁盘满/写失败不得向页面谎报成功
+        val written = runCatching {
+            activity.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) } != null
+        }.getOrDefault(false)
+        if (!written) return buildJsonObject { put("code", "write_failed") }
         return buildJsonObject { put("path", uri.toString()); put("bytes", content.toByteArray().size) }
     }
 }

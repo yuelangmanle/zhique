@@ -34,6 +34,21 @@ class HomeController(
     /** 项目列表 UI 态（按 createdAt 排序，来自仓库）。 */
     val projects: StateFlow<List<ProjectMeta>> = _projects.asStateFlow()
 
+    // 搜索（重度用户：项目多了找不到）——query 与项目列表组合出过滤视图
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    /** 搜索过滤视图：名称不区分大小写包含；空 query 返回原列表。 */
+    val visibleProjects: kotlinx.coroutines.flow.Flow<List<ProjectMeta>> =
+        kotlinx.coroutines.flow.combine(_projects, _query) { list, q ->
+            if (q.isBlank()) list
+            else list.filter { it.name.contains(q.trim(), ignoreCase = true) }
+        }
+
+    fun setQuery(q: String) {
+        _query.value = q
+    }
+
     private val _historyIds = MutableStateFlow<Set<String>>(emptySet())
 
     /** 含历史快照的项目 id（删除确认文案用）。 */

@@ -42,6 +42,11 @@ class RunnerWebHost : Activity() {
         host.onCrashGiveUp = { setContentView(crashGiveUpView()) }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        // 兜底文件选择结果回填（取消也结算 null，防未决 chooser 卡死后续选择）
+        if (!host.consumeFileChooserResult(requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onResume() {
         super.onResume()
         if (::host.isInitialized) host.resume()

@@ -21,8 +21,10 @@ class CollectorBridge {
     )
     val raw: SharedFlow<String> = _raw
 
-    /** 任一桥事件到达时回调（宿主据此标记 JS 桥存活、关闭 WebChromeClient 兜底采集）。 */
-    var onEventArrived: (() -> Unit)? = null
+    // 回调不声明为 public var：addJavascriptInterface 会把 getter/setter 暴露为
+    // ZhiqueNative.setOnEventArrived(...)，页面可置 null 干扰 JS 桥存活判定。
+    // 页面可见面只保留 @JavascriptInterface onEvent。
+    internal var onEventArrived: (() -> Unit)? = null
 
     @JavascriptInterface
     fun onEvent(json: String) {

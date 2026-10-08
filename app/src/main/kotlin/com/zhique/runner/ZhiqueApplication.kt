@@ -282,6 +282,20 @@ class ZhiqueApplication : Application() {
         container.debugServer.onToast = { msg ->
             runCatching { android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show() }
         }
+        // 鉴权 token：首次生成随机 16B base64url 持久化（重装前稳定）——本机其他
+        // 进程/恶意网页不得操纵调试面
+        container.debugServer.token = runCatching {
+            val f = java.io.File(filesDir, "debug/debug-token")
+            if (f.isFile) f.readText().trim()
+            else {
+                val raw = ByteArray(16)
+                java.security.SecureRandom().nextBytes(raw)
+                val t = android.util.Base64.encodeToString(raw, android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING or android.util.Base64.URL_SAFE)
+                f.parentFile?.mkdirs()
+                f.writeText(t)
+                t
+            }
+        }.getOrDefault("")
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             val on = runCatching {
                 container.debugPreferences.serverEnabled(debuggable).first()

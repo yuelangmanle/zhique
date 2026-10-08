@@ -200,6 +200,8 @@ fun KeystoreBackupCard(
                         val copy = controller.prepareBackup(context.cacheDir) ?: return@OutlinedButton
                         ExportDelivery.shareKeystore(context, copy)
                         controller.markBackedUp()
+                        // 含私钥的副本不留 cache（分享 Intent 已快照内容）
+                        runCatching { copy.delete() }
                         // 备份必须随附恢复材料（QA 审查 P1：口令随机生成且密文绑定
                         // 本机安全区——电脑上没口令打不开，换机后 secret.bin 也解不开，
                         // 这份备份将永久不可用）。口令只在此刻明文展示一次。

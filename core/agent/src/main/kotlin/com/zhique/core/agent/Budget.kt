@@ -18,9 +18,10 @@ class Budget(
     var maxRounds: Int = maxRounds
         private set
 
-    private var t0 = 0L
-    private var tokens = 0L
-    private var round = 0
+    // 编排协程写、UI 跨线程读（budgetView）：@Volatile 保证可见性（long 防 32 位撕裂）
+    @Volatile private var t0 = 0L
+    @Volatile private var tokens = 0L
+    @Volatile private var round = 0
 
     fun start() {
         t0 = now()

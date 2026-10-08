@@ -91,26 +91,31 @@ open class UpdateChecker(
         val url = requireNotNull(info.assetUrl) { "该版本未附带 APK 资产" }
         targetDir.mkdirs()
         val target = File(targetDir, "zhique-${info.version}.apk")
+        val part = File(target.absolutePath + ".part")
         val request = Request.Builder().url(url).build()
-        client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) { "下载失败（${response.code}）" }
-            val body = response.body ?: throw PublishException("下载失败：空响应体")
-            val total = body.contentLength()
-            body.byteStream().use { input ->
-                File(target.absolutePath + ".part").outputStream().use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    var read: Int
-                    var done = 0L
-                    while (input.read(buf).also { read = it } != -1) {
-                        out.write(buf, 0, read)
-                        done += read
-                        if (total > 0) onProgress((done.toDouble() / total).toFloat().coerceIn(0f, 1f))
+        try {
+            client.newCall(request).execute().use { response ->
+                check(response.isSuccessful) { "下载失败（${response.code}）" }
+                val body = response.body ?: throw PublishException("下载失败：空响应体")
+                val total = body.contentLength()
+                body.byteStream().use { input ->
+                    part.outputStream().use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        var read: Int
+                        var done = 0L
+                        while (input.read(buf).also { read = it } != -1) {
+                            out.write(buf, 0, read)
+                            done += read
+                            if (total > 0) onProgress((done.toDouble() / total).toFloat().coerceIn(0f, 1f))
+                        }
                     }
                 }
             }
+            check(part.renameTo(target)) { "下载落盘失败" }
+        } catch (t: Throwable) {
+            part.delete() // 半截 .part 不残留 Downloads
+            throw t
         }
-        val part = File(target.absolutePath + ".part")
-        check(part.renameTo(target)) { "下载落盘失败" }
         verifyDigest(target, info.assetDigest)
         return target
     }

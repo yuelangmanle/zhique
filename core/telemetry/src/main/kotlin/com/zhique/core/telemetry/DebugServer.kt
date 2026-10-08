@@ -39,6 +39,13 @@ class DebugServer(
     /** 宿主注入的能力（toast 需要环境，core 层不持 Context）。 */
     var onToast: ((String) -> Unit)? = null
 
+    /**
+     * 鉴权 token（宿主生成并持久化，空串 = 免鉴权兼容本地手工调试）。
+     * 除 /debug/health 外的所有端点要求 query `token` 匹配——本机其他进程/
+     * 恶意网页（DNS rebinding）不得操纵调试面。
+     */
+    @Volatile var token: String = ""
+
     @Volatile private var server: ServerSocket? = null
     private val json = Json { encodeDefaults = false }
 
@@ -122,6 +129,10 @@ class DebugServer(
         val (route, query) = path.split("?").let { it[0] to it.getOrElse(1) { "" } }
         val params = parseQuery(query)
 
+        // 鉴权：health 免鉴权（脱敏信息），其余端点必须带匹配 token
+        if (route != "/debug/health" && token.isNotEmpty() && params["token"] != token) {
+            return 403 to errJson("forbidden")
+        }
         return runCatching {
             when {
                 route == "/debug/health" && method == "GET" -> 200 to healthJson()
@@ -148,7 +159,8 @@ class DebugServer(
     private fun healthJson(): String = buildJsonObject {
         put("ok", true)
         put("app", "zhique")
-        DebugHub.snapshot().forEach { (k, v) -> put(k, v) }
+        // health 免鉴权可达：session 字段整个不出现（值已脱敏但字段名也是信息）
+        DebugHub.snapshot().forEach { (k, v) -> if (k != "session") put(k, v) }
         put("serverPort", port)
         put("sinkEnabled", DebugHub.isSinkEnabled())
     }.let { json.encodeToString(JsonObject.serializer(), it) }

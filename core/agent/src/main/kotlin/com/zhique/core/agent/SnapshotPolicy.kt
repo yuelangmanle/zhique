@@ -31,8 +31,9 @@ class SnapshotPolicy(mutatingTools: Set<String> = setOf(FileTools.EDIT_FILE)) {
     ): String? {
         if (!needsSnapshot(call.name)) return null
         val path = runCatching {
-            (Json.parseToJsonElement(call.argumentsJson) as? JsonObject)
-                ?.get("path") as? JsonPrimitive
+            // JsonNull 是 JsonPrimitive 子类：显式排除，"path":null 不得落成字面 "null"
+            ((Json.parseToJsonElement(call.argumentsJson) as? JsonObject)
+                ?.get("path") as? JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull }
         }.getOrNull()?.content ?: return null
         return runCatching {
             history.append(projectId, "step-r$round-${call.name}", readCurrent(path)).id

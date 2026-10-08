@@ -76,6 +76,19 @@ class DebugServerTest {
     }
 
     @Test
+    fun `token鉴权_health免鉴权_其余必须带token`() {
+        server.token = "secret-token"
+        // 无 token → 403
+        assertTrue(get("/debug/events").first == 403 || get("/debug/events").second.contains("forbidden"))
+        // 带对 token → 200
+        assertEquals(200, get("/debug/events?token=secret-token").first)
+        // health 免鉴权（信息已脱敏：session 只露前缀）
+        val (code, body) = get("/debug/health")
+        assertEquals(200, code)
+        assertTrue(!body.contains("session"))
+    }
+
+    @Test
     fun `clear与404`() {
         DebugHub.event("ui", "x")
         assertEquals(200, get("/debug/clear", method = "POST").first)
